@@ -1,0 +1,43 @@
+name: 'SPM Version Updates'
+description: 'Check for available updates to Swift Package Manager dependencies in Xcode projects'
+author: 'hbmartin'
+branding:
+  icon: 'package'
+  color: 'orange'
+
+inputs:
+  xcode-project-path:
+    description: 'Path to the Xcode project file (.xcodeproj)'
+    required: true
+  check-when-exact:
+    description: 'Check for updates even when using exact version constraints'
+    required: false
+    default: 'false'
+  report-above-maximum:
+    description: 'Report versions above the maximum constraint range'
+    required: false
+    default: 'false'
+  report-pre-releases:
+    description: 'Include pre-release versions in update reports'
+    required: false
+    default: 'false'
+  ignore-repos:
+    description: 'Comma-separated list of repository URLs to ignore'
+    required: false
+    default: ''
+  github-token:
+    description: 'GitHub token for API access (automatic)'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.xcode-project-path }}
+    - ${{ inputs.check-when-exact }}
+    - ${{ inputs.report-above-maximum }}
+    - ${{ inputs.report-pre-releases }}
+    - ${{ inputs.ignore-repos }}
+  env:
+    GITHUB_TOKEN: ${{ inputs.github-token }}

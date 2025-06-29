@@ -1,61 +1,145 @@
-# danger-spm_version_updates
+# SPM Version Updates GitHub Action
 
 [![CI](https://github.com/hbmartin/danger-spm_version_updates/actions/workflows/lint_and_test.yml/badge.svg)](https://github.com/hbmartin/danger-spm_version_updates/actions/workflows/lint_and_test.yml)
 [![CodeFactor](https://www.codefactor.io/repository/github/hbmartin/danger-spm_version_updates/badge/main)](https://www.codefactor.io/repository/github/hbmartin/danger-spm_version_updates/overview/main)
-[![Gem Version](https://img.shields.io/gem/v/danger-spm_version_updates?color=D86149)](https://rubygems.org/gems/danger-spm_version_updates)
-[![codecov](https://codecov.io/gh/hbmartin/danger-spm_version_updates/graph/badge.svg?token=eXgUoWlvP7)](https://codecov.io/gh/hbmartin/danger-spm_version_updates)
-[![Documentation](https://img.shields.io/badge/Docs-3d3d41?logo=RubyGems)](https://hbmartin.github.io/danger-spm_version_updates/Danger/DangerSpmVersionUpdates.html)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A [Danger](https://danger.systems/ruby/) plugin to detect if there are any updates to your Swift Package Manager dependencies.
+A GitHub Action to automatically detect and report available updates for your Swift Package Manager (SPM) dependencies in Xcode projects.
 
-It's fast, lightweight, and does not require swift to be installed on the CI where it is run.
+🚀 **Fast, lightweight, and works without Swift installed on your CI runner**
 
-Note that version 0.1.0 is the last version to support Ruby 2.7
+## Features
 
-## Installation
+- ✅ **Zero Configuration** - Just point it at your Xcode project
+- 📦 **Comprehensive Detection** - Supports all SPM dependency constraint types
+- 💬 **Smart PR Comments** - Creates and updates informative pull request comments
+- 🔧 **Highly Configurable** - Control exactly what updates to report
+- 🏃‍♂️ **Performance Optimized** - Docker container with minimal dependencies
+- 📋 **Package.resolved Support** - Works with both v1 and v2 formats
 
-```sh
-gem install danger-spm_version_updates
+## Quick Start
+
+Add this action to your GitHub workflow:
+
+```yaml
+name: Check SPM Dependencies
+on:
+  pull_request:
+    paths:
+      - '**/*.xcodeproj/**'
+      - '**/Package.resolved'
+
+jobs:
+  spm-updates:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hbmartin/spm-version-updates-action@v1
+        with:
+          xcode-project-path: 'MyApp.xcodeproj'
 ```
 
-or add the following to your Gemfile:
+## Configuration Options
 
-```ruby
-gem "danger-spm_version_updates"
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `xcode-project-path` | Path to your Xcode project file (.xcodeproj) | ✅ Yes | |
+| `check-when-exact` | Check for updates even when using exact version constraints | No | `false` |
+| `report-above-maximum` | Report versions above the maximum constraint range | No | `false` |
+| `report-pre-releases` | Include pre-release versions in update reports | No | `false` |
+| `ignore-repos` | Comma-separated list of repository URLs to ignore | No | `''` |
+| `github-token` | GitHub token for API access | No | `${{ github.token }}` |
+
+## Advanced Configuration
+
+```yaml
+- uses: hbmartin/spm-version-updates-action@v1
+  with:
+    xcode-project-path: 'MyApp.xcodeproj'
+    check-when-exact: true
+    report-above-maximum: true
+    report-pre-releases: false
+    ignore-repos: 'https://github.com/pointfreeco/swift-snapshot-testing,https://github.com/Quick/Nimble'
 ```
 
-## Usage
+## Supported Dependency Types
 
-Just add this to your Dangerfile! Note that it is required to pass the path to your Xcode project.
+The action supports all SPM dependency constraint types:
 
-```ruby
-spm_version_updates.check_for_updates("Example.xcodeproj")
+- **Exact Version** (`exactVersion`) - Reports updates when `check-when-exact` is enabled
+- **Up to Next Major** (`upToNextMajorVersion`) - Reports compatible updates within major version
+- **Up to Next Minor** (`upToNextMinorVersion`) - Reports compatible updates within minor version  
+- **Version Range** (`versionRange`) - Reports updates within specified range
+- **Branch Tracking** (`branch`) - Reports newer commits on tracked branches
+
+## Example Output
+
+When the action finds available updates, it will post a comment like this on your pull request:
+
+> ## 📦 SPM Version Updates
+> 
+> ⚠️ **Found 2 potential dependency updates:**
+> 
+> 1. Newer version of Alamofire/Alamofire: 5.8.1
+> 2. Newer version of onevcat/Kingfisher: 7.10.2
+> 
+> <details>
+> <summary>💡 How to update dependencies</summary>
+> 
+> To update your SPM dependencies:
+> 1. Open your Xcode project
+> 2. Go to **File → Swift Packages → Update to Latest Package Versions**
+> 3. Or update individual packages from the Package Dependencies section in Project Navigator
+> 
+> </details>
+
+## Complete Workflow Example
+
+```yaml
+name: Swift Package Dependencies
+
+on:
+  pull_request:
+    paths:
+      - '**/*.xcodeproj/**'
+      - '**/Package.resolved'
+      - '.github/workflows/spm-updates.yml'
+
+jobs:
+  check-dependencies:
+    name: Check for SPM Updates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Check SPM Dependencies
+        uses: hbmartin/spm-version-updates-action@v1
+        with:
+          xcode-project-path: 'MyApp.xcodeproj'
+          report-above-maximum: true
+          ignore-repos: 'https://github.com/pointfreeco/swift-snapshot-testing'
 ```
 
-You can also configure custom behaviors:
+## Migration from Danger Plugin
 
-```ruby
-# Whether to check when dependencies are exact versions or commits, default false
-spm_version_updates.check_when_exact = true
-
-# Whether to report versions above the maximum version range, default false
-spm_version_updates.report_above_maximum = true
-
-# Whether to report pre-release versions, default false
-spm_version_updates.report_pre_releases = true
-
-# A list of repository URLs for packages to ignore entirely
-spm_version_updates.ignore_repos = ["https://github.com/pointfreeco/swift-snapshot-testing"]
-```
+If you're migrating from the `danger-spm_version_updates` Danger plugin, see [MIGRATION_PLAN.md](MIGRATION_PLAN.md) for a detailed migration guide.
 
 ## Development
 
-1. Clone this repo
-2. Run `bundle install` to setup dependencies.
-3. Run `bundle exec rake spec` to run the tests.
-4. Use `bundle exec guard` to automatically have tests run as you make changes.
-5. Make your changes.
+To work on this action locally:
+
+1. Clone this repository
+2. Make your changes to the Ruby files in `lib/`
+3. Build the Docker image: `docker build -t spm-version-updates-action .`
+4. Test with a sample project: `docker run --rm -v $(pwd):/workspace spm-version-updates-action path/to/project.xcodeproj`
 
 ## Authors
 
