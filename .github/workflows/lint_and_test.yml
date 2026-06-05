@@ -7,6 +7,25 @@ on:
     branches: [ main ]
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v4.3.1
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        # ruby/setup-ruby v1.310.0
+        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Run RuboCop
+        run: bundle exec rubocop
+      - name: Run Reek
+        run: bundle exec rake reek
+
   build:
     name: Action specs
     strategy:
@@ -32,4 +51,12 @@ jobs:
       # mode and Swift manifest mode. The legacy spec/spm_version_updates_spec.rb
       # targets the retired Danger plugin and is intentionally not run here.
       - name: Run action specs
-        run: bundle exec ruby -e "require 'rspec/core'; exit RSpec::Core::Runner.run(['spec/action', '--format', 'progress'])"
+        run: bundle exec ruby -r./spec/coverage_helper -e "require 'rspec/core'; exit RSpec::Core::Runner.run(['spec/action', '--format', 'progress'])"
+      - name: Upload coverage report
+        if: always()
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coverage-ruby-${{ matrix.ruby-version }}
+          path: coverage/
+          if-no-files-found: error
