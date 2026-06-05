@@ -65,6 +65,71 @@ RSpec.describe SpmChecker do
       expect(received).to include("https://github.com/onevcat/Kingfisher", "https://github.com/kean/Nuke")
     end
 
+    it "fetches version tags with a bounded worker pool and preserves warning order" do
+      package_count = SpmChecker::VERSION_TAG_WORKER_COUNT + 4
+      remote_packages = (1..package_count).each_with_object({}) { |index, packages|
+        packages["github.com/acme/pkg#{index}"] = {
+          "repository_url" => "https://github.com/acme/pkg#{index}",
+          "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" },
+        }
+      }
+      resolved_versions = remote_packages.keys.to_h { |url| [url, "1.0.0"] }
+      in_flight = 0
+      max_in_flight = 0
+      mutex = Mutex.new
+
+      allow(GitOperations).to receive(:version_tags) do |_url|
+        mutex.synchronize {
+          in_flight += 1
+          max_in_flight = [max_in_flight, in_flight].max
+        }
+        sleep 0.03
+        versions("1.1.0", "1.0.0")
+      ensure
+        mutex.synchronize { in_flight -= 1 }
+      end
+
+      checker.send(:check_packages, remote_packages, resolved_versions)
+
+      expect(max_in_flight).to be_between(2, SpmChecker::VERSION_TAG_WORKER_COUNT).inclusive
+      expect(checker.instance_variable_get(:@warnings)).to eq(
+        (1..package_count).map { |index| "Newer version of acme/pkg#{index}: 1.1.0" }
+      )
+    end
+
+    it "memoizes version tags across manifests in one check" do
+      calls = []
+      mutex = Mutex.new
+      allow(GitOperations).to receive(:version_tags) do |url|
+        mutex.synchronize { calls << url }
+        versions("1.1.0", "1.0.0")
+      end
+
+      Dir.mktmpdir do |dir|
+        manifests = %w[App Tools].map { |name|
+          manifest_dir = File.join(dir, name)
+          Dir.mkdir(manifest_dir)
+          manifest = File.join(manifest_dir, "Package.swift")
+          File.write(manifest, '.package(url: "https://github.com/acme/shared", from: "1.0.0")')
+          File.write(File.join(manifest_dir, "Package.resolved"), {
+            "pins" => [{ "location" => "https://github.com/acme/shared", "state" => { "version" => "1.0.0" } }],
+            "version" => 2,
+          }.to_json)
+          manifest
+        }
+
+        warnings = checker.check_manifests(manifests)
+
+        expect(calls).to eq(["https://github.com/acme/shared"])
+        expect(warnings).to eq(
+          [
+            "Newer version of acme/shared: 1.1.0\nSource: #{manifests[0]}",
+            "Newer version of acme/shared: 1.1.0\nSource: #{manifests[1]}",
+          ]
+        )
+      end
+    end
+
     it "does not check branches when check_branches is disabled" do
       checker.check_branches = false
 
@@ -96,6 +161,23 @@ RSpec.describe SpmChecker do
       warnings = checker.check_manifests([modules_manifest], [resolved])
 
       expect(warnings).to include(a_string_matching(/Newer version of onevcat\/Kingfisher: 7.10.2/))
+    end
+
+    it "exposes structured warning details for grouped PR comments" do
+      warnings = checker.check_manifests([modules_manifest])
+
+      detail = checker.warning_details.find { |warning| warning[:package] == "onevcat/Kingfisher" }
+
+      expect(warnings).to include("Newer version of onevcat/Kingfisher: 7.10.2\nSource: #{modules_manifest}")
+      expect(detail).to include(
+        type: "version",
+        package: "onevcat/Kingfisher",
+        normalized_url: "github.com/onevcat/Kingfisher",
+        repository_url: "https://github.com/onevcat/Kingfisher",
+        current_version: "7.0.0",
+        available_version: "7.10.2",
+        source: modules_manifest
+      )
     end
 
     it "raises a clear error when no resolved file can be found" do
