@@ -263,12 +263,17 @@ module Danger
       end
 
       it "Transforms git tags into version list" do
-        allow_any_instance_of(Kernel).to receive(:`)
-          .and_return <<-TEXT
+        allow(Open3).to receive(:capture3)
+          .with("git", "ls-remote", "-t", "https://github.com/hbmartin/danger-spm_version_updates")
+          .and_return [
+            <<-TEXT,
 From git@github.com:hbmartin/danger-spm_version_updates.git
 4230ed95952b244d9d0b922d2b460fb73d985e02	refs/tags/0.1.0
 97a139d985c2edd233017f1bb26138eea25958de	refs/tags/2.0.0
-          TEXT
+            TEXT
+            "",
+            command_status(true),
+          ]
 
         expect(Git.version_tags("https://github.com/hbmartin/danger-spm_version_updates")).to eq(
           [
@@ -279,8 +284,10 @@ From git@github.com:hbmartin/danger-spm_version_updates.git
       end
 
       it "Gathers latest commit on git branch" do
-        allow_any_instance_of(Kernel).to receive(:`)
-          .and_return <<-TEXT
+        allow(Open3).to receive(:capture3)
+          .with("git", "ls-remote", "-h", "https://github.com/hbmartin/danger-spm_version_updates")
+          .and_return [
+            <<-TEXT,
 From git@github.com:hbmartin/danger-spm_version_updates.git
 5e5c3f78ff25e7678ed7d3b25d7c60eeeee47e25	HEAD
 8c1a26f6c3822dc62e0feb655e0152e4f81e8ab3	refs/heads/hm/check-for-mangled-urls
@@ -291,7 +298,10 @@ a1fd1d464a6e5a76136d23b8e66a5a8c422dbeea	refs/pull/3/merge
 4230ed95952b244d9d0b922d2b460fb73d985e02	refs/tags/0.1.0
 97a139d985c2edd233017f1bb26138eea25958de	refs/tags/v0.1.1
 5ffb986dfbb63f90de8f9854f3d0bc35eff37c56	refs/tags/v0.1.2
-          TEXT
+            TEXT
+            "",
+            command_status(true),
+          ]
 
         expect(Git.branch_last_commit("https://github.com/hbmartin/danger-spm_version_updates", "main")).to eq(
           "5e5c3f78ff25e7678ed7d3b25d7c60eeeee47e25"
@@ -322,4 +332,8 @@ a1fd1d464a6e5a76136d23b8e66a5a8c422dbeea	refs/pull/3/merge
       end
     end
   end
+end
+
+def command_status(success)
+  instance_double(Process::Status, success?: success)
 end

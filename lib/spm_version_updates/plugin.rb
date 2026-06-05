@@ -102,8 +102,8 @@ Newer version of #{name}: #{newest_version} (but this package is set to exact ve
     def warn_for_new_versions_range(available_versions, name, requirement, resolved_version)
       begin
         max_version = Semantic::Version.new(requirement["maximumVersion"])
-      rescue ArgumentError => e
-        $stderr.puts("Unable to extract semver from #{requirement} for #{name} (#{e})")
+      rescue ArgumentError => error
+        $stderr.puts("Unable to extract semver from #{requirement} for #{name} (#{error})")
         return
       end
       if available_versions.first < max_version
@@ -124,8 +124,8 @@ Newest version of #{name}: #{available_versions.first} (but this package is conf
     def warn_for_new_versions(major_or_minor, available_versions, name, resolved_version_string)
       begin
         resolved_version = Semantic::Version.new(resolved_version_string)
-      rescue ArgumentError => e
-        $stderr.puts("Unable to extract semver from #{resolved_version_string} for #{name} (#{e})")
+      rescue ArgumentError => error
+        $stderr.puts("Unable to extract semver from #{resolved_version_string} for #{name} (#{error})")
         return
       end
       newest_meeting_reqs = available_versions.find { |version|

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "open3"
+
 module Git
   # Removes protocol and trailing .git from a repo URL
   # @param   [String] repo_url
@@ -25,7 +27,7 @@ module Git
   #          The URL of the dependency's repository
   # @return [Array<Semantic::Version>]
   def self.version_tags(repo_url)
-    versions = `git ls-remote -t #{repo_url}`
+    versions = ls_remote("-t", repo_url)
       .split("\n")
       .map { |line| line.split("/tags/").last }
       .filter_map { |line|
@@ -46,9 +48,20 @@ module Git
   #          The name of the branch on which to find the last commit
   # @return [String]
   def self.branch_last_commit(repo_url, branch_name)
-    `git ls-remote -h #{repo_url}`
+    ls_remote("-h", repo_url)
       .split("\n")
       .find { |line| line.split("\trefs/heads/")[1] == branch_name }
-      .split("\trefs/heads/")[0]
+      &.split("\trefs/heads/")&.first
   end
+
+  def self.ls_remote(flag, repo_url)
+    stdout, _stderr, status = Open3.capture3("git", "ls-remote", flag, repo_url)
+    return stdout if status.success?
+
+    ""
+  rescue Errno::ENOENT
+    ""
+  end
+
+  private_class_method :ls_remote
 end

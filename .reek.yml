@@ -45,11 +45,6 @@ detectors:
     - Action#run
     - Action#run_checks
     - ActionReporter#detail_records
-    - ActionReporter#emit_warning_annotations
-    - ActionReporter#env_value
-    - ActionReporter#write_update_summary
-    - GithubIntegration#build_legacy_warnings_message
-    - GithubIntegration#source_cell
     - ManifestParser#self.copy_string_literal
     - ManifestParser#self.matching_paren
     - ManifestParser#self.skip_block_comment
@@ -74,9 +69,6 @@ detectors:
     exclude:
     - Action#configure_checker
     - Action#print_config
-    - ActionReporter#write_update_summary
-    - GithubIntegration#build_legacy_warnings_message
-    - GithubIntegration#source_cell
     - SpmChecker#check_packages
     - SpmChecker#version_tag_lookup_required?
     - parse
@@ -131,7 +123,6 @@ detectors:
     enabled: true
     exclude:
     - ActionReporter#detail_records
-    - ActionReporter#emit_warning_annotations
     - Xcode#self.get_resolved_versions
     max_allowed_nesting: 1
     ignore_iterators:
@@ -142,7 +133,6 @@ detectors:
     - Action#env_flag
     - Action#env_value
     - ActionReporter#detail_records
-    - ActionReporter#env_value
     - ActionReporter#parsed_warning_record
     - GitOperations#self.branch_last_commit
     - GitOperations#self.version_tags
@@ -200,10 +190,6 @@ detectors:
     - Action#run
     - Action#run_checks
     - ActionReporter#detail_records
-    - ActionReporter#emit_warning_annotations
-    - ActionReporter#write_action_outputs
-    - ActionReporter#write_step_summary
-    - ActionReporter#write_update_summary
     - GitOperations#self.ls_remote
     - GitOperations#self.version_tags
     - GithubIntegration#build_warnings_message
@@ -283,10 +269,7 @@ detectors:
     - Action#env_flag
     - Action#env_lines
     - Action#env_value
-    - ActionReporter#env_value
-    - ActionReporter#escape_workflow_data
     - ActionReporter#parsed_warning_record
-    - ActionReporter#write_multiline_output
     - GithubIntegration#detail_value
     - GithubIntegration#display_version
     - GithubIntegration#how_to_update_details
