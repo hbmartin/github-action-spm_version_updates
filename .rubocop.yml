@@ -9,26 +9,14 @@ AllCops:
   TargetRubyVersion: 3.1
   NewCops: enable
 
-Style/MultilineBlockChain:
-  Enabled: false
-
-Style/MultilineIfModifier:
-  Enabled: false
-
 Style/TrailingCommaInArrayLiteral:
   EnforcedStyleForMultiline: consistent_comma
-
-Style/StderrPuts:
-  Enabled: false
 
 Style/RegexpLiteral:
   Enabled: true
   EnforcedStyle: slashes
 
 RSpec/ExampleLength:
-  Enabled: false
-
-RSpec/RepeatedExample:
   Enabled: false
 
 Style/BlockDelimiters:
@@ -117,21 +105,9 @@ Layout/FirstHashElementIndentation:
 Layout/HashAlignment:
   Enabled: true
 
-# HoundCI doesn't like this rule
-Layout/DotPosition:
-  Enabled: false
-
-# We allow !! as it's an easy way to convert to boolean
-Style/DoubleNegation:
-  Enabled: false
-
 # Cop supports --auto-correct.
 Lint/UnusedBlockArgument:
   Enabled: true
-
-# We want to allow class Fastlane::Class
-Style/ClassAndModuleChildren:
-  Enabled: false
 
 Metrics/AbcSize:
   Max: 60
@@ -139,14 +115,6 @@ Metrics/AbcSize:
 # The %w might be confusing for new users
 Style/WordArray:
   MinSize: 19
-
-# raise and fail are both okay
-Style/SignalException:
-  Enabled: false
-
-# Having if in the same line might not always be good
-Style/IfUnlessModifier:
-  Enabled: false
 
 Style/AndOr:
   Enabled: true
@@ -175,25 +143,8 @@ Style/GuardClause:
 Style/ConditionalAssignment:
   Enabled: true
 
-# Better to have too much self than missing a self
-Style/RedundantSelf:
-  Enabled: false
-
 Metrics/MethodLength:
   Max: 60
-
-# We're not there yet
-Style/Documentation:
-  Enabled: false
-
-# Adds complexity
-Style/IfInsideElse:
-  Enabled: false
-
-# danger specific
-
-Style/BlockComments:
-  Enabled: false
 
 Layout/MultilineMethodCallIndentation:
   EnforcedStyle: indented
@@ -207,17 +158,8 @@ Metrics/BlockLength:
 Style/MixinGrouping:
   Enabled: true
 
-Naming/FileName:
-  Enabled: false
-
 Naming/RescuedExceptionsVariableName:
   PreferredName: error
-
-Layout/HeredocIndentation:
-  Enabled: false
-
-Style/SpecialGlobalVars:
-  Enabled: false
 
 Style/PercentLiteralDelimiters:
   PreferredDelimiters:
@@ -230,9 +172,6 @@ Style/PercentLiteralDelimiters:
     "%w": ()
     "%W": ()
     "%x": ()
-
-Security/YAMLLoad:
-  Enabled: false
 
 Gemspec/DevelopmentDependencies:
   Enabled: false

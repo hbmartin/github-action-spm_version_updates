@@ -170,7 +170,7 @@ class GithubIntegration
     @github_repository = ENV.fetch("GITHUB_REPOSITORY", nil)
     @github_event_path = ENV.fetch("GITHUB_EVENT_PATH", nil)
 
-    if @github_token.nil? || @github_token.empty?
+    if github_token_missing?
       puts("Warning: GITHUB_TOKEN not set, comments will not be posted")
       @client = nil
       return
@@ -206,6 +206,10 @@ class GithubIntegration
     return unless @client && @pr_number
 
     yield
+  end
+
+  def github_token_missing?
+    @github_token.to_s.empty?
   end
 
   def post_comment_body(full_message)

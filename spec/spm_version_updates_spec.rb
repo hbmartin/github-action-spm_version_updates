@@ -3,6 +3,7 @@
 require File.expand_path("coverage_helper", __dir__)
 require File.expand_path("spec_helper", __dir__)
 
+# Spec namespace matching Danger's plugin lookup.
 module Danger
   describe Danger::DangerSpmVersionUpdates do
     it "is a plugin" do
@@ -266,10 +267,10 @@ module Danger
         allow(Open3).to receive(:capture3)
           .with("git", "ls-remote", "-t", "https://github.com/hbmartin/danger-spm_version_updates")
           .and_return [
-            <<-TEXT,
-From git@github.com:hbmartin/danger-spm_version_updates.git
-4230ed95952b244d9d0b922d2b460fb73d985e02	refs/tags/0.1.0
-97a139d985c2edd233017f1bb26138eea25958de	refs/tags/2.0.0
+            <<~TEXT,
+              From git@github.com:hbmartin/danger-spm_version_updates.git
+              4230ed95952b244d9d0b922d2b460fb73d985e02	refs/tags/0.1.0
+              97a139d985c2edd233017f1bb26138eea25958de	refs/tags/2.0.0
             TEXT
             "",
             command_status(true),
@@ -287,17 +288,17 @@ From git@github.com:hbmartin/danger-spm_version_updates.git
         allow(Open3).to receive(:capture3)
           .with("git", "ls-remote", "-h", "https://github.com/hbmartin/danger-spm_version_updates")
           .and_return [
-            <<-TEXT,
-From git@github.com:hbmartin/danger-spm_version_updates.git
-5e5c3f78ff25e7678ed7d3b25d7c60eeeee47e25	HEAD
-8c1a26f6c3822dc62e0feb655e0152e4f81e8ab3	refs/heads/hm/check-for-mangled-urls
-5e5c3f78ff25e7678ed7d3b25d7c60eeeee47e25	refs/heads/main
-ae5afe00b2d7098403dd9d87a3780cca4b4b285c	refs/pull/2/head
-8c1a26f6c3822dc62e0feb655e0152e4f81e8ab3	refs/pull/3/head
-a1fd1d464a6e5a76136d23b8e66a5a8c422dbeea	refs/pull/3/merge
-4230ed95952b244d9d0b922d2b460fb73d985e02	refs/tags/0.1.0
-97a139d985c2edd233017f1bb26138eea25958de	refs/tags/v0.1.1
-5ffb986dfbb63f90de8f9854f3d0bc35eff37c56	refs/tags/v0.1.2
+            <<~TEXT,
+              From git@github.com:hbmartin/danger-spm_version_updates.git
+              5e5c3f78ff25e7678ed7d3b25d7c60eeeee47e25	HEAD
+              8c1a26f6c3822dc62e0feb655e0152e4f81e8ab3	refs/heads/hm/check-for-mangled-urls
+              5e5c3f78ff25e7678ed7d3b25d7c60eeeee47e25	refs/heads/main
+              ae5afe00b2d7098403dd9d87a3780cca4b4b285c	refs/pull/2/head
+              8c1a26f6c3822dc62e0feb655e0152e4f81e8ab3	refs/pull/3/head
+              a1fd1d464a6e5a76136d23b8e66a5a8c422dbeea	refs/pull/3/merge
+              4230ed95952b244d9d0b922d2b460fb73d985e02	refs/tags/0.1.0
+              97a139d985c2edd233017f1bb26138eea25958de	refs/tags/v0.1.1
+              5ffb986dfbb63f90de8f9854f3d0bc35eff37c56	refs/tags/v0.1.2
             TEXT
             "",
             command_status(true),

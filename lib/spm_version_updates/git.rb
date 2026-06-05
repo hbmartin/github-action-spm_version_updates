@@ -2,6 +2,7 @@
 
 require "open3"
 
+# Legacy git helper used by the Danger plugin API.
 module Git
   # Removes protocol and trailing .git from a repo URL
   # @param   [String] repo_url

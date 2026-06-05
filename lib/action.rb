@@ -76,17 +76,23 @@ class Action
   end
 
   def print_config(inputs)
+    xcode_project_path = inputs[:xcode_project_path]
+    manifest_paths = inputs[:manifest_paths]
+    resolved_paths = inputs[:resolved_paths]
+    ignore_repos = inputs[:ignore_repos]
+    allow_hosts = inputs[:allow_hosts]
+
     puts("SPM Version Updates GitHub Action")
-    puts("Xcode project: #{inputs[:xcode_project_path]}") if inputs[:xcode_project_path]
-    puts("Package manifests: #{inputs[:manifest_paths].join(', ')}") unless inputs[:manifest_paths].empty?
-    puts("Package resolved: #{inputs[:resolved_paths].join(', ')}") unless inputs[:resolved_paths].empty?
+    puts("Xcode project: #{xcode_project_path}") if xcode_project_path
+    puts("Package manifests: #{manifest_paths.join(', ')}") unless manifest_paths.empty?
+    puts("Package resolved: #{resolved_paths.join(', ')}") unless resolved_paths.empty?
     puts("Check when exact: #{inputs[:check_when_exact]}")
     puts("Check branches: #{inputs[:check_branches]}")
     puts("Check revisions: #{inputs[:check_revisions]}")
     puts("Report above maximum: #{inputs[:report_above_maximum]}")
     puts("Report pre-releases: #{inputs[:report_pre_releases]}")
-    puts("Ignore repos: #{inputs[:ignore_repos].join(', ')}") unless inputs[:ignore_repos].empty?
-    puts("Allow hosts: #{inputs[:allow_hosts].join(', ')}") unless inputs[:allow_hosts].empty?
+    puts("Ignore repos: #{ignore_repos.join(', ')}") unless ignore_repos.empty?
+    puts("Allow hosts: #{allow_hosts.join(', ')}") unless allow_hosts.empty?
     puts("Fail on: #{inputs[:fail_on] || 'none'}")
     puts("Comment on success: #{inputs[:comment_on_success]}")
   end
@@ -106,10 +112,11 @@ class Action
   def run_checks(checker, inputs)
     xcode = inputs[:xcode_project_path]
     manifests = inputs[:manifest_paths]
+    has_manifests = !manifests.empty?
 
-    if xcode && !manifests.empty?
+    if xcode && has_manifests
       raise(ModeError, "Set either xcode-project-path or package-manifest-paths, not both.")
-    elsif !manifests.empty?
+    elsif has_manifests
       puts("Mode: Swift package manifests")
       checker.check_manifests(manifests, inputs[:resolved_paths])
     elsif xcode
@@ -153,8 +160,8 @@ class Action
   end
 
   def env_value(key)
-    value = ENV.fetch(key, nil)
-    value.nil? || value.strip.empty? ? nil : value.strip
+    value = ENV.fetch(key, nil)&.strip
+    value.nil? || value.empty? ? nil : value
   end
 
   def env_lines(key)
@@ -172,10 +179,14 @@ class Action
   end
 
   def env_flag(key, default: false)
-    value = ENV.fetch(key, nil)
-    return default if value.nil? || value.strip.empty?
-
-    value.strip == "true"
+    case env_value(key)
+    when nil
+      default
+    when "true"
+      true
+    else
+      false
+    end
   end
 end
 
