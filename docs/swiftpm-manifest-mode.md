@@ -77,6 +77,10 @@ checkout credentials off, avoid extra secrets or SSH keys, and set
 on:
   pull_request_target:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   spm-version-updates:
     runs-on: ubuntu-latest
@@ -248,6 +252,7 @@ it came from, so you know exactly where to make the change:
 | `report-pre-releases` | Include pre-release versions in update reports. | `false` |
 | `ignore-repos` | Comma-separated list of repository URLs to ignore. | `''` |
 | `allow-hosts` | Comma-separated list of git remote hostnames allowed for version lookups. Empty allows any host. | `''` |
+| `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | `false` |
 | `github-token` | GitHub token for posting the PR comment. | `${{ github.token }}` |
 
 Provide **exactly one** of `package-manifest-paths` or `xcode-project-path`.

@@ -61,7 +61,9 @@ class ActionReporter
 
     File.open(output_path, "a") { |file|
       file.puts("updates-found=#{records.size}")
-      severity_counts.each { |severity, count| file.puts("#{severity}-updates-found=#{count}") }
+      file.puts("major-updates-found=#{severity_counts['major']}")
+      file.puts("minor-updates-found=#{severity_counts['minor']}")
+      file.puts("patch-updates-found=#{severity_counts['patch']}")
       write_multiline_output(file, "updates-json", updates_json)
     }
   end

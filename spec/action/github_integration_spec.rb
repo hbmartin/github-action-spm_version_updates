@@ -77,6 +77,59 @@ RSpec.describe(GithubIntegration) {
       expect(message).to(include("Found 1 potential dependency update"))
       expect(message).to(include("1. Newer version of onevcat/Kingfisher: 8.0.0"))
     end
+
+    it("builds GitLab compare and release links for nested projects", :aggregate_failures) do
+      details = [
+        {
+          package: "Group/Subgroup/Project",
+          repository_url: "git@gitlab.com:group/subgroup/project.git",
+          current_version: "1.0.0",
+          available_version: "2.0.0"
+        },
+      ]
+
+      message = integration.send(:build_warnings_message, ["Newer version of Group/Subgroup/Project: 2.0.0"], details)
+
+      expect(message).to(
+        include("[Compare](https://gitlab.com/group/subgroup/project/-/compare/1.0.0...2.0.0)")
+      )
+      expect(message).to(include("[Releases](https://gitlab.com/group/subgroup/project/-/releases)"))
+      expect(message).not_to(include("N/A"))
+    end
+
+    it("builds Bitbucket compare and tag links", :aggregate_failures) do
+      details = [
+        {
+          package: "workspace/repo",
+          repository_url: "https://bitbucket.org/workspace/repo.git",
+          current_version: "1.0.0",
+          available_version: "2.0.0"
+        },
+      ]
+
+      message = integration.send(:build_warnings_message, ["Newer version of workspace/repo: 2.0.0"], details)
+
+      expect(message).to(
+        include("[Compare](https://bitbucket.org/workspace/repo/branches/compare/1.0.0..2.0.0)")
+      )
+      expect(message).to(include("[Tags](https://bitbucket.org/workspace/repo/downloads/?tab=tags)"))
+      expect(message).not_to(include("N/A"))
+    end
+
+    it("keeps N/A links for unsupported repository hosts") do
+      details = [
+        {
+          package: "example/repo",
+          repository_url: "https://example.com/example/repo.git",
+          current_version: "1.0.0",
+          available_version: "2.0.0"
+        },
+      ]
+
+      message = integration.send(:build_warnings_message, ["Newer version of example/repo: 2.0.0"], details)
+
+      expect(message).to(include("| `example/repo` | `1.0.0` → `2.0.0` | Xcode project | N/A |"))
+    end
   }
 
   describe("#post_comment") {
@@ -164,6 +217,59 @@ RSpec.describe(GithubIntegration) {
 
       expect(client).to(have_received(:update_comment))
       expect(client).not_to(have_received(:add_comment))
+    end
+  }
+
+  describe("#delete_existing_comment") {
+    it("deletes an existing generated comment", :aggregate_failures) do
+      client = instance_double(Octokit::Client)
+      allow(Octokit::Client).to(receive(:new).with(access_token: "token").and_return(client))
+      allow(client).to(
+        receive_messages(
+          issue_comments: [{ id: 123, body: "#{described_class::COMMENT_IDENTIFIER}\nold" }],
+          delete_comment: true
+        )
+      )
+
+      Dir.mktmpdir do |dir|
+        with_env(github_env(write_event_file(dir))) do
+          described_class.new.delete_existing_comment
+        end
+      end
+
+      expect(client).to(have_received(:delete_comment).with("owner/repo", 123))
+    end
+
+    it("does nothing when no generated comment exists", :aggregate_failures) do
+      client = instance_double(Octokit::Client)
+      allow(Octokit::Client).to(receive(:new).with(access_token: "token").and_return(client))
+      allow(client).to(receive(:issue_comments).and_return([{ id: 456, body: "unrelated" }]))
+      allow(client).to(receive(:delete_comment))
+
+      Dir.mktmpdir do |dir|
+        with_env(github_env(write_event_file(dir))) do
+          described_class.new.delete_existing_comment
+        end
+      end
+
+      expect(client).not_to(have_received(:delete_comment))
+    end
+
+    it("logs delete failures without raising", :aggregate_failures) do
+      client = instance_double(Octokit::Client)
+      allow(Octokit::Client).to(receive(:new).with(access_token: "token").and_return(client))
+      allow(client).to(receive(:issue_comments).and_return([{ id: 123, body: described_class::COMMENT_IDENTIFIER }]))
+      allow(client).to(receive(:delete_comment).and_raise(Octokit::Error.new))
+
+      Dir.mktmpdir do |dir|
+        stdout = capture_stdout do
+          with_env(github_env(write_event_file(dir))) do
+            described_class.new.delete_existing_comment
+          end
+        end
+
+        expect(stdout).to(include("Error deleting comment"))
+      end
     end
   }
 

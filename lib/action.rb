@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "action_reporter"
+require_relative "fail_on_threshold"
 require_relative "github_integration"
 require_relative "spm_checker"
 
@@ -29,8 +30,9 @@ class Action
     checker = configure_checker(inputs)
     warnings = run_checks(checker, inputs)
     warning_details = checker.warning_details if checker.respond_to?(:warning_details)
-    report(warnings, warning_details, comment_on_success: inputs[:comment_on_success])
-    fail_with("Found #{warnings.size} SPM dependency update#{warnings.size == 1 ? '' : 's'}") if inputs[:fail_on_updates] && !warnings.empty?
+    reporter = report(warnings, warning_details, comment_on_success: inputs[:comment_on_success])
+    failure_message = FailOnThreshold.failure_message(inputs[:fail_on], reporter)
+    fail_with(failure_message) if failure_message
 
     puts("SPM version check completed successfully!")
   rescue ModeError => e
@@ -65,7 +67,7 @@ class Action
       report_pre_releases: env_flag("INPUT_REPORT_PRE_RELEASES"),
       ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
       allow_hosts: env_csv("INPUT_ALLOW_HOSTS"),
-      fail_on_updates: env_flag("INPUT_FAIL_ON_UPDATES"),
+      fail_on: FailOnThreshold.from_inputs(env_value("INPUT_FAIL_ON"), env_value("INPUT_FAIL_ON_UPDATES")),
       comment_on_success: env_flag("INPUT_COMMENT_ON_SUCCESS")
     }
   end
@@ -82,7 +84,7 @@ class Action
     puts("Report pre-releases: #{inputs[:report_pre_releases]}")
     puts("Ignore repos: #{inputs[:ignore_repos].join(', ')}") unless inputs[:ignore_repos].empty?
     puts("Allow hosts: #{inputs[:allow_hosts].join(', ')}") unless inputs[:allow_hosts].empty?
-    puts("Fail on updates: #{inputs[:fail_on_updates]}")
+    puts("Fail on: #{inputs[:fail_on] || 'none'}")
     puts("Comment on success: #{inputs[:comment_on_success]}")
   end
 
@@ -116,7 +118,8 @@ class Action
   end
 
   def report(warnings, warning_details = nil, comment_on_success: false)
-    ActionReporter.new(warnings, warning_details).write
+    reporter = ActionReporter.new(warnings, warning_details)
+    reporter.write
 
     if warnings.empty?
       puts("✅ All SPM dependencies are up to date!")
@@ -129,6 +132,8 @@ class Action
       puts("⚠️  Found #{warnings.size} potential updates")
       @github_integration.post_comment_with_warnings(warnings, warning_details)
     end
+
+    reporter
   end
 
   def move_to_workspace

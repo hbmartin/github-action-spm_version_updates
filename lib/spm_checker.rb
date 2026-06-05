@@ -107,7 +107,7 @@ class SpmChecker
 
   def normalize_allow_hosts
     @allow_hosts = Array(@allow_hosts)
-      .filter_map { |host| GitOperations.host(host) || host.to_s.strip.downcase }
+      .filter_map { |host| GitOperations.host(host) || host.to_s.strip.sub(/:\d+\z/, "").downcase }
       .reject(&:empty?)
   end
 

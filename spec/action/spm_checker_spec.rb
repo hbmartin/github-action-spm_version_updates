@@ -78,6 +78,15 @@ RSpec.describe SpmChecker do
       expect(warnings).to include("Newer version of onevcat/Kingfisher: 7.10.2\nSource: #{modules_manifest}")
     end
 
+    it "strips ports from configured dependency hosts in fallback normalization" do
+      allow(GitOperations).to receive(:host).with("GitHub.com:8443").and_return(nil)
+      checker.allow_hosts = ["GitHub.com:8443"]
+
+      checker.send(:normalize_allow_hosts)
+
+      expect(checker.allow_hosts).to eq(["github.com"])
+    end
+
     it "fails before fetching version tags when a dependency host is not allowed", :aggregate_failures do
       checker.allow_hosts = ["github.com"]
 

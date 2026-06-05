@@ -10,7 +10,9 @@ RSpec.describe Action do
 
   let(:checker) { instance_double(SpmChecker) }
   let(:checker_factory) { SpmChecker }
-  let(:github_integration) { instance_double(GithubIntegration, post_comment: nil, post_comment_with_warnings: nil) }
+  let(:github_integration) {
+    instance_double(GithubIntegration, delete_existing_comment: nil, post_comment: nil, post_comment_with_warnings: nil)
+  }
 
   def with_env(overrides)
     original = overrides.to_h { |key, _value| [key, ENV.fetch(key, nil)] }
@@ -34,6 +36,8 @@ RSpec.describe Action do
       INPUT_IGNORE_REPOS
       INPUT_ALLOW_HOSTS
       INPUT_FAIL_ON_UPDATES
+      INPUT_FAIL_ON
+      INPUT_COMMENT_ON_SUCCESS
       GITHUB_WORKSPACE
     ).to_h { |key| [key, nil] }
       .merge(overrides)
@@ -93,7 +97,9 @@ RSpec.describe Action do
           "INPUT_REPORT_PRE_RELEASES" => "true",
           "INPUT_IGNORE_REPOS" => " https://github.com/a/b, https://github.com/c/d ",
           "INPUT_ALLOW_HOSTS" => " github.com, gitlab.com ",
-          "INPUT_FAIL_ON_UPDATES" => "true"
+          "INPUT_FAIL_ON_UPDATES" => "true",
+          "INPUT_FAIL_ON" => "minor",
+          "INPUT_COMMENT_ON_SUCCESS" => "true"
         )
       ) do
         expect(action.send(:read_inputs)).to eq(
@@ -108,7 +114,8 @@ RSpec.describe Action do
             report_pre_releases: true,
             ignore_repos: ["https://github.com/a/b", "https://github.com/c/d"],
             allow_hosts: ["github.com", "gitlab.com"],
-            fail_on_updates: true
+            fail_on: "minor",
+            comment_on_success: true
           }
         )
       end
@@ -117,6 +124,12 @@ RSpec.describe Action do
     it "defaults check_branches to true when the env var is absent" do
       with_env(input_env) do
         expect(action.send(:read_inputs)[:check_branches]).to be(true)
+      end
+    end
+
+    it "uses the legacy fail-on-updates boolean as fail-on any" do
+      with_env(input_env("INPUT_FAIL_ON_UPDATES" => "true")) do
+        expect(action.send(:read_inputs)[:fail_on]).to eq("any")
       end
     end
   end
@@ -143,7 +156,11 @@ RSpec.describe Action do
           end
         end
 
-        expect(File.read(output_path)).to include("updates-found=1")
+        output = File.read(output_path)
+        expect(output).to include("updates-found=1")
+        expect(output).to include("major-updates-found=1")
+        expect(output).to include("minor-updates-found=0")
+        expect(output).to include("patch-updates-found=0")
         expect(output_json_from(output_path)).to eq(
           [
             {
@@ -151,6 +168,7 @@ RSpec.describe Action do
               "package" => "onevcat/Kingfisher",
               "current_version" => "7.0.0",
               "available_version" => "8.0.0",
+              "severity" => "major",
               "message" => "Newer version of onevcat/Kingfisher: 8.0.0",
               "source" => "Modules/Package.swift"
             },
@@ -196,7 +214,11 @@ RSpec.describe Action do
           action.send(:report, warnings, warning_details)
         end
 
-        expect(File.read(output_path)).to include("updates-found=2")
+        output = File.read(output_path)
+        expect(output).to include("updates-found=2")
+        expect(output).to include("major-updates-found=1")
+        expect(output).to include("minor-updates-found=0")
+        expect(output).to include("patch-updates-found=0")
         expect(output_json_from(output_path)).to eq(
           [
             {
@@ -204,6 +226,7 @@ RSpec.describe Action do
               "package" => "onevcat/Kingfisher",
               "current_version" => "7.0.0",
               "available_version" => "8.0.0",
+              "severity" => "major",
               "message" => "Newer version of onevcat/Kingfisher: 8.0.0",
               "source" => "Modules/Package.swift"
             },
@@ -217,6 +240,32 @@ RSpec.describe Action do
       end
     end
 
+    it "does not count revision records as semantic-version severity updates", :aggregate_failures do
+      warnings = ["getsentry/sentry-cocoa is pinned to a revision (8.12.0); latest tagged version is 9.0.0"]
+      warning_details = [
+        {
+          type: "revision",
+          package: "getsentry/sentry-cocoa",
+          current_version: "8.12.0",
+          available_version: "9.0.0"
+        },
+      ]
+
+      Dir.mktmpdir do |dir|
+        output_path = File.join(dir, "github_output")
+        summary_path = File.join(dir, "step_summary")
+
+        with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
+          action.send(:report, warnings, warning_details)
+        end
+
+        output = File.read(output_path)
+        expect(output).to include("updates-found=1")
+        expect(output).to include("major-updates-found=0")
+        expect(output_json_from(output_path).first).not_to include("severity")
+      end
+    end
+
     it "writes empty outputs and an up-to-date summary when no updates are found", :aggregate_failures do
       Dir.mktmpdir do |dir|
         output_path = File.join(dir, "github_output")
@@ -226,10 +275,29 @@ RSpec.describe Action do
           action.send(:report, [])
         end
 
-        expect(File.read(output_path)).to include("updates-found=0")
+        output = File.read(output_path)
+        expect(output).to include("updates-found=0")
+        expect(output).to include("major-updates-found=0")
+        expect(output).to include("minor-updates-found=0")
+        expect(output).to include("patch-updates-found=0")
         expect(output_json_from(output_path)).to eq([])
         expect(File.read(summary_path)).to include("All SPM dependencies are up to date.")
+        expect(github_integration).to have_received(:delete_existing_comment)
+        expect(github_integration).not_to have_received(:post_comment)
+      end
+    end
+
+    it "posts an up-to-date PR comment when success comments are enabled", :aggregate_failures do
+      Dir.mktmpdir do |dir|
+        output_path = File.join(dir, "github_output")
+        summary_path = File.join(dir, "step_summary")
+
+        with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
+          action.send(:report, [], nil, comment_on_success: true)
+        end
+
         expect(github_integration).to have_received(:post_comment).with("✅ **SPM Dependencies**: All dependencies are up to date!")
+        expect(github_integration).not_to have_received(:delete_existing_comment)
       end
     end
   end
@@ -258,7 +326,8 @@ RSpec.describe Action do
       )
       expect(configured_checker.allow_hosts).to eq(["github.com"])
       expect(configured_checker).not_to have_received(:check_for_updates)
-      expect(github_integration).to have_received(:post_comment).with("✅ **SPM Dependencies**: All dependencies are up to date!")
+      expect(github_integration).to have_received(:delete_existing_comment)
+      expect(github_integration).not_to have_received(:post_comment)
     end
 
     it "dispatches Xcode mode from environment inputs", :aggregate_failures do
@@ -271,7 +340,20 @@ RSpec.describe Action do
 
       expect(configured_checker).to have_received(:check_for_updates).with("App.xcodeproj")
       expect(configured_checker).not_to have_received(:check_manifests)
+      expect(github_integration).to have_received(:delete_existing_comment)
+      expect(github_integration).not_to have_received(:post_comment)
+    end
+
+    it "posts a clean-run comment when comment-on-success is enabled", :aggregate_failures do
+      allow(configured_checker).to receive(:check_for_updates).and_return([])
+      allow(configured_checker).to receive(:check_manifests)
+
+      with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_COMMENT_ON_SUCCESS" => "true")) do
+        action.run
+      end
+
       expect(github_integration).to have_received(:post_comment).with("✅ **SPM Dependencies**: All dependencies are up to date!")
+      expect(github_integration).not_to have_received(:delete_existing_comment)
     end
 
     it "fails after reporting when fail-on-updates is enabled and updates are found", :aggregate_failures do
@@ -285,6 +367,52 @@ RSpec.describe Action do
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
       expect(github_integration).to have_received(:post_comment_with_warnings).with(warnings, [])
+    end
+
+    it "fails when a semantic update meets the fail-on threshold", :aggregate_failures do
+      warnings = ["Newer version of onevcat/Kingfisher: 8.0.0"]
+      warning_details = [
+        {
+          type: "version",
+          package: "onevcat/Kingfisher",
+          current_version: "7.0.0",
+          available_version: "8.0.0"
+        },
+      ]
+      allow(configured_checker).to receive_messages(
+        check_for_updates: warnings,
+        warning_details:
+      )
+
+      expect {
+        with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_FAIL_ON" => "major")) do
+          action.run
+        end
+      }
+        .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      expect(github_integration).to have_received(:post_comment_with_warnings).with(warnings, warning_details)
+    end
+
+    it "does not fail when semantic updates are below the fail-on threshold", :aggregate_failures do
+      warnings = ["Newer version of onevcat/Kingfisher: 7.1.0"]
+      warning_details = [
+        {
+          type: "version",
+          package: "onevcat/Kingfisher",
+          current_version: "7.0.0",
+          available_version: "7.1.0"
+        },
+      ]
+      allow(configured_checker).to receive_messages(
+        check_for_updates: warnings,
+        warning_details:
+      )
+
+      with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_FAIL_ON" => "major")) do
+        action.run
+      end
+
+      expect(github_integration).to have_received(:post_comment_with_warnings).with(warnings, warning_details)
     end
   end
 

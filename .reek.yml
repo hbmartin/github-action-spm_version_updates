@@ -16,6 +16,7 @@ detectors:
   BooleanParameter:
     enabled: true
     exclude:
+    - Action#report
     - Action#env_flag
   ClassVariable:
     enabled: true
@@ -23,6 +24,7 @@ detectors:
   ControlParameter:
     enabled: true
     exclude:
+    - Action#report
     - ManifestParser#self.version_range_requirement
     - SpmChecker#version_tag_lookup_required?
     - Danger::DangerSpmVersionUpdates#warn_for_branch
@@ -195,6 +197,7 @@ detectors:
   TooManyStatements:
     enabled: true
     exclude:
+    - Action#report
     - initialize
     - Action#configure_checker
     - Action#print_config
