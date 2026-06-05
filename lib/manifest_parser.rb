@@ -37,7 +37,7 @@ module ManifestParser
     content = strip_comments(File.read(manifest_path))
     package_calls(content).each_with_object({}) { |call, packages|
       url = call[/\burl\s*:\s*"([^"]+)"/, 1]
-      next if url.nil? # local package (path:) or otherwise unparseable
+      next if url.nil? # local package (path:) or otherwise unrecognized
 
       requirement = requirement_for(call)
       next if requirement.nil?
