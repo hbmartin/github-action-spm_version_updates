@@ -9,7 +9,10 @@ module GitOperations
   # @param   [String] repo_url The URL of the repository
   # @return [String]
   def self.trim_repo_url(repo_url)
-    repo_url.to_s.split("://").last.to_s.gsub(/\.git$/, "")
+    url = repo_url.to_s.strip
+    return "" if url.empty?
+
+    url.split("://").last.gsub(/\.git$/, "")
   end
 
   # Extract a readable name for the repo given the url, generally org/repo
@@ -35,7 +38,7 @@ module GitOperations
       .map { |line| line.split("/tags/").last }
       .filter_map { |line|
         begin
-          Semantic::Version.new(line)
+          Semantic::Version.new(normalize_version_tag(line))
         rescue ArgumentError
           nil
         end
@@ -94,5 +97,9 @@ module GitOperations
     core.zero? ? (left.to_s <=> right.to_s) : core
   end
 
-  private_class_method :ls_remote, :redact_credentials, :compare_semver
+  def self.normalize_version_tag(tag)
+    tag.sub(/\A(\d+)\.(\d+)(?=\z|[-+])/, '\1.\2.0')
+  end
+
+  private_class_method :ls_remote, :redact_credentials, :compare_semver, :normalize_version_tag
 end
