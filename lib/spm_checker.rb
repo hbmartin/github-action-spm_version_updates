@@ -235,9 +235,13 @@ class SpmChecker
     newest_above_reqs = available_versions.find { |version|
       @report_pre_releases ? true : version.pre.nil?
     }
+    # Suppressed only when nothing exists above the constraint (the newest overall
+    # is the newest in-constraint version). Being at the newest in-constraint
+    # version is intentionally still reported here, since report_above_maximum
+    # exists precisely to surface the out-of-range (e.g. next major) version.
     add_warning(
       "Newest version of #{name}: #{available_versions.first} (but this package is configured up to the next #{major_or_minor} version)",
       source
-    ) unless newest_above_reqs == newest_meeting_reqs || newest_meeting_reqs.to_s == resolved_version
+    ) unless newest_above_reqs == newest_meeting_reqs
   end
 end

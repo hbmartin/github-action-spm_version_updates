@@ -24,5 +24,8 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
+      # Runs the GitHub Action's own RSpec suite, covering both Xcode-project
+      # mode and Swift manifest mode. The legacy spec/spm_version_updates_spec.rb
+      # targets the retired Danger plugin and is intentionally not run here.
       - name: Run action specs
         run: bundle exec ruby -e "require 'rspec/core'; exit RSpec::Core::Runner.run(['spec/action', '--format', 'progress'])"
