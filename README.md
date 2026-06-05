@@ -130,7 +130,7 @@ A few things worth knowing about the token:
 - **`github-token` defaults to `${{ github.token }}`**, the automatic per-job token. You only need to set it explicitly to use a PAT or a GitHub App token (for example, to raise the API rate limit or to comment on a repository the default token can't write to).
 - **The token is used to post the comment, not to look up versions.** Dependency tags are fetched with `git ls-remote`, so a low rate limit on the token won't slow checks down.
 - **Pull requests from forks get a read-only `GITHUB_TOKEN`**, so the comment step can't write. If you want this to run on fork PRs, trigger it with `pull_request_target` (and review the [security implications](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)) or post the results from a separate, trusted workflow.
-- **Fork PR manifests are untrusted input.** With `pull_request_target`, checking out the PR head means a fork can change `Package.swift` or `.xcodeproj` dependency URLs. This action uses `git ls-remote` for those URLs, so a malicious PR can point the runner at any host it can reach and at any credentials already available to git. For fork PR workflows, set `persist-credentials: false`, avoid extra secrets/SSH keys/private network access, and restrict version lookups with `allow-hosts`.
+- **Fork PR manifests are untrusted input.** With `pull_request_target`, checking out the PR head means a fork can change `Package.swift` or `.xcodeproj` dependency URLs. This action uses `git ls-remote` for those URLs, so a malicious PR can point the runner at hosts it can reach and at credentials already available to git. Lookups are restricted to Git's `https`, `ssh`, and `git` transports; `file`, `ext`, and remote-helper transports are blocked. For fork PR workflows, set `persist-credentials: false`, avoid extra secrets/SSH keys/private network access, and restrict version lookups with `allow-hosts`.
 
 ```yaml
 on:
@@ -204,7 +204,7 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `report-above-maximum` | Report versions above the maximum constraint range | No | `false` |
 | `report-pre-releases` | Include pre-release versions in update reports | No | `false` |
 | `ignore-repos` | Comma-separated list of repository URLs to ignore | No | `''` |
-| `allow-hosts` | Comma-separated list of git remote hostnames allowed for version lookups. Empty allows any host. | No | `''` |
+| `allow-hosts` | Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. | No | `''` |
 | `fail-on-updates` | Legacy fail behavior. Set `true` to fail on any update, or `major` / `minor` / `patch` to fail on semantic version updates at or above that severity. | No | `false` |
 | `fail-on` | Fail on semantic version updates at or above this severity: `major`, `minor`, or `patch`. Overrides `fail-on-updates` when set. | No | `''` |
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | No | `false` |
@@ -238,6 +238,8 @@ The action always writes machine-readable outputs, appends a GitHub step summary
 | `minor-updates-found` | Number of minor semantic-version updates found. |
 | `patch-updates-found` | Number of patch semantic-version updates found. |
 | `updates-json` | JSON array of update objects. Each object has a `message` field and, when available, structured fields such as `type`, `package`, `repository_url`, `current_version`, `available_version`, `severity`, `note`, and `source`. |
+| `blocked` | `true` when the action stopped before a version lookup because a security gate such as `allow-hosts` blocked it; otherwise `false`. |
+| `error-message` | Failure message when `blocked` is `true`. |
 
 Use `fail-on: major` when only major semantic-version updates should fail the job after the outputs, step summary, annotations, and PR comment have been written. Use `minor` to fail on major or minor updates, and `patch` to fail on any semantic-version update. `fail-on-updates: true` remains supported when any reported update, including branch or revision updates, should fail the job.
 
@@ -295,7 +297,7 @@ The `Source:` line is only included in Swift manifest mode, where it tells you w
 ## Limitations
 
 - **Posting the PR comment is GitHub-specific.** The comment is created through the GitHub API, so the action has to run inside GitHub Actions on a GitHub-hosted pull request for that sink to be available. Outputs, step summaries, and annotations are still emitted on non-PR runs.
-- **Version lookups work against any git host the runner can reach by default.** Tags and branches are read with `git ls-remote`, so dependencies hosted on GitHub, GitLab, Bitbucket, or a self-hosted server all work. Private dependencies are supported as long as the runner is already authenticated to fetch them (SSH key or credentials in the environment); the action does not manage those credentials for you. Set `allow-hosts` for untrusted PRs or locked-down runners; host matching is exact, case-insensitive, and ignores URL schemes, credentials, paths, and ports.
+- **Version lookups work against any git host the runner can reach by default.** Tags and branches are read with `git ls-remote` over `https`, `ssh`, or `git` transports, so dependencies hosted on GitHub, GitLab, Bitbucket, or a self-hosted server all work when exposed through those protocols. Private dependencies are supported as long as the runner is already authenticated to fetch them (SSH key or credentials in the environment); the action does not manage those credentials for you. Set `allow-hosts` for untrusted PRs or locked-down runners; host matching is exact, case-insensitive, and ignores URL schemes, credentials, paths, and ports. When set, `allow-hosts` is enforced before enabled lookups only; an off-list dependency that would be contacted fails the action and writes `blocked=true` plus `error-message`.
 - **Updates are detected from semver tags.** A dependency that doesn't publish semver-style version tags won't produce version updates. Branch- and revision-pinned dependencies are handled separately via `check-branches` / `check-revisions`.
 - **Local packages are skipped.** `.package(path: ...)` dependencies and commented-out declarations are ignored.
 

@@ -35,22 +35,25 @@ class Action
     fail_with(failure_message) if failure_message
 
     puts("SPM version check completed successfully!")
-  rescue ModeError => e
-    fail_with(e.message)
+  rescue ModeError => error
+    fail_with(error.message)
   rescue XcodeParser::XcodeprojPathMustBeSet
     fail_with("Invalid Xcode project path")
   rescue XcodeParser::CouldNotFindResolvedFile
     fail_with("Could not find a Package.resolved file for the Xcode project")
-  rescue ManifestParser::CouldNotFindManifest => e
-    fail_with("Could not find Package.swift manifest: #{e.message}")
-  rescue ManifestParser::CouldNotFindResolvedFile => e
+  rescue ManifestParser::CouldNotFindManifest => error
+    fail_with("Could not find Package.swift manifest: #{error.message}")
+  rescue ManifestParser::CouldNotFindResolvedFile => error
     fail_with(
-      "Could not find any Package.resolved file (looked in: #{e.message}). " \
+      "Could not find any Package.resolved file (looked in: #{error.message}). " \
       "Commit a Package.resolved next to each manifest or set package-resolved-paths."
     )
-  rescue StandardError => e
-    puts(e.backtrace) if ENV.fetch("DEBUG", nil)
-    fail_with(e.message)
+  rescue SpmChecker::DisallowedRepositoryHost => error
+    ActionReporter::BlockedReport.write(error.message)
+    fail_with(error.message)
+  rescue StandardError => error
+    puts(error.backtrace) if ENV.fetch("DEBUG", nil)
+    fail_with(error.message)
   end
 
   private

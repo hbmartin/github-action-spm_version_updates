@@ -87,6 +87,20 @@ RSpec.describe SpmChecker do
       expect(checker.allow_hosts).to eq(["github.com"])
     end
 
+    it "warns about malformed configured dependency hosts", :aggregate_failures do
+      checker.allow_hosts = ["https//github.com", "not a host!", "github.com"]
+
+      expect {
+        checker.send(:normalize_allow_hosts)
+      }.to output(
+        a_string_including(
+          'allow-hosts entry "https//github.com"',
+          'allow-hosts entry "not a host!"'
+        )
+      ).to_stderr
+      expect(checker.allow_hosts).to eq(["github.com"])
+    end
+
     it "fails before fetching version tags when a dependency host is not allowed", :aggregate_failures do
       checker.allow_hosts = ["github.com"]
 
@@ -101,6 +115,47 @@ RSpec.describe SpmChecker do
         expect {
           checker.check_manifests([File.join(dir, "Package.swift")])
         }.to raise_error(SpmChecker::DisallowedRepositoryHost, /metadata\.internal.*allow-hosts/)
+      end
+
+      expect(GitOperations).not_to have_received(:version_tags)
+    end
+
+    it "rejects parser-differential URLs whose real host is not allowed", :aggregate_failures do
+      checker.allow_hosts = ["github.com"]
+
+      Dir.mktmpdir do |dir|
+        url = "https://github.com@evil.com/a/b"
+        File.write(File.join(dir, "Package.swift"), ".package(url: \"#{url}\", from: \"1.0.0\")")
+        File.write(File.join(dir, "Package.resolved"),
+                   {
+                     "pins" => [{ "location" => url, "state" => { "version" => "1.0.0" } }],
+                     "version" => 2
+                   }.to_json)
+
+        expect {
+          checker.check_manifests([File.join(dir, "Package.swift")])
+        }.to raise_error(SpmChecker::DisallowedRepositoryHost, /evil\.com.*allow-hosts/)
+      end
+
+      expect(GitOperations).not_to have_received(:version_tags)
+    end
+
+    it "rejects local and ext transports before fetching when allow-hosts is configured", :aggregate_failures do
+      checker.allow_hosts = ["github.com"]
+
+      ["file:///tmp/private-repo", "ext::sh -c touch /tmp/pwned"].each do |url|
+        Dir.mktmpdir do |dir|
+          File.write(File.join(dir, "Package.swift"), ".package(url: \"#{url}\", from: \"1.0.0\")")
+          File.write(File.join(dir, "Package.resolved"),
+                     {
+                       "pins" => [{ "location" => url, "state" => { "version" => "1.0.0" } }],
+                       "version" => 2
+                     }.to_json)
+
+          expect {
+            checker.check_manifests([File.join(dir, "Package.swift")])
+          }.to raise_error(SpmChecker::DisallowedRepositoryHost, /unknown host.*allow-hosts/)
+        end
       end
 
       expect(GitOperations).not_to have_received(:version_tags)
@@ -123,6 +178,58 @@ RSpec.describe SpmChecker do
       end
 
       expect(GitOperations).not_to have_received(:branch_last_commit)
+    end
+
+    it "does not block off-list exact dependencies when exact-version checks are disabled", :aggregate_failures do
+      checker.allow_hosts = ["github.com"]
+
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "Package.swift"), '.package(url: "https://metadata.internal/a/b", exact: "1.0.0")')
+        File.write(File.join(dir, "Package.resolved"),
+                   {
+                     "pins" => [{ "location" => "https://metadata.internal/a/b", "state" => { "version" => "1.0.0" } }],
+                     "version" => 2
+                   }.to_json)
+
+        expect(checker.check_manifests([File.join(dir, "Package.swift")])).to eq([])
+      end
+
+      expect(GitOperations).not_to have_received(:version_tags)
+    end
+
+    it "does not block off-list branch dependencies when branch checks are disabled", :aggregate_failures do
+      checker.allow_hosts = ["github.com"]
+      checker.check_branches = false
+
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "Package.swift"), '.package(url: "git@metadata.internal:a/b.git", branch: "main")')
+        File.write(File.join(dir, "Package.resolved"),
+                   {
+                     "pins" => [{ "location" => "git@metadata.internal:a/b.git", "state" => { "revision" => "abc123" } }],
+                     "version" => 2
+                   }.to_json)
+
+        expect(checker.check_manifests([File.join(dir, "Package.swift")])).to eq([])
+      end
+
+      expect(GitOperations).not_to have_received(:branch_last_commit)
+    end
+
+    it "does not block off-list revision dependencies when revision checks are disabled", :aggregate_failures do
+      checker.allow_hosts = ["github.com"]
+
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "Package.swift"), '.package(url: "https://metadata.internal/a/b", revision: "abc123")')
+        File.write(File.join(dir, "Package.resolved"),
+                   {
+                     "pins" => [{ "location" => "https://metadata.internal/a/b", "state" => { "revision" => "abc123" } }],
+                     "version" => 2
+                   }.to_json)
+
+        expect(checker.check_manifests([File.join(dir, "Package.swift")])).to eq([])
+      end
+
+      expect(GitOperations).not_to have_received(:version_tags)
     end
 
     it "fetches version tags with a bounded worker pool and preserves warning order", :aggregate_failures do

@@ -12,6 +12,48 @@ class SpmChecker
 
   class DisallowedRepositoryHost < StandardError; end
 
+  # Normalizes user-provided allow-host entries into hostnames.
+  class AllowedHost
+    MALFORMED_SCHEME_PATTERN = %r{\A[a-z][a-z0-9+\-.]*//}i
+
+    def self.normalize(entry)
+      new(entry).normalize
+    end
+
+    def initialize(entry)
+      @raw = entry.to_s.strip
+    end
+
+    def normalize
+      return nil if raw.empty?
+      return parsed if parsed && !malformed_scheme?
+      return fallback if fallback.match?(GitOperations::HOST_PATTERN)
+
+      warn_unparseable
+      nil
+    end
+
+    private
+
+    attr_reader :raw
+
+    def parsed
+      @parsed ||= GitOperations.host(raw)
+    end
+
+    def fallback
+      @fallback ||= raw.sub(/:\d+\z/, "").downcase
+    end
+
+    def malformed_scheme?
+      raw.match?(MALFORMED_SCHEME_PATTERN)
+    end
+
+    def warn_unparseable
+      warn("allow-hosts entry #{raw.inspect} could not be parsed as a host and will not match any repository URL")
+    end
+  end
+
   # Structured facts about each warning, used by the GitHub Action comment
   # renderer. `check_for_updates` and `check_manifests` still return the legacy
   # string warnings for compatibility with existing plugin-style callers.
@@ -111,7 +153,7 @@ class SpmChecker
 
   def normalize_allow_hosts
     @allow_hosts = Array(@allow_hosts)
-      .filter_map { |host| GitOperations.host(host) || host.to_s.strip.sub(/:\d+\z/, "").downcase }
+      .filter_map { |host| AllowedHost.normalize(host) }
       .reject(&:empty?)
   end
 
@@ -203,7 +245,6 @@ class SpmChecker
       next if requirement.nil?
 
       name = GitOperations.repo_name(normalized_url)
-      validate_repository_host(name, repository_url, source)
 
       resolved_version = resolved_versions[normalized_url]
 
@@ -212,9 +253,12 @@ class SpmChecker
         next
       end
 
+      kind = requirement["kind"]
+      validate_repository_host(name, repository_url, source) if git_lookup_required?(kind)
+
       {
         cache_key: version_tags_cache_key(normalized_url, repository_url),
-        kind: requirement["kind"],
+        kind:,
         name:,
         normalized_url:,
         repository_url:,
@@ -282,6 +326,12 @@ class SpmChecker
     return @check_when_exact if kind == "exactVersion"
 
     true
+  end
+
+  def git_lookup_required?(kind)
+    return @check_branches if kind == "branch"
+
+    version_tag_lookup_required?(kind)
   end
 
   def version_tags_for(package)

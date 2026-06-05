@@ -14,16 +14,20 @@ RSpec.describe GitOperations do
     instance_double(Process::Status, success?: success)
   end
 
+  def git_ls_remote_args(flag, repo_url)
+    [{ "GIT_ALLOW_PROTOCOL" => described_class::ALLOWED_PROTOCOLS }, "git", "ls-remote", flag, repo_url]
+  end
+
   describe ".version_tags" do
     it "passes the URL to git ls-remote as a discrete argument (never through a shell)" do
       allow(Open3).to receive(:capture3)
-        .with("git", "ls-remote", "-t", "https://github.com/swiftlang/swift-syntax")
+        .with(*git_ls_remote_args("-t", "https://github.com/swiftlang/swift-syntax"))
         .and_return(["", "", status(true)])
 
       described_class.version_tags("https://github.com/swiftlang/swift-syntax")
 
       expect(Open3).to have_received(:capture3)
-        .with("git", "ls-remote", "-t", "https://github.com/swiftlang/swift-syntax")
+        .with(*git_ls_remote_args("-t", "https://github.com/swiftlang/swift-syntax"))
     end
 
     it "returns the parsed tags newest-first" do
@@ -47,6 +51,17 @@ RSpec.describe GitOperations do
       result = nil
       expect { result = described_class.version_tags("github.com/foo/bar") }
         .to output(%r{git ls-remote .* failed for github\.com/foo/bar}).to_stderr
+      expect(result).to eq([])
+    end
+
+    it "runs git with a transport allowlist that blocks helper protocols", :aggregate_failures do
+      allow(Open3).to receive(:capture3)
+        .with(*git_ls_remote_args("-t", "foo://github.com/foo/bar"))
+        .and_return(["", "fatal: transport 'foo' not allowed", status(false)])
+
+      result = nil
+      expect { result = described_class.version_tags("foo://github.com/foo/bar") }
+        .to output(/transport 'foo' not allowed/).to_stderr
       expect(result).to eq([])
     end
 
@@ -147,9 +162,10 @@ RSpec.describe GitOperations do
       expect(described_class.host("git@github.com:foo/bar.git")).to eq("github.com")
       expect(described_class.host("github.com/foo/bar")).to eq("github.com")
       expect(described_class.host("https://user:token@GitHub.com:8443/foo/bar")).to eq("github.com")
+      expect(described_class.host("https://github.com@evil.com/foo/bar")).to eq("evil.com")
     end
 
-    it "returns nil for blank and local path remotes", :aggregate_failures do
+    it "returns nil for blank, local path, and non-host remotes", :aggregate_failures do
       expect(described_class.host(nil)).to be_nil
       expect(described_class.host("")).to be_nil
       expect(described_class.host("   ")).to be_nil
@@ -157,6 +173,8 @@ RSpec.describe GitOperations do
       expect(described_class.host("./repo")).to be_nil
       expect(described_class.host("../repo")).to be_nil
       expect(described_class.host("file:///tmp/repo")).to be_nil
+      expect(described_class.host("ext::sh -c touch /tmp/pwned")).to be_nil
+      expect(described_class.host("foo bar/baz")).to be_nil
     end
   end
 
