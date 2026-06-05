@@ -65,6 +65,48 @@ RSpec.describe SpmChecker do
       expect(received).to include("https://github.com/onevcat/Kingfisher", "https://github.com/kean/Nuke")
     end
 
+    it "allows configured dependency hosts case-insensitively" do
+      checker.allow_hosts = ["GitHub.com"]
+
+      warnings = checker.check_manifests([modules_manifest])
+
+      expect(warnings).to include("Newer version of onevcat/Kingfisher: 7.10.2\nSource: #{modules_manifest}")
+    end
+
+    it "fails before fetching version tags when a dependency host is not allowed" do
+      checker.allow_hosts = ["github.com"]
+      expect(GitOperations).not_to receive(:version_tags)
+
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "Package.swift"), '.package(url: "https://metadata.internal/a/b", from: "1.0.0")')
+        File.write(File.join(dir, "Package.resolved"), {
+          "pins" => [{ "location" => "https://metadata.internal/a/b", "state" => { "version" => "1.0.0" } }],
+          "version" => 2,
+        }.to_json)
+
+        expect {
+          checker.check_manifests([File.join(dir, "Package.swift")])
+        }.to raise_error(SpmChecker::DisallowedRepositoryHost, /metadata\.internal.*allow-hosts/)
+      end
+    end
+
+    it "fails before checking branch heads when a branch dependency host is not allowed" do
+      checker.allow_hosts = ["github.com"]
+      expect(GitOperations).not_to receive(:branch_last_commit)
+
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "Package.swift"), '.package(url: "git@metadata.internal:a/b.git", branch: "main")')
+        File.write(File.join(dir, "Package.resolved"), {
+          "pins" => [{ "location" => "git@metadata.internal:a/b.git", "state" => { "revision" => "abc123" } }],
+          "version" => 2,
+        }.to_json)
+
+        expect {
+          checker.check_manifests([File.join(dir, "Package.swift")])
+        }.to raise_error(SpmChecker::DisallowedRepositoryHost, /metadata\.internal.*allow-hosts/)
+      end
+    end
+
     it "fetches version tags with a bounded worker pool and preserves warning order" do
       package_count = SpmChecker::VERSION_TAG_WORKER_COUNT + 4
       remote_packages = (1..package_count).each_with_object({}) { |index, packages|

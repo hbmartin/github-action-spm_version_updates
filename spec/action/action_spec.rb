@@ -30,6 +30,7 @@ RSpec.describe Action do
       INPUT_REPORT_ABOVE_MAXIMUM
       INPUT_REPORT_PRE_RELEASES
       INPUT_IGNORE_REPOS
+      INPUT_ALLOW_HOSTS
       INPUT_FAIL_ON_UPDATES
       GITHUB_WORKSPACE
     ).to_h { |key| [key, nil] }.merge(overrides)
@@ -40,6 +41,7 @@ RSpec.describe Action do
       xcode_project_path: nil,
       manifest_paths: [],
       resolved_paths: [],
+      allow_hosts: [],
     }.merge(overrides)
   end
 
@@ -85,6 +87,7 @@ RSpec.describe Action do
           "INPUT_REPORT_ABOVE_MAXIMUM" => "true",
           "INPUT_REPORT_PRE_RELEASES" => "true",
           "INPUT_IGNORE_REPOS" => " https://github.com/a/b, https://github.com/c/d ",
+          "INPUT_ALLOW_HOSTS" => " github.com, gitlab.com ",
           "INPUT_FAIL_ON_UPDATES" => "true"
         )
       ) do
@@ -99,6 +102,7 @@ RSpec.describe Action do
             report_above_maximum: true,
             report_pre_releases: true,
             ignore_repos: ["https://github.com/a/b", "https://github.com/c/d"],
+            allow_hosts: ["github.com", "gitlab.com"],
             fail_on_updates: true,
           }
         )
@@ -192,7 +196,8 @@ RSpec.describe Action do
       with_env(
         input_env(
           "INPUT_PACKAGE_MANIFEST_PATHS" => "Modules/Package.swift\nBuildTools/Package.swift",
-          "INPUT_PACKAGE_RESOLVED_PATHS" => "Modules/Package.resolved\nBuildTools/Package.resolved"
+          "INPUT_PACKAGE_RESOLVED_PATHS" => "Modules/Package.resolved\nBuildTools/Package.resolved",
+          "INPUT_ALLOW_HOSTS" => "github.com"
         )
       ) do
         action.run
@@ -202,6 +207,7 @@ RSpec.describe Action do
         ["Modules/Package.swift", "BuildTools/Package.swift"],
         ["Modules/Package.resolved", "BuildTools/Package.resolved"]
       )
+      expect(configured_checker.allow_hosts).to eq(["github.com"])
       expect(configured_checker).not_to have_received(:check_for_updates)
       expect(action).to have_received(:report).with([], [])
     end

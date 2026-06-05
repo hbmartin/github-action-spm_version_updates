@@ -130,6 +130,29 @@ A few things worth knowing about the token:
 - **`github-token` defaults to `${{ github.token }}`**, the automatic per-job token. You only need to set it explicitly to use a PAT or a GitHub App token (for example, to raise the API rate limit or to comment on a repository the default token can't write to).
 - **The token is used to post the comment, not to look up versions.** Dependency tags are fetched with `git ls-remote`, so a low rate limit on the token won't slow checks down.
 - **Pull requests from forks get a read-only `GITHUB_TOKEN`**, so the comment step can't write. If you want this to run on fork PRs, trigger it with `pull_request_target` (and review the [security implications](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)) or post the results from a separate, trusted workflow.
+- **Fork PR manifests are untrusted input.** With `pull_request_target`, checking out the PR head means a fork can change `Package.swift` or `.xcodeproj` dependency URLs. This action uses `git ls-remote` for those URLs, so a malicious PR can point the runner at any host it can reach and at any credentials already available to git. For fork PR workflows, set `persist-credentials: false`, avoid extra secrets/SSH keys/private network access, and restrict version lookups with `allow-hosts`.
+
+```yaml
+on:
+  pull_request_target:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  spm-version-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: hbmartin/github-action-spm_version_updates@v1
+        with:
+          package-manifest-paths: Modules/Package.swift
+          allow-hosts: github.com
+```
 
 ## Source modes
 
@@ -181,6 +204,7 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `report-above-maximum` | Report versions above the maximum constraint range | No | `false` |
 | `report-pre-releases` | Include pre-release versions in update reports | No | `false` |
 | `ignore-repos` | Comma-separated list of repository URLs to ignore | No | `''` |
+| `allow-hosts` | Comma-separated list of git remote hostnames allowed for version lookups. Empty allows any host. | No | `''` |
 | `fail-on-updates` | Fail the action when one or more dependency updates are found | No | `false` |
 | `github-token` | GitHub token for API access | No | `${{ github.token }}` |
 
@@ -259,13 +283,14 @@ The `Source:` line is only included in Swift manifest mode, where it tells you w
     check-revisions: false
     report-above-maximum: true
     ignore-repos: 'https://github.com/pointfreeco/swift-snapshot-testing'
+    allow-hosts: 'github.com,gitlab.com'
     fail-on-updates: false
 ```
 
 ## Limitations
 
 - **Posting the PR comment is GitHub-specific.** The comment is created through the GitHub API, so the action has to run inside GitHub Actions on a GitHub-hosted pull request for that sink to be available. Outputs, step summaries, and annotations are still emitted on non-PR runs.
-- **Version lookups work against any git host the runner can reach.** Tags and branches are read with `git ls-remote`, so dependencies hosted on GitHub, GitLab, Bitbucket, or a self-hosted server all work. Private dependencies are supported as long as the runner is already authenticated to fetch them (SSH key or credentials in the environment); the action does not manage those credentials for you.
+- **Version lookups work against any git host the runner can reach by default.** Tags and branches are read with `git ls-remote`, so dependencies hosted on GitHub, GitLab, Bitbucket, or a self-hosted server all work. Private dependencies are supported as long as the runner is already authenticated to fetch them (SSH key or credentials in the environment); the action does not manage those credentials for you. Set `allow-hosts` for untrusted PRs or locked-down runners; host matching is exact, case-insensitive, and ignores URL schemes, credentials, paths, and ports.
 - **Updates are detected from semver tags.** A dependency that doesn't publish semver-style version tags won't produce version updates. Branch- and revision-pinned dependencies are handled separately via `check-branches` / `check-revisions`.
 - **Local packages are skipped.** `.package(path: ...)` dependencies and commented-out declarations are ignored.
 

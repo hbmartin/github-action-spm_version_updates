@@ -64,6 +64,33 @@ No temporary Xcode project. No synthetic `Package.resolved`. No repo-specific
 parser. No macOS runner — manifest parsing is pure Ruby and runs on
 `ubuntu-latest` without a Swift or Xcode toolchain.
 
+### Fork pull requests
+
+Fork PRs need extra care if you switch the trigger to `pull_request_target` so
+the action can write a summary comment. With that trigger, checking out the PR
+head makes `Package.swift` untrusted input: a malicious fork can change package
+URLs, and this action will ask `git ls-remote` to contact those remotes. Keep
+checkout credentials off, avoid extra secrets or SSH keys, and set
+`allow-hosts` to the git hosts your manifests are expected to use:
+
+```yaml
+on:
+  pull_request_target:
+
+jobs:
+  spm-version-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: hbmartin/github-action-spm_version_updates@v1
+        with:
+          package-manifest-paths: Modules/Package.swift
+          allow-hosts: github.com
+```
+
 ## Migrating from the synthetic-`.xcodeproj` workaround
 
 Before manifest mode existed, repos in this layout had to bridge the gap with a CI
@@ -220,6 +247,7 @@ it came from, so you know exactly where to make the change:
 | `report-above-maximum` | Report versions above the maximum constraint range. | `false` |
 | `report-pre-releases` | Include pre-release versions in update reports. | `false` |
 | `ignore-repos` | Comma-separated list of repository URLs to ignore. | `''` |
+| `allow-hosts` | Comma-separated list of git remote hostnames allowed for version lookups. Empty allows any host. | `''` |
 | `github-token` | GitHub token for posting the PR comment. | `${{ github.token }}` |
 
 Provide **exactly one** of `package-manifest-paths` or `xcode-project-path`.

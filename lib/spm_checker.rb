@@ -11,6 +11,8 @@ require_relative "package_resolved"
 class SpmChecker
   VERSION_TAG_WORKER_COUNT = 8
 
+  class DisallowedRepositoryHost < StandardError; end
+
   # Structured facts about each warning, used by the GitHub Action comment
   # renderer. `check_for_updates` and `check_manifests` still return the legacy
   # string warnings for compatibility with existing plugin-style callers.
@@ -34,6 +36,9 @@ class SpmChecker
   # A list of repository URLs for packages to ignore entirely
   attr_accessor :ignore_repos
 
+  # A list of git remote hostnames allowed for dependency version lookups
+  attr_accessor :allow_hosts
+
   def initialize
     @check_when_exact = false
     @check_branches = true
@@ -41,6 +46,7 @@ class SpmChecker
     @report_above_maximum = false
     @report_pre_releases = false
     @ignore_repos = []
+    @allow_hosts = []
     @warnings = []
     @warning_details = []
     @version_tags_cache = {}
@@ -54,6 +60,7 @@ class SpmChecker
     clear_warnings
     reset_version_tags_cache
     normalize_ignore_repos
+    normalize_allow_hosts
 
     remote_packages = XcodeParser.get_packages(xcodeproj_path)
     resolved_versions = XcodeParser.get_resolved_versions(xcodeproj_path)
@@ -81,6 +88,7 @@ class SpmChecker
     clear_warnings
     reset_version_tags_cache
     normalize_ignore_repos
+    normalize_allow_hosts
 
     resolved_versions = merged_resolved_versions(manifest_paths, resolved_paths)
     puts "Found resolved versions for #{resolved_versions.size} packages"
@@ -96,6 +104,12 @@ class SpmChecker
 
   def normalize_ignore_repos
     @ignore_repos = @ignore_repos&.map { |repo| GitOperations.trim_repo_url(repo) }
+  end
+
+  def normalize_allow_hosts
+    @allow_hosts = Array(@allow_hosts)
+      .filter_map { |host| GitOperations.host(host) || host.to_s.strip.downcase }
+      .reject(&:empty?)
   end
 
   def clear_warnings
@@ -186,6 +200,8 @@ class SpmChecker
       next if requirement.nil?
 
       name = GitOperations.repo_name(normalized_url)
+      ensure_repository_host_allowed!(name, repository_url, source)
+
       resolved_version = resolved_versions[normalized_url]
 
       if resolved_version.nil?
@@ -203,6 +219,20 @@ class SpmChecker
         source: source,
       }
     }
+  end
+
+  def ensure_repository_host_allowed!(name, repository_url, source)
+    return if @allow_hosts.nil? || @allow_hosts.empty?
+
+    host = GitOperations.host(repository_url)
+    return if host && @allow_hosts.include?(host)
+
+    source_note = source ? " from #{source}" : ""
+    host_note = host || "unknown host"
+    raise(
+      DisallowedRepositoryHost,
+      "Repository host #{host_note.inspect} for #{name}#{source_note} is not allowed by allow-hosts (allowed: #{@allow_hosts.join(', ')})"
+    )
   end
 
   def prefetch_version_tags(packages)

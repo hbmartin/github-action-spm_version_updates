@@ -64,6 +64,7 @@ class Action
       report_above_maximum: env_flag("INPUT_REPORT_ABOVE_MAXIMUM"),
       report_pre_releases: env_flag("INPUT_REPORT_PRE_RELEASES"),
       ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
+      allow_hosts: env_csv("INPUT_ALLOW_HOSTS"),
       fail_on_updates: env_flag("INPUT_FAIL_ON_UPDATES")
     }
   end
@@ -79,6 +80,7 @@ class Action
     puts "Report above maximum: #{inputs[:report_above_maximum]}"
     puts "Report pre-releases: #{inputs[:report_pre_releases]}"
     puts "Ignore repos: #{inputs[:ignore_repos].join(', ')}" unless inputs[:ignore_repos].empty?
+    puts "Allow hosts: #{inputs[:allow_hosts].join(', ')}" unless inputs[:allow_hosts].empty?
     puts "Fail on updates: #{inputs[:fail_on_updates]}"
   end
 
@@ -90,6 +92,7 @@ class Action
     checker.report_above_maximum = inputs[:report_above_maximum]
     checker.report_pre_releases = inputs[:report_pre_releases]
     checker.ignore_repos = inputs[:ignore_repos]
+    checker.allow_hosts = inputs[:allow_hosts]
     checker
   end
 

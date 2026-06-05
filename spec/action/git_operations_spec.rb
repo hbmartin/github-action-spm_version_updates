@@ -136,6 +136,26 @@ RSpec.describe GitOperations do
     end
   end
 
+  describe ".host" do
+    it "extracts normalized hostnames from common git remote forms", :aggregate_failures do
+      expect(described_class.host("https://github.com/foo/bar")).to eq("github.com")
+      expect(described_class.host("ssh://git@github.com/foo/bar.git")).to eq("github.com")
+      expect(described_class.host("git@github.com:foo/bar.git")).to eq("github.com")
+      expect(described_class.host("github.com/foo/bar")).to eq("github.com")
+      expect(described_class.host("https://user:token@GitHub.com:8443/foo/bar")).to eq("github.com")
+    end
+
+    it "returns nil for blank and local path remotes", :aggregate_failures do
+      expect(described_class.host(nil)).to be_nil
+      expect(described_class.host("")).to be_nil
+      expect(described_class.host("   ")).to be_nil
+      expect(described_class.host("/tmp/repo")).to be_nil
+      expect(described_class.host("./repo")).to be_nil
+      expect(described_class.host("../repo")).to be_nil
+      expect(described_class.host("file:///tmp/repo")).to be_nil
+    end
+  end
+
   def not_outputting_credentials
     satisfy("not output raw credentials") { |output| !output.include?("user:token") }
   end
