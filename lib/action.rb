@@ -29,7 +29,7 @@ class Action
     checker = configure_checker(inputs)
     warnings = run_checks(checker, inputs)
     warning_details = checker.warning_details if checker.respond_to?(:warning_details)
-    report(warnings, warning_details)
+    report(warnings, warning_details, comment_on_success: inputs[:comment_on_success])
     fail_with("Found #{warnings.size} SPM dependency update#{warnings.size == 1 ? '' : 's'}") if inputs[:fail_on_updates] && !warnings.empty?
 
     puts("SPM version check completed successfully!")
@@ -65,7 +65,8 @@ class Action
       report_pre_releases: env_flag("INPUT_REPORT_PRE_RELEASES"),
       ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
       allow_hosts: env_csv("INPUT_ALLOW_HOSTS"),
-      fail_on_updates: env_flag("INPUT_FAIL_ON_UPDATES")
+      fail_on_updates: env_flag("INPUT_FAIL_ON_UPDATES"),
+      comment_on_success: env_flag("INPUT_COMMENT_ON_SUCCESS")
     }
   end
 
@@ -82,6 +83,7 @@ class Action
     puts("Ignore repos: #{inputs[:ignore_repos].join(', ')}") unless inputs[:ignore_repos].empty?
     puts("Allow hosts: #{inputs[:allow_hosts].join(', ')}") unless inputs[:allow_hosts].empty?
     puts("Fail on updates: #{inputs[:fail_on_updates]}")
+    puts("Comment on success: #{inputs[:comment_on_success]}")
   end
 
   def configure_checker(inputs)
@@ -113,12 +115,16 @@ class Action
     end
   end
 
-  def report(warnings, warning_details = nil)
+  def report(warnings, warning_details = nil, comment_on_success: false)
     ActionReporter.new(warnings, warning_details).write
 
     if warnings.empty?
       puts("✅ All SPM dependencies are up to date!")
-      @github_integration.post_comment("✅ **SPM Dependencies**: All dependencies are up to date!")
+      if comment_on_success
+        @github_integration.post_comment("✅ **SPM Dependencies**: All dependencies are up to date!")
+      else
+        @github_integration.delete_existing_comment
+      end
     else
       puts("⚠️  Found #{warnings.size} potential updates")
       @github_integration.post_comment_with_warnings(warnings, warning_details)

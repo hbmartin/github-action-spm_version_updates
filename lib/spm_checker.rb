@@ -157,7 +157,7 @@ class SpmChecker
         warn_for_branch(
           package[:requirement]["branch"],
           package[:name],
-          package[:cache_key],
+          package[:normalized_url],
           package[:repository_url],
           package[:resolved_version],
           package[:source]
@@ -168,7 +168,7 @@ class SpmChecker
       if package[:kind] == "revision"
         warn_for_revision(
           package[:name],
-          package[:cache_key],
+          package[:normalized_url],
           package[:repository_url],
           package[:resolved_version],
           version_tags_for(package),
@@ -180,7 +180,7 @@ class SpmChecker
       check_versioned_package(
         package[:kind],
         package[:name],
-        package[:cache_key],
+        package[:normalized_url],
         package[:repository_url],
         package[:requirement],
         package[:resolved_version],
@@ -209,9 +209,10 @@ class SpmChecker
       end
 
       {
-        cache_key: normalized_url,
+        cache_key: version_tags_cache_key(normalized_url, repository_url),
         kind: requirement["kind"],
         name:,
+        normalized_url:,
         repository_url:,
         requirement:,
         resolved_version:,
@@ -232,6 +233,17 @@ class SpmChecker
       DisallowedRepositoryHost,
       "Repository host #{host_note.inspect} for #{name}#{source_note} is not allowed by allow-hosts (allowed: #{@allow_hosts.join(', ')})"
     )
+  end
+
+  def ensure_repository_host_allowed(name, repository_url, source)
+    ensure_repository_host_allowed!(name, repository_url, source)
+    true
+  rescue DisallowedRepositoryHost
+    false
+  end
+
+  def version_tags_cache_key(normalized_url, repository_url)
+    "#{normalized_url}\n#{repository_url}"
   end
 
   def prefetch_version_tags(packages)
@@ -303,8 +315,13 @@ class SpmChecker
   def add_warning(message, source = nil, detail = nil)
     full_message = source.nil? ? message : "#{message}\nSource: #{source}"
     @warnings << full_message
-    @warning_details << detail.merge(message: full_message, source:) if detail
+    @warning_details << warning_detail_record(message, source, detail)
     puts("WARNING: #{message}#{source ? " (#{source})" : ''}")
+  end
+
+  def warning_detail_record(message, source, detail)
+    record = detail ? detail.merge(message:, source:) : { message:, source: }
+    record.compact
   end
 
   def warning_detail(type, name, normalized_url, repository_url, resolved_version, available_version, note = nil)

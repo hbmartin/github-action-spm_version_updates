@@ -45,6 +45,15 @@ class GithubIntegration
     post_comment(message)
   end
 
+  def delete_existing_comment
+    return unless can_post_comments?
+
+    existing_comment = find_existing_comment
+    return unless existing_comment
+
+    delete_comment(existing_comment[:id])
+  end
+
   private
 
   def can_post_comments?
@@ -185,33 +194,93 @@ class GithubIntegration
   end
 
   def links_cell(group)
-    github_url = github_repository_url(group[:repository_url])
-    return "N/A" unless github_url
+    repository = repository_links(group[:repository_url])
+    return "N/A" unless repository
 
     compare_links = group[:updates].map.with_index(1) { |update, index|
       label = group[:updates].size == 1 ? "Compare" : "Compare #{index}"
-      "[#{label}](#{compare_url(github_url, update[:current], update[:available])})"
+      "[#{label}](#{compare_url(repository, update[:current], update[:available])})"
     }
-    (compare_links + ["[Releases](#{github_url}/releases)"]).join("<br>")
+    (compare_links + [release_link(repository)]).join("<br>")
   end
 
-  def compare_url(github_url, current, available)
-    "#{github_url}/compare/#{url_ref(current)}...#{url_ref(available)}"
+  def compare_url(repository, current, available)
+    base_url = repository[:base_url]
+    current_ref = url_ref(current)
+    available_ref = url_ref(available)
+
+    case repository[:host]
+    when "github.com"
+      "#{base_url}/compare/#{current_ref}...#{available_ref}"
+    when "gitlab.com"
+      "#{base_url}/-/compare/#{current_ref}...#{available_ref}"
+    when "bitbucket.org"
+      "#{base_url}/branches/compare/#{current_ref}..#{available_ref}"
+    end
   end
 
-  def github_repository_url(repository_url)
+  def release_link(repository)
+    case repository[:host]
+    when "github.com"
+      "[Releases](#{repository[:base_url]}/releases)"
+    when "gitlab.com"
+      "[Releases](#{repository[:base_url]}/-/releases)"
+    when "bitbucket.org"
+      "[Tags](#{repository[:base_url]}/downloads/?tab=tags)"
+    end
+  end
+
+  def repository_links(repository_url)
+    host, path = repository_host_and_path(repository_url)
+    return nil unless host && path
+
+    {
+      host:,
+      base_url: "https://#{host}/#{path}"
+    }
+  end
+
+  def repository_host_and_path(repository_url)
     value = repository_url.to_s.strip
     return nil if value.empty?
 
-    path = value[%r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?github\.com[:/](.+)\z}i, 1]
-    path ||= value[/\Agit@github\.com:(.+)\z/i, 1]
-    path ||= value[%r{\Agithub\.com[:/](.+)\z}i, 1]
-    return nil if path.nil?
+    match = value.match(%r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>github\.com|gitlab\.com|bitbucket\.org)(?::\d+)?/(?<path>.+)\z}i)
+    match ||= value.match(%r{\A(?:[^@/\s]+@)?(?<host>github\.com|gitlab\.com|bitbucket\.org)[:/](?<path>.+)\z}i)
+    return nil unless match
 
-    owner_repo = path.sub(%r{\A/+}, "").sub(/\.git\z/i, "").split("/").first(2).join("/")
-    return nil unless owner_repo.match?(%r{\A[^/]+/[^/]+\z})
+    host = match[:host].downcase
+    path = repository_path_for(host, match[:path])
+    return nil unless path
 
-    "https://github.com/#{owner_repo}"
+    [host, path]
+  end
+
+  def repository_path_for(host, path)
+    segments = normalized_repository_path_segments(path)
+    segments = segments.take_while { |segment| segment != "-" } if host == "gitlab.com"
+
+    case host
+    when "github.com", "bitbucket.org"
+      return nil if segments.size < 2
+
+      segments.first(2).join("/")
+    when "gitlab.com"
+      return nil if segments.size < 2
+
+      segments.join("/")
+    end
+  end
+
+  def normalized_repository_path_segments(path)
+    path.to_s
+      .split(/[?#]/, 2)
+      .first
+      .to_s
+      .sub(%r{\A/+}, "")
+      .sub(%r{/+\z}, "")
+      .sub(/\.git\z/i, "")
+      .split("/")
+      .reject(&:empty?)
   end
 
   def detail_value(detail, key)
@@ -258,5 +327,12 @@ class GithubIntegration
     puts("Updated existing comment: #{comment[:html_url]}")
   rescue Octokit::Error => e
     puts("Error updating comment: #{e.message}")
+  end
+
+  def delete_comment(comment_id)
+    @client.delete_comment(@github_repository, comment_id)
+    puts("Deleted resolved comment: #{comment_id}")
+  rescue Octokit::Error => e
+    puts("Error deleting comment: #{e.message}")
   end
 end

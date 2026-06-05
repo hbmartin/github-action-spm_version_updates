@@ -244,7 +244,7 @@ Use `fail-on-updates: true` when dependency updates should fail the job after th
     fail-on-updates: true
 
 - name: Use update count
-  if: steps.spm-updates.outputs.updates-found != '0'
+  if: ${{ always() && steps.spm-updates.outputs.updates-found != '0' }}
   run: echo '${{ steps.spm-updates.outputs.updates-json }}'
 ```
 

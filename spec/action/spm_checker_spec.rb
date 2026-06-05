@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "timeout"
 require "tmpdir"
 require_relative "../../lib/spm_checker"
 
@@ -127,21 +128,33 @@ RSpec.describe SpmChecker do
       in_flight = 0
       max_in_flight = 0
       mutex = Mutex.new
+      release = Queue.new
+      started = Queue.new
 
       allow(GitOperations).to receive(:version_tags) do |_url|
         mutex.synchronize {
           in_flight += 1
           max_in_flight = [max_in_flight, in_flight].max
         }
-        sleep 0.03
+        started << true
+        release.pop
         versions("1.1.0", "1.0.0")
       ensure
         mutex.synchronize { in_flight -= 1 }
       end
 
-      checker.send(:check_packages, remote_packages, resolved_versions)
+      checker_thread = Thread.new { checker.send(:check_packages, remote_packages, resolved_versions) }
 
-      expect(max_in_flight).to be_between(2, SpmChecker::VERSION_TAG_WORKER_COUNT).inclusive
+      begin
+        Timeout.timeout(2) {
+          SpmChecker::VERSION_TAG_WORKER_COUNT.times { started.pop }
+        }
+        expect(max_in_flight).to eq(SpmChecker::VERSION_TAG_WORKER_COUNT)
+      ensure
+        package_count.times { release << true }
+        checker_thread.value
+      end
+
       expect(checker.instance_variable_get(:@warnings)).to eq(
         (1..package_count).map { |index| "Newer version of acme/pkg#{index}: 1.1.0" }
       )
@@ -179,6 +192,35 @@ RSpec.describe SpmChecker do
           ]
         )
       end
+    end
+
+    it "scopes memoized version tags by repository URL", :aggregate_failures do
+      calls = []
+      allow(GitOperations).to receive(:version_tags) do |url|
+        calls << url
+        url.start_with?("https://") ? [] : versions("1.1.0", "1.0.0")
+      end
+      resolved_versions = { "github.com/acme/shared" => "1.0.0" }
+      https_packages = {
+        "github.com/acme/shared" => {
+          "repository_url" => "https://github.com/acme/shared",
+          "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }
+        }
+      }
+      git_packages = {
+        "github.com/acme/shared" => {
+          "repository_url" => "git://github.com/acme/shared",
+          "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }
+        }
+      }
+
+      checker.send(:check_packages, https_packages, resolved_versions, "App/Package.swift")
+      checker.send(:check_packages, git_packages, resolved_versions, "Tools/Package.swift")
+
+      expect(calls).to eq(["https://github.com/acme/shared", "git://github.com/acme/shared"])
+      expect(checker.instance_variable_get(:@warnings)).to eq(
+        ["Newer version of acme/shared: 1.1.0\nSource: Tools/Package.swift"]
+      )
     end
 
     it "does not check branches when check_branches is disabled" do

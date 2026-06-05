@@ -165,6 +165,58 @@ RSpec.describe Action do
       end
     end
 
+    it "keeps every warning when structured details are partial or mis-sized", :aggregate_failures do
+      warnings = [
+        "Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift",
+        "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0\nSource: BuildTools/Package.swift",
+      ]
+      warning_details = [
+        {
+          type: "version",
+          package: "onevcat/Kingfisher",
+          current_version: "7.0.0",
+          available_version: "8.0.0",
+          message: warnings.first,
+          source: "Modules/Package.swift"
+        },
+        nil,
+        {
+          type: "version",
+          package: "orphaned/detail",
+          current_version: "1.0.0",
+          available_version: "2.0.0"
+        },
+      ]
+
+      Dir.mktmpdir do |dir|
+        output_path = File.join(dir, "github_output")
+        summary_path = File.join(dir, "step_summary")
+
+        with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
+          action.send(:report, warnings, warning_details)
+        end
+
+        expect(File.read(output_path)).to include("updates-found=2")
+        expect(output_json_from(output_path)).to eq(
+          [
+            {
+              "type" => "version",
+              "package" => "onevcat/Kingfisher",
+              "current_version" => "7.0.0",
+              "available_version" => "8.0.0",
+              "message" => "Newer version of onevcat/Kingfisher: 8.0.0",
+              "source" => "Modules/Package.swift"
+            },
+            {
+              "message" => "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0",
+              "source" => "BuildTools/Package.swift"
+            },
+          ]
+        )
+        expect(File.read(summary_path)).to include("Found **2** potential dependency updates.")
+      end
+    end
+
     it "writes empty outputs and an up-to-date summary when no updates are found", :aggregate_failures do
       Dir.mktmpdir do |dir|
         output_path = File.join(dir, "github_output")

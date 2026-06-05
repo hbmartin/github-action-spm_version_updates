@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "update_severity"
 
 # Writes GitHub Actions-visible reports for the dependency update results.
 class ActionReporter
   def initialize(warnings, warning_details = nil)
-    @warnings = warnings
-    @warning_details = Array(warning_details).compact
+    @warnings = Array(warnings)
+    @warning_details = Array(warning_details)
   end
 
   def write
@@ -15,22 +16,32 @@ class ActionReporter
     emit_warning_annotations
   end
 
-  private
-
   def records
-    @records ||= @warning_details.empty? ? warning_records : detail_records
+    @records ||= detail_records.map { |record| UpdateSeverity.apply(record) }
   end
+
+  def severity_counts
+    @severity_counts ||= UpdateSeverity.counts(records)
+  end
+
+  private
 
   def warning_records
     @warnings.map { |warning| parsed_warning_record(warning) }
   end
 
   def detail_records
-    @warning_details.map.with_index { |detail, index|
-      fallback = parsed_warning_record(@warnings[index])
-      record = detail.each_with_object({}) { |(key, value), result| result[key.to_s] = value unless value.nil? }
-      record["message"] ||= fallback["message"]
-      record["source"] ||= fallback["source"] if fallback["source"]
+    warning_records.map.with_index { |fallback, index|
+      record = fallback.dup
+      detail = @warning_details[index]
+      detail&.each_with_object(record) { |(key, value), result|
+        result[key.to_s] = value unless value.nil?
+      }
+
+      parsed_message = parsed_warning_record(record["message"])
+      record["message"] = parsed_message["message"]
+      parsed_source = parsed_message["source"]
+      record["source"] ||= parsed_source if parsed_source
       record
     }
   end
@@ -50,6 +61,7 @@ class ActionReporter
 
     File.open(output_path, "a") { |file|
       file.puts("updates-found=#{records.size}")
+      severity_counts.each { |severity, count| file.puts("#{severity}-updates-found=#{count}") }
       write_multiline_output(file, "updates-json", updates_json)
     }
   end
