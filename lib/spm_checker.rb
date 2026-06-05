@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "semantic"
+require "thread"
 require_relative "git_operations"
 require_relative "xcode_parser"
 require_relative "manifest_parser"
@@ -8,6 +9,13 @@ require_relative "package_resolved"
 
 # Core SPM version checking logic (migrated from Danger plugin)
 class SpmChecker
+  VERSION_TAG_WORKER_COUNT = 8
+
+  # Structured facts about each warning, used by the GitHub Action comment
+  # renderer. `check_for_updates` and `check_manifests` still return the legacy
+  # string warnings for compatibility with existing plugin-style callers.
+  attr_reader :warning_details
+
   # Whether to check when dependencies are exact versions or commits, default false
   attr_accessor :check_when_exact
 
@@ -34,6 +42,8 @@ class SpmChecker
     @report_pre_releases = false
     @ignore_repos = []
     @warnings = []
+    @warning_details = []
+    @version_tags_cache = {}
   end
 
   # Check for SPM updates using an Xcode project as the source of dependencies.
@@ -41,7 +51,8 @@ class SpmChecker
   # @param   [String] xcodeproj_path The path to your Xcode project
   # @return  [Array<String>] Array of warning messages
   def check_for_updates(xcodeproj_path)
-    @warnings.clear
+    clear_warnings
+    reset_version_tags_cache
     normalize_ignore_repos
 
     remote_packages = XcodeParser.get_packages(xcodeproj_path)
@@ -67,7 +78,8 @@ class SpmChecker
   # @raise [ManifestParser::CouldNotFindResolvedFile] if no resolved file exists
   # @return  [Array<String>] Array of warning messages
   def check_manifests(manifest_paths, resolved_paths = nil)
-    @warnings.clear
+    clear_warnings
+    reset_version_tags_cache
     normalize_ignore_repos
 
     resolved_versions = merged_resolved_versions(manifest_paths, resolved_paths)
@@ -84,6 +96,15 @@ class SpmChecker
 
   def normalize_ignore_repos
     @ignore_repos = @ignore_repos&.map { |repo| GitOperations.trim_repo_url(repo) }
+  end
+
+  def clear_warnings
+    @warnings.clear
+    @warning_details.clear
+  end
+
+  def reset_version_tags_cache
+    @version_tags_cache = {}
   end
 
   # Merge the resolved pins of every relevant `Package.resolved` file.
@@ -115,7 +136,49 @@ class SpmChecker
   # @param resolved_versions [Hash<String, String>] normalized URL => version
   # @param source [String, nil] the manifest a warning should be attributed to
   def check_packages(remote_packages, resolved_versions, source = nil)
-    remote_packages.each { |normalized_url, entry|
+    packages = package_contexts(remote_packages, resolved_versions, source)
+    prefetch_version_tags(packages)
+
+    packages.each { |package|
+      if package[:kind] == "branch"
+        warn_for_branch(
+          package[:requirement]["branch"],
+          package[:name],
+          package[:cache_key],
+          package[:repository_url],
+          package[:resolved_version],
+          package[:source]
+        ) if @check_branches
+        next
+      end
+
+      if package[:kind] == "revision"
+        warn_for_revision(
+          package[:name],
+          package[:cache_key],
+          package[:repository_url],
+          package[:resolved_version],
+          version_tags_for(package),
+          package[:source]
+        ) if @check_revisions
+        next
+      end
+
+      check_versioned_package(
+        package[:kind],
+        package[:name],
+        package[:cache_key],
+        package[:repository_url],
+        package[:requirement],
+        package[:resolved_version],
+        package[:source],
+        version_tags_for(package)
+      )
+    }
+  end
+
+  def package_contexts(remote_packages, resolved_versions, source)
+    remote_packages.filter_map { |normalized_url, entry|
       next if @ignore_repos&.include?(normalized_url)
 
       repository_url = entry["repository_url"]
@@ -124,51 +187,104 @@ class SpmChecker
 
       name = GitOperations.repo_name(normalized_url)
       resolved_version = resolved_versions[normalized_url]
-      kind = requirement["kind"]
 
       if resolved_version.nil?
         puts "Unable to locate the current version for #{name} (#{repository_url})"
         next
       end
 
-      if kind == "branch"
-        warn_for_branch(requirement["branch"], name, repository_url, resolved_version, source) if @check_branches
-        next
-      end
-
-      if kind == "revision"
-        warn_for_revision(name, repository_url, resolved_version, source) if @check_revisions
-        next
-      end
-
-      check_versioned_package(kind, name, repository_url, requirement, resolved_version, source)
+      {
+        cache_key: normalized_url,
+        kind: requirement["kind"],
+        name: name,
+        repository_url: repository_url,
+        requirement: requirement,
+        resolved_version: resolved_version,
+        source: source,
+      }
     }
   end
 
-  def check_versioned_package(kind, name, repository_url, requirement, resolved_version, source)
+  def prefetch_version_tags(packages)
+    pending = packages.each_with_object({}) { |package, lookups|
+      next unless version_tag_lookup_required?(package[:kind])
+      next if @version_tags_cache.key?(package[:cache_key])
+
+      lookups[package[:cache_key]] ||= package[:repository_url]
+    }.to_a
+    return if pending.empty?
+
+    queue = Queue.new
+    pending.each { |lookup| queue << lookup }
+
+    results = {}
+    results_mutex = Mutex.new
+    worker_count = [VERSION_TAG_WORKER_COUNT, pending.size].min
+    workers = worker_count.times.map {
+      Thread.new {
+        loop do
+          cache_key, repository_url = queue.pop(true)
+          versions = GitOperations.version_tags(repository_url)
+          results_mutex.synchronize { results[cache_key] = versions }
+        rescue ThreadError
+          break
+        end
+      }
+    }
+
+    workers.each(&:value)
+    @version_tags_cache.merge!(results)
+  end
+
+  def version_tag_lookup_required?(kind)
+    return false if kind == "branch"
+    return @check_revisions if kind == "revision"
+    return @check_when_exact if kind == "exactVersion"
+
+    true
+  end
+
+  def version_tags_for(package)
+    @version_tags_cache.fetch(package[:cache_key], [])
+  end
+
+  def check_versioned_package(kind, name, normalized_url, repository_url, requirement, resolved_version, source, available_versions = nil)
     return if kind == "exactVersion" && !@check_when_exact
 
-    available_versions = GitOperations.version_tags(repository_url)
+    available_versions ||= GitOperations.version_tags(repository_url)
     return if available_versions.empty?
     return if available_versions.first.to_s == resolved_version
 
     if kind == "exactVersion"
-      warn_for_new_versions_exact(available_versions, name, resolved_version, source)
+      warn_for_new_versions_exact(available_versions, name, normalized_url, repository_url, resolved_version, source)
     elsif kind == "upToNextMajorVersion"
-      warn_for_new_versions(:major, available_versions, name, resolved_version, source)
+      warn_for_new_versions(:major, available_versions, name, normalized_url, repository_url, resolved_version, source)
     elsif kind == "upToNextMinorVersion"
-      warn_for_new_versions(:minor, available_versions, name, resolved_version, source)
+      warn_for_new_versions(:minor, available_versions, name, normalized_url, repository_url, resolved_version, source)
     elsif kind == "versionRange"
-      warn_for_new_versions_range(available_versions, name, requirement, resolved_version, source)
+      warn_for_new_versions_range(available_versions, name, normalized_url, repository_url, requirement, resolved_version, source)
     else
       puts "Not processing dependency rule '#{kind}' for #{name} (#{repository_url})"
     end
   end
 
-  def add_warning(message, source = nil)
+  def add_warning(message, source = nil, detail = nil)
     full_message = source.nil? ? message : "#{message}\nSource: #{source}"
     @warnings << full_message
+    @warning_details << detail.merge(message: full_message, source: source) if detail
     puts "WARNING: #{message}#{source ? " (#{source})" : ''}"
+  end
+
+  def warning_detail(type, name, normalized_url, repository_url, resolved_version, available_version, note = nil)
+    {
+      type: type.to_s,
+      package: name,
+      normalized_url: normalized_url,
+      repository_url: repository_url,
+      current_version: resolved_version.to_s,
+      available_version: available_version.to_s,
+      note: note,
+    }
   end
 
   # Warns if the branch has a newer commit than the resolved version.
@@ -177,28 +293,32 @@ class SpmChecker
   # @param repository_url [String] the Git repository URL
   # @param resolved_version [String] the currently resolved version of the branch
   # @param source [String, nil] the originating manifest, when applicable
-  def warn_for_branch(branch, name, repository_url, resolved_version, source = nil)
+  def warn_for_branch(branch, name, normalized_url, repository_url, resolved_version, source = nil)
     last_commit = GitOperations.branch_last_commit(repository_url, branch)
     return if last_commit.nil?
 
-    add_warning("Newer commit available for #{name} (#{branch}): #{last_commit}", source) unless last_commit == resolved_version
+    add_warning(
+      "Newer commit available for #{name} (#{branch}): #{last_commit}",
+      source,
+      warning_detail(:branch, name, normalized_url, repository_url, resolved_version, last_commit, "branch: #{branch}")
+    ) unless last_commit == resolved_version
   end
 
   # Reports the latest tagged version for a dependency pinned to a raw revision.
   # There is no general way to know whether an arbitrary commit is behind, so
   # this is purely informational and only runs when +check_revisions+ is enabled.
-  def warn_for_revision(name, repository_url, resolved_version, source = nil)
-    available_versions = GitOperations.version_tags(repository_url)
+  def warn_for_revision(name, normalized_url, repository_url, resolved_version, available_versions, source = nil)
     newest_version = available_versions.find { |version| @report_pre_releases ? true : version.pre.nil? }
     return if newest_version.nil?
 
     add_warning(
       "#{name} is pinned to a revision (#{resolved_version}); latest tagged version is #{newest_version}",
-      source
+      source,
+      warning_detail(:revision, name, normalized_url, repository_url, resolved_version, newest_version, "revision pin")
     )
   end
 
-  def warn_for_new_versions_exact(available_versions, name, resolved_version, source = nil)
+  def warn_for_new_versions_exact(available_versions, name, normalized_url, repository_url, resolved_version, source = nil)
     newest_version = available_versions.find { |version|
       @report_pre_releases ? true : version.pre.nil?
     }
@@ -206,11 +326,12 @@ class SpmChecker
 
     add_warning(
       "Newer version of #{name}: #{newest_version} (but this package is set to exact version #{resolved_version})",
-      source
+      source,
+      warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest_version, "exact version")
     ) unless newest_version.to_s == resolved_version
   end
 
-  def warn_for_new_versions_range(available_versions, name, requirement, resolved_version, source = nil)
+  def warn_for_new_versions_range(available_versions, name, normalized_url, repository_url, requirement, resolved_version, source = nil)
     begin
       max_version = Semantic::Version.new(requirement["maximumVersion"])
     rescue ArgumentError => e
@@ -223,20 +344,29 @@ class SpmChecker
     return if newest.nil?
 
     if newest < max_version
-      add_warning("Newer version of #{name}: #{newest}", source) unless newest.to_s == resolved_version
+      add_warning(
+        "Newer version of #{name}: #{newest}",
+        source,
+        warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest, "version range")
+      ) unless newest.to_s == resolved_version
     else
       newest_meeting_reqs = available_versions.find { |version|
         version < max_version && (@report_pre_releases ? true : version.pre.nil?)
       }
-      add_warning("Newer version of #{name}: #{newest_meeting_reqs}", source) unless newest_meeting_reqs.nil? || newest_meeting_reqs.to_s == resolved_version
+      add_warning(
+        "Newer version of #{name}: #{newest_meeting_reqs}",
+        source,
+        warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest_meeting_reqs, "version range")
+      ) unless newest_meeting_reqs.nil? || newest_meeting_reqs.to_s == resolved_version
       add_warning(
         "Newest version of #{name}: #{newest} (but this package is configured up to the next #{max_version} version)",
-        source
+        source,
+        warning_detail(:above_maximum, name, normalized_url, repository_url, resolved_version, newest, "above configured maximum")
       ) if @report_above_maximum
     end
   end
 
-  def warn_for_new_versions(major_or_minor, available_versions, name, resolved_version_string, source = nil)
+  def warn_for_new_versions(major_or_minor, available_versions, name, normalized_url, repository_url, resolved_version_string, source = nil)
     begin
       resolved_version = Semantic::Version.new(resolved_version_string)
     rescue ArgumentError => e
@@ -252,7 +382,11 @@ class SpmChecker
         (@report_pre_releases ? true : version.pre.nil?)
     }
 
-    add_warning("Newer version of #{name}: #{newest_meeting_reqs}", source) unless newest_meeting_reqs.nil? || newest_meeting_reqs == resolved_version
+    add_warning(
+      "Newer version of #{name}: #{newest_meeting_reqs}",
+      source,
+      warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest_meeting_reqs, "up to next #{major_or_minor}")
+    ) unless newest_meeting_reqs.nil? || newest_meeting_reqs == resolved_version
     return unless @report_above_maximum
 
     newest_above_reqs = available_versions.find { |version|
@@ -264,7 +398,8 @@ class SpmChecker
     # exists precisely to surface the out-of-range (e.g. next major) version.
     add_warning(
       "Newest version of #{name}: #{newest_above_reqs} (but this package is configured up to the next #{major_or_minor} version)",
-      source
+      source,
+      warning_detail(:above_maximum, name, normalized_url, repository_url, resolved_version, newest_above_reqs, "above configured maximum")
     ) unless newest_above_reqs == newest_meeting_reqs
   end
 end

@@ -1,34 +1,35 @@
 # frozen_string_literal: true
 
-require "octokit"
 require "json"
+require "octokit"
+require "uri"
 
 # GitHub API integration for posting PR comments
 class GithubIntegration
   COMMENT_IDENTIFIER = "<!-- spm-version-updates-action -->"
 
   def initialize
-    @github_token = ENV["GITHUB_TOKEN"]
-    @github_repository = ENV["GITHUB_REPOSITORY"]
-    @github_event_path = ENV["GITHUB_EVENT_PATH"]
-    
+    @github_token = ENV.fetch("GITHUB_TOKEN", nil)
+    @github_repository = ENV.fetch("GITHUB_REPOSITORY", nil)
+    @github_event_path = ENV.fetch("GITHUB_EVENT_PATH", nil)
+
     if @github_token.nil? || @github_token.empty?
-      puts "Warning: GITHUB_TOKEN not set, comments will not be posted"
+      puts("Warning: GITHUB_TOKEN not set, comments will not be posted")
       @client = nil
       return
     end
 
     @client = Octokit::Client.new(access_token: @github_token)
     @pr_number = extract_pr_number
-    
-    puts "GitHub integration initialized for #{@github_repository}, PR ##{@pr_number}"
+
+    puts("GitHub integration initialized for #{@github_repository}, PR ##{@pr_number}")
   end
 
   def post_comment(message)
     return unless can_post_comments?
-    
+
     full_message = build_comment_message(message)
-    
+
     existing_comment = find_existing_comment
     if existing_comment
       update_comment(existing_comment[:id], full_message)
@@ -37,10 +38,10 @@ class GithubIntegration
     end
   end
 
-  def post_comment_with_warnings(warnings)
+  def post_comment_with_warnings(warnings, warning_details = nil)
     return unless can_post_comments?
-    
-    message = build_warnings_message(warnings)
+
+    message = build_warnings_message(warnings, warning_details)
     post_comment(message)
   end
 
@@ -52,14 +53,12 @@ class GithubIntegration
 
   def extract_pr_number
     return nil unless @github_event_path && File.exist?(@github_event_path)
-    
-    begin
-      event_data = JSON.parse(File.read(@github_event_path))
-      event_data.dig("pull_request", "number") || event_data["number"]
-    rescue JSON::ParserError => e
-      puts "Error parsing GitHub event data: #{e.message}"
-      nil
-    end
+
+    event_data = JSON.parse(File.read(@github_event_path))
+    event_data.dig("pull_request", "number") || event_data["number"]
+  rescue JSON::ParserError => e
+    puts("Error parsing GitHub event data: #{e.message}")
+    nil
   end
 
   def build_comment_message(content)
@@ -74,60 +73,190 @@ class GithubIntegration
     MARKDOWN
   end
 
-  def build_warnings_message(warnings)
-    if warnings.empty?
-      "✅ **All SPM dependencies are up to date!**"
-    else
-      header = "⚠️ **Found #{warnings.size} potential dependency update#{warnings.size > 1 ? 's' : ''}:**\n\n"
+  def build_warnings_message(warnings, warning_details = nil)
+    return "✅ **All SPM dependencies are up to date!**" if warnings.empty?
 
-      # Continuation lines (e.g. "Source: ...") are indented so they stay part
-      # of the numbered list item when rendered as Markdown.
-      warning_list = warnings.map.with_index(1) do |warning, index|
-        "#{index}. #{warning.gsub("\n", "\n   ")}"
-      end.join("\n")
+    details = structured_warning_details(warning_details)
+    return build_legacy_warnings_message(warnings) if details.size < warnings.size
 
-      <<~MARKDOWN
-        #{header}#{warning_list}
+    grouped_updates = grouped_warning_details(details)
+    package_count = grouped_updates.size
+    header = "⚠️ **Found #{package_count} package#{package_count == 1 ? '' : 's'} with potential dependency updates:**\n\n"
+    table = grouped_updates
+      .map { |group| warning_group_row(group) }
+      .join("\n")
 
-        <details>
-        <summary>💡 How to update dependencies</summary>
+    <<~MARKDOWN
+      #{header}| Package | Current → Available | Source | Links |
+      | --- | --- | --- | --- |
+      #{table}
 
-        To update your SPM dependencies:
-        - **Package.swift**: bump the version constraint and run `swift package update` (or `swift package resolve`)
-        - **Xcode project**: go to **File → Packages → Update to Latest Package Versions**, or update individual packages from the Package Dependencies section in the Project Navigator
+      #{how_to_update_details}
+    MARKDOWN
+  end
 
-        </details>
-      MARKDOWN
-    end
+  def build_legacy_warnings_message(warnings)
+    header = "⚠️ **Found #{warnings.size} potential dependency update#{warnings.size > 1 ? 's' : ''}:**\n\n"
+
+    # Continuation lines (e.g. "Source: ...") are indented so they stay part
+    # of the numbered list item when rendered as Markdown.
+    warning_list = warnings.map.with_index(1) { |warning, index|
+      "#{index}. #{warning.gsub("\n", "\n   ")}"
+    }.join("\n")
+
+    <<~MARKDOWN
+      #{header}#{warning_list}
+
+      #{how_to_update_details}
+    MARKDOWN
+  end
+
+  def how_to_update_details
+    <<~MARKDOWN.chomp
+      <details>
+      <summary>💡 How to update dependencies</summary>
+
+      To update your SPM dependencies:
+      - **Package.swift**: bump the version constraint and run `swift package update` (or `swift package resolve`)
+      - **Xcode project**: go to **File → Packages → Update to Latest Package Versions**, or update individual packages from the Package Dependencies section in the Project Navigator
+
+      </details>
+    MARKDOWN
+  end
+
+  def structured_warning_details(warning_details)
+    Array(warning_details).select { |detail|
+      detail_value(detail, :package) &&
+        detail_value(detail, :current_version) &&
+        detail_value(detail, :available_version)
+    }
+  end
+
+  def grouped_warning_details(details)
+    details
+      .group_by { |detail| detail_value(detail, :normalized_url) || detail_value(detail, :package) }
+      .map { |_key, entries| warning_group(entries) }
+      .sort_by { |group| group[:package].downcase }
+  end
+
+  def warning_group(entries)
+    first = entries.first
+    sources = entries.filter_map { |detail| detail_value(detail, :source) }
+    sources.uniq!
+
+    updates = entries.map { |detail|
+      {
+        current: detail_value(detail, :current_version),
+        available: detail_value(detail, :available_version),
+        note: detail_value(detail, :note)
+      }
+    }
+    updates.uniq!
+
+    {
+      package: detail_value(first, :package),
+      repository_url: detail_value(first, :repository_url),
+      sources:,
+      updates:
+    }
+  end
+
+  def warning_group_row(group)
+    "| #{table_cell(inline_code(group[:package]))} | #{table_cell(update_cell(group[:updates]))} | " \
+      "#{table_cell(source_cell(group[:sources]))} | #{table_cell(links_cell(group))} |"
+  end
+
+  def update_cell(updates)
+    updates.map { |update|
+      summary = "#{inline_code(display_version(update[:current]))} → #{inline_code(display_version(update[:available]))}"
+      note = update[:note].to_s.strip
+      note.empty? ? summary : "#{summary}<br><sub>#{table_cell(note)}</sub>"
+    }.join("<br>")
+  end
+
+  def source_cell(sources)
+    return "Xcode project" if sources.empty?
+    return inline_code(sources.first) if sources.size == 1
+
+    source_list = sources
+      .map { |source| inline_code(source) }
+      .join("<br>")
+    "#{sources.size} manifests<br>#{source_list}"
+  end
+
+  def links_cell(group)
+    github_url = github_repository_url(group[:repository_url])
+    return "N/A" unless github_url
+
+    compare_links = group[:updates].map.with_index(1) { |update, index|
+      label = group[:updates].size == 1 ? "Compare" : "Compare #{index}"
+      "[#{label}](#{compare_url(github_url, update[:current], update[:available])})"
+    }
+    (compare_links + ["[Releases](#{github_url}/releases)"]).join("<br>")
+  end
+
+  def compare_url(github_url, current, available)
+    "#{github_url}/compare/#{url_ref(current)}...#{url_ref(available)}"
+  end
+
+  def github_repository_url(repository_url)
+    value = repository_url.to_s.strip
+    return nil if value.empty?
+
+    path = value[%r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?github\.com[:/](.+)\z}i, 1]
+    path ||= value[/\Agit@github\.com:(.+)\z/i, 1]
+    path ||= value[%r{\Agithub\.com[:/](.+)\z}i, 1]
+    return nil if path.nil?
+
+    owner_repo = path.sub(%r{\A/+}, "").sub(/\.git\z/i, "").split("/").first(2).join("/")
+    return nil unless owner_repo.match?(%r{\A[^/]+/[^/]+\z})
+
+    "https://github.com/#{owner_repo}"
+  end
+
+  def detail_value(detail, key)
+    detail[key] || detail[key.to_s]
+  end
+
+  def display_version(value)
+    text = value.to_s
+    text.match?(/\A[0-9a-f]{40}\z/i) ? text[0, 7] : text
+  end
+
+  def inline_code(value)
+    text = value.to_s
+    text.include?("`") ? "``#{text}``" : "`#{text}`"
+  end
+
+  def table_cell(value)
+    value.to_s.gsub("|", "\\|").gsub("\n", "<br>")
+  end
+
+  def url_ref(value)
+    URI.encode_www_form_component(value.to_s)
   end
 
   def find_existing_comment
     return nil unless @pr_number
 
-    begin
-      comments = @client.issue_comments(@github_repository, @pr_number)
-      comments.find { |comment| comment[:body].include?(COMMENT_IDENTIFIER) }
-    rescue Octokit::Error => e
-      puts "Error fetching existing comments: #{e.message}"
-      nil
-    end
+    comments = @client.issue_comments(@github_repository, @pr_number)
+    comments.find { |comment| comment[:body].include?(COMMENT_IDENTIFIER) }
+  rescue Octokit::Error => e
+    puts("Error fetching existing comments: #{e.message}")
+    nil
   end
 
   def create_comment(message)
-    begin
-      comment = @client.add_comment(@github_repository, @pr_number, message)
-      puts "Created new comment: #{comment[:html_url]}"
-    rescue Octokit::Error => e
-      puts "Error creating comment: #{e.message}"
-    end
+    comment = @client.add_comment(@github_repository, @pr_number, message)
+    puts("Created new comment: #{comment[:html_url]}")
+  rescue Octokit::Error => e
+    puts("Error creating comment: #{e.message}")
   end
 
   def update_comment(comment_id, message)
-    begin
-      comment = @client.update_comment(@github_repository, comment_id, message)
-      puts "Updated existing comment: #{comment[:html_url]}"
-    rescue Octokit::Error => e
-      puts "Error updating comment: #{e.message}"
-    end
+    comment = @client.update_comment(@github_repository, comment_id, message)
+    puts("Updated existing comment: #{comment[:html_url]}")
+  rescue Octokit::Error => e
+    puts("Error updating comment: #{e.message}")
   end
 end

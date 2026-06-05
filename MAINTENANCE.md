@@ -6,7 +6,6 @@ This document provides instructions for maintaining, developing, and releasing t
 
 ### Prerequisites
 
-- Docker installed and running
 - Ruby 3.3+ (for local development)
 - Git
 - GitHub CLI (`gh`) for release management
@@ -29,17 +28,11 @@ This document provides instructions for maintaining, developing, and releasing t
    bundle exec rspec
    ```
 
-4. **Build Docker image**:
+4. **Test locally with fixture**:
    ```bash
-   docker build -t spm-version-updates-action .
-   ```
-
-5. **Test locally with fixture**:
-   ```bash
-   docker run --rm -v $(pwd):/workspace \
-     -e GITHUB_WORKSPACE=/workspace \
-     spm-version-updates-action \
-     spec/support/fixtures/UpToNextMajor.xcodeproj false false false ""
+   GITHUB_WORKSPACE="$(pwd)" \
+     INPUT_XCODE_PROJECT_PATH=spec/support/fixtures/UpToNextMajor.xcodeproj \
+     bundle exec ruby lib/action.rb
    ```
 
 ## Code Structure
@@ -52,8 +45,6 @@ This document provides instructions for maintaining, developing, and releasing t
 - **`lib/xcode_parser.rb`** - Xcode project and Package.resolved parsing
 - **`lib/github_integration.rb`** - GitHub API integration and PR comments
 - **`action.yml`** - GitHub Action metadata and configuration
-- **`Dockerfile`** - Container configuration
-- **`entrypoint.sh`** - Container entry point script
 
 ### Test Files
 
@@ -76,8 +67,7 @@ This document provides instructions for maintaining, developing, and releasing t
 4. **Test your changes**:
    ```bash
    bundle exec rspec
-   docker build -t spm-version-updates-action .
-   # Test with fixture projects
+   GITHUB_WORKSPACE="$(pwd)" INPUT_XCODE_PROJECT_PATH=spec/support/fixtures/UpToNextMajor.xcodeproj bundle exec ruby lib/action.rb
    ```
 
 5. **Update documentation** if adding new features or changing behavior
@@ -90,14 +80,11 @@ This document provides instructions for maintaining, developing, and releasing t
 4. **Add tests** for new functionality
 5. **Update README.md** with new configuration options
 
-### Docker Image Changes
+### Runtime Dependency Changes
 
-1. **Modify `Dockerfile`** for dependency changes
-2. **Update `Gemfile`** for Ruby gem changes
-3. **Test image builds** on multiple architectures if needed:
-   ```bash
-   docker buildx build --platform linux/amd64,linux/arm64 -t test .
-   ```
+1. **Update `Gemfile`** for Ruby gem changes
+2. **Run `bundle install`** to refresh `Gemfile.lock`
+3. **Verify the composite action** in a real GitHub Actions workflow so `ruby/setup-ruby` caching is exercised
 
 ## Testing
 
@@ -118,10 +105,9 @@ bundle exec rspec --format documentation
 
 ```bash
 # Test with real Xcode project
-docker run --rm -v /path/to/real/project:/workspace \
-  -e GITHUB_WORKSPACE=/workspace \
-  spm-version-updates-action \
-  MyApp.xcodeproj false false false ""
+GITHUB_WORKSPACE=/path/to/real/project \
+  INPUT_XCODE_PROJECT_PATH=MyApp.xcodeproj \
+  bundle exec ruby lib/action.rb
 ```
 
 ### GitHub Actions Testing
@@ -161,7 +147,7 @@ This action follows semantic versioning:
 
 2. **Test thoroughly**:
    - Run full test suite: `bundle exec rspec`
-   - Build and test Docker image
+   - Test the composite action in GitHub Actions
    - Test with real Xcode projects
    - Test in actual GitHub Actions environment
 
@@ -273,39 +259,21 @@ The marketplace automatically updates when you create new releases, but you may 
 
 ### Common Development Issues
 
-1. **Docker build fails**:
-   - Check Dockerfile syntax
-   - Verify all files are copied correctly
-   - Ensure native gem dependencies are installed
-
-2. **Tests fail**:
+1. **Tests fail**:
    - Check fixture files haven't been corrupted
    - Verify Ruby version compatibility
    - Check for dependency version conflicts
 
-3. **Action doesn't work in GitHub**:
+2. **Action doesn't work in GitHub**:
    - Verify action.yml syntax
-   - Check Docker image builds successfully
+   - Check that `ruby/setup-ruby` installed dependencies from this action directory
    - Ensure all required files are included in repository
 
 ### Debug Mode
 
 Enable debug output by setting environment variables:
 ```bash
-DEBUG=true docker run --rm spm-version-updates-action ...
-```
-
-### Docker Issues
-
-```bash
-# Clean build (no cache)
-docker build --no-cache -t spm-version-updates-action .
-
-# Debug container
-docker run --rm -it --entrypoint /bin/sh spm-version-updates-action
-
-# Check container size
-docker images spm-version-updates-action
+DEBUG=true GITHUB_WORKSPACE="$(pwd)" INPUT_XCODE_PROJECT_PATH=MyApp.xcodeproj bundle exec ruby lib/action.rb
 ```
 
 ## Security Considerations
@@ -314,7 +282,7 @@ docker images spm-version-updates-action
 
 - **Regularly update Ruby gems**: `bundle update`
 - **Monitor security advisories**: Use `bundle audit`
-- **Keep base Docker image updated**: Update Ruby version in Dockerfile
+- **Keep Ruby runtime updated**: Update `ruby-version` in `action.yml` and CI when needed
 
 ### GitHub Token Handling
 

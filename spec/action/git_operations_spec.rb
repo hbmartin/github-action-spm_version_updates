@@ -30,6 +30,13 @@ RSpec.describe GitOperations do
       expect(described_class.version_tags("https://github.com/foo/bar").map(&:to_s)).to eq(["2.1.0", "2.0.0", "1.0.0"])
     end
 
+    it "normalizes two-component tags that SwiftPM treats as patch-zero versions" do
+      output = "aaa\trefs/tags/1.0\nbbb\trefs/tags/1.1\nccc\trefs/tags/1.0.1\n"
+      allow(Open3).to receive(:capture3).and_return([output, "", status(true)])
+
+      expect(described_class.version_tags("https://github.com/foo/bar").map(&:to_s)).to eq(["1.1.0", "1.0.1", "1.0.0"])
+    end
+
     it "warns and returns [] when git ls-remote exits non-zero" do
       allow(Open3).to receive(:capture3)
         .and_return(["", "fatal: 'github.com/foo/bar' does not appear to be a git repository", status(false)])
@@ -125,6 +132,7 @@ RSpec.describe GitOperations do
     it "returns an empty key for blank repository URLs" do
       expect(described_class.trim_repo_url(nil)).to eq("")
       expect(described_class.trim_repo_url("")).to eq("")
+      expect(described_class.trim_repo_url("   ")).to eq("")
     end
   end
 

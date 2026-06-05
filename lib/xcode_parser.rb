@@ -20,13 +20,13 @@ module XcodeParser
     project = Xcodeproj::Project.open(xcodeproj_path)
     project.objects
       .select { |obj|
-        obj.kind_of?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+        obj.kind_of?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference) &&
+          !obj.repositoryURL.to_s.strip.empty?
       }
       .to_h { |package|
-        url = package.repositoryURL || ""
         [
-          GitOperations.trim_repo_url(url),
-          { "repository_url" => url, "requirement" => package.requirement },
+          GitOperations.trim_repo_url(package.repositoryURL),
+          { "repository_url" => package.repositoryURL, "requirement" => package.requirement },
         ]
       }
   end

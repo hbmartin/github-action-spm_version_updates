@@ -31,7 +31,7 @@ Gem::Specification.new do |spec|
   # Testing support
   spec.add_development_dependency("rspec", "~> 3.9")
   spec.add_development_dependency("simplecov", "~> 0.22")
-  spec.add_development_dependency("simplecov-cobertura", "~> 2.1")
+  spec.add_development_dependency("simplecov-cobertura", "~> 3.1")
 
   # Linting code and docs
   spec.add_development_dependency("reek")

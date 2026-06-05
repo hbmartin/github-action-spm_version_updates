@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/hbmartin/github-action-spm_version_updates/actions/workflows/lint_and_test.yml/badge.svg)](https://github.com/hbmartin/github-action-spm_version_updates/actions/workflows/lint_and_test.yml)
 [![CodeFactor](https://www.codefactor.io/repository/github/hbmartin/github-action-spm_version_updates/badge/main)](https://www.codefactor.io/repository/github/hbmartin/github-action-spm_version_updates/overview/main)
-[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-SPM%20Version%20Updates-blue?logo=github)](https://github.com/marketplace/actions/spm-version-updates)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A GitHub Action to automatically detect and report available updates for your Swift Package Manager (SPM) dependencies.
@@ -182,6 +181,7 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `report-above-maximum` | Report versions above the maximum constraint range | No | `false` |
 | `report-pre-releases` | Include pre-release versions in update reports | No | `false` |
 | `ignore-repos` | Comma-separated list of repository URLs to ignore | No | `''` |
+| `fail-on-updates` | Fail the action when one or more dependency updates are found | No | `false` |
 | `github-token` | GitHub token for API access | No | `${{ github.token }}` |
 
 ## How dependency constraints are handled
@@ -203,7 +203,26 @@ Across all of the constraint types above, pre-release tags (versions with a `-` 
 
 ## Outputs
 
-This action is **report-only**: its result is the pull request comment, and it does not expose any `outputs` for downstream steps. The job succeeds whether or not updates are found; it only fails on configuration or input errors (for example, providing both source modes, or a missing `Package.resolved`). If you need to gate a workflow on the presence of updates, parse the rendered comment or open an issue describing the use case.
+The action always writes machine-readable outputs, appends a GitHub step summary, and emits `::warning` annotations for each update. Pull request runs still get the summary comment, but scheduled and `workflow_dispatch` runs now have visible results in the workflow run summary and annotations.
+
+| Output | Description |
+|--------|-------------|
+| `updates-found` | Number of dependency updates found. |
+| `updates-json` | JSON array of update objects. Each object has a `message` field and, when available, structured fields such as `type`, `package`, `repository_url`, `current_version`, `available_version`, `note`, and `source`. |
+
+Use `fail-on-updates: true` when dependency updates should fail the job after the outputs, step summary, annotations, and PR comment have been written.
+
+```yaml
+- id: spm-updates
+  uses: hbmartin/github-action-spm_version_updates@v1
+  with:
+    package-manifest-paths: Modules/Package.swift
+    fail-on-updates: true
+
+- name: Use update count
+  if: steps.spm-updates.outputs.updates-found != '0'
+  run: echo '${{ steps.spm-updates.outputs.updates-json }}'
+```
 
 ## Example output
 
@@ -240,11 +259,12 @@ The `Source:` line is only included in Swift manifest mode, where it tells you w
     check-revisions: false
     report-above-maximum: true
     ignore-repos: 'https://github.com/pointfreeco/swift-snapshot-testing'
+    fail-on-updates: false
 ```
 
 ## Limitations
 
-- **Posting the comment is GitHub-specific.** The summary comment is created through the GitHub API, so the action has to run inside GitHub Actions on a GitHub-hosted pull request. (Checking for new versions is host-agnostic — see below.)
+- **Posting the PR comment is GitHub-specific.** The comment is created through the GitHub API, so the action has to run inside GitHub Actions on a GitHub-hosted pull request for that sink to be available. Outputs, step summaries, and annotations are still emitted on non-PR runs.
 - **Version lookups work against any git host the runner can reach.** Tags and branches are read with `git ls-remote`, so dependencies hosted on GitHub, GitLab, Bitbucket, or a self-hosted server all work. Private dependencies are supported as long as the runner is already authenticated to fetch them (SSH key or credentials in the environment); the action does not manage those credentials for you.
 - **Updates are detected from semver tags.** A dependency that doesn't publish semver-style version tags won't produce version updates. Branch- and revision-pinned dependencies are handled separately via `check-branches` / `check-revisions`.
 - **Local packages are skipped.** `.package(path: ...)` dependencies and commented-out declarations are ignored.
@@ -266,8 +286,12 @@ To work on this action locally:
 1. Clone this repository
 2. Make your changes to the Ruby files in `lib/`
 3. Run the action specs: `bundle exec ruby -e "require 'rspec/core'; exit RSpec::Core::Runner.run(['spec/action'])"`
-4. Build the Docker image: `docker build -t spm-version-updates-action .`
-5. Test against a sample project: `docker run --rm -v $(pwd):/workspace -e INPUT_XCODE_PROJECT_PATH=path/to/project.xcodeproj spm-version-updates-action`
+4. Test against a sample project:
+   ```bash
+   GITHUB_WORKSPACE="$(pwd)" \
+     INPUT_XCODE_PROJECT_PATH=path/to/project.xcodeproj \
+     bundle exec ruby lib/action.rb
+   ```
 
 ## Authors
 
