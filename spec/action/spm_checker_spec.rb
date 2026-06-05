@@ -365,5 +365,39 @@ RSpec.describe SpmChecker do
       expect(GitOperations).not_to have_received(:version_tags)
       expect(checker.instance_variable_get(:@warnings)).to eq([])
     end
+
+    it "redacts embedded credentials when logging missing resolved versions" do
+      remote_packages = {
+        "github.com/acme/private" => {
+          "repository_url" => "https://user:token@github.com/acme/private",
+          "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }
+        }
+      }
+
+      expect {
+        checker.send(:check_packages, remote_packages, {})
+      }.to output(redacted_repository_url_log).to_stdout
+    end
+
+    it "redacts embedded credentials when logging unsupported dependency rules" do
+      expect {
+        checker.send(
+          :check_versioned_package,
+          "unsupported",
+          "acme/private",
+          "github.com/acme/private",
+          "https://user:token@github.com/acme/private",
+          { "kind" => "unsupported" },
+          "1.0.0",
+          nil,
+          versions("1.1.0")
+        )
+      }.to output(redacted_repository_url_log).to_stdout
+    end
+  end
+
+  def redacted_repository_url_log
+    a_string_including("https://[REDACTED]@github.com/acme/private")
+      .and(satisfy("not output raw credentials") { |output| !output.include?("user:token") })
   end
 end

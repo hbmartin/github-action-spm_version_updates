@@ -110,7 +110,7 @@ RSpec.describe(GithubIntegration) {
       message = integration.send(:build_warnings_message, ["Newer version of workspace/repo: 2.0.0"], details)
 
       expect(message).to(
-        include("[Compare](https://bitbucket.org/workspace/repo/branches/compare/1.0.0..2.0.0)")
+        include("[Compare](https://bitbucket.org/workspace/repo/branches/compare/2.0.0..1.0.0)")
       )
       expect(message).to(include("[Tags](https://bitbucket.org/workspace/repo/downloads/?tab=tags)"))
       expect(message).not_to(include("N/A"))
