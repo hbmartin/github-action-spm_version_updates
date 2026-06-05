@@ -36,6 +36,13 @@ RSpec.describe "SpmChecker Xcode project mode" do
     expect(checker.check_for_updates(fixture("ExactVersion"))).to eq([])
   end
 
+  it "does not warn for exact constraints when only pre-release versions exist" do
+    allow(GitOperations).to receive(:version_tags).and_return(versions("12.2.0-beta.1"))
+    checker.check_when_exact = true
+
+    expect(checker.check_for_updates(fixture("ExactVersion"))).to eq([])
+  end
+
   it "reports newer versions within a version range" do
     allow(GitOperations).to receive(:version_tags).and_return(versions("13.0.0", "12.1.7", "12.1.6"))
 

@@ -109,6 +109,22 @@ RSpec.describe SpmChecker do
       end
     end
 
+    it "does not match a different major version for up-to-next-minor constraints" do
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", .upToNextMinor(from: "1.5.0"))')
+        File.write(File.join(dir, "Package.resolved"), {
+          "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.5.0" } }],
+          "version" => 2,
+        }.to_json)
+        # 2.5.0 shares the minor component but a different major; it must not match.
+        allow(GitOperations).to receive(:version_tags).and_return(versions("2.5.0", "1.5.3", "1.5.0"))
+
+        warnings = checker.check_manifests([File.join(dir, "Package.swift")])
+
+        expect(warnings).to eq(["Newer version of a/b: 1.5.3\nSource: #{File.join(dir, 'Package.swift')}"])
+      end
+    end
+
     it "does not emit an empty warning when no available version satisfies the constraint" do
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", from: "1.0.0")')

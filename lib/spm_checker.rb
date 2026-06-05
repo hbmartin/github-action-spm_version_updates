@@ -191,6 +191,8 @@ class SpmChecker
     newest_version = available_versions.find { |version|
       @report_pre_releases ? true : version.pre.nil?
     }
+    return if newest_version.nil?
+
     add_warning(
       "Newer version of #{name}: #{newest_version} (but this package is set to exact version #{resolved_version})",
       source
@@ -225,8 +227,13 @@ class SpmChecker
       puts "Unable to extract semver from #{resolved_version_string} for #{name} (#{e})"
       return
     end
+    # upToNextMajor allows any version with the same major; upToNextMinor additionally
+    # requires the same minor. Comparing minor alone would wrongly match e.g. 2.5.0
+    # against a resolved 1.5.0.
     newest_meeting_reqs = available_versions.find { |version|
-      (version.send(major_or_minor) == resolved_version.send(major_or_minor)) && (@report_pre_releases ? true : version.pre.nil?)
+      version.major == resolved_version.major &&
+        (major_or_minor == :major || version.minor == resolved_version.minor) &&
+        (@report_pre_releases ? true : version.pre.nil?)
     }
 
     add_warning("Newer version of #{name}: #{newest_meeting_reqs}", source) unless newest_meeting_reqs.nil? || newest_meeting_reqs == resolved_version
