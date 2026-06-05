@@ -40,6 +40,31 @@ RSpec.describe GitOperations do
       expect(result).to eq([])
     end
 
+    it "redacts embedded credentials from git failure warnings" do
+      allow(Open3).to receive(:capture3)
+        .and_return(["", "fatal: could not read https://user:token@github.com/foo/bar", status(false)])
+
+      result = nil
+      expect {
+        result = described_class.version_tags("https://user:token@github.com/foo/bar")
+      }.to output(
+        a_string_including(
+          "failed for https://[REDACTED]@github.com/foo/bar",
+          "https://[REDACTED]@github.com/foo/bar"
+        ).and(not_outputting_credentials)
+      ).to_stderr
+      expect(result).to eq([])
+    end
+
+    it "warns and returns [] when the git executable is missing" do
+      allow(Open3).to receive(:capture3).and_raise(Errno::ENOENT)
+
+      result = nil
+      expect { result = described_class.version_tags("https://github.com/foo/bar") }
+        .to output(/git command not found/).to_stderr
+      expect(result).to eq([])
+    end
+
     it "sorts without crashing on pre-release tags the semantic gem mishandles" do
       # swift-syntax publishes tags like 600.0.0-prerelease-2024-09-04; the
       # `semantic` gem raises Integer("09") when comparing two of these. The sort
@@ -96,5 +121,14 @@ RSpec.describe GitOperations do
     it "strips the scheme and trailing .git, yielding a match key (not a valid remote)" do
       expect(described_class.trim_repo_url("https://github.com/foo/bar.git")).to eq("github.com/foo/bar")
     end
+
+    it "returns an empty key for blank repository URLs" do
+      expect(described_class.trim_repo_url(nil)).to eq("")
+      expect(described_class.trim_repo_url("")).to eq("")
+    end
+  end
+
+  def not_outputting_credentials
+    satisfy("not output raw credentials") { |output| !output.include?("user:token") }
   end
 end

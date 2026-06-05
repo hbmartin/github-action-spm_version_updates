@@ -120,6 +120,8 @@ class SpmChecker
 
       repository_url = entry["repository_url"]
       requirement = entry["requirement"]
+      next if requirement.nil?
+
       name = GitOperations.repo_name(normalized_url)
       resolved_version = resolved_versions[normalized_url]
       kind = requirement["kind"]

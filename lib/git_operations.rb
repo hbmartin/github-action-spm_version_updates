@@ -9,7 +9,7 @@ module GitOperations
   # @param   [String] repo_url The URL of the repository
   # @return [String]
   def self.trim_repo_url(repo_url)
-    repo_url.split("://").last.gsub(/\.git$/, "")
+    repo_url.to_s.split("://").last.to_s.gsub(/\.git$/, "")
   end
 
   # Extract a readable name for the repo given the url, generally org/repo
@@ -69,8 +69,15 @@ module GitOperations
     stdout, stderr, status = Open3.capture3("git", "ls-remote", flag, repo_url)
     return stdout if status.success?
 
-    warn("git ls-remote #{flag} failed for #{repo_url}: #{stderr.strip}")
+    warn("git ls-remote #{flag} failed for #{redact_credentials(repo_url)}: #{redact_credentials(stderr.strip)}")
     nil
+  rescue Errno::ENOENT
+    warn("git command not found. Please ensure git is installed and available in your PATH.")
+    nil
+  end
+
+  def self.redact_credentials(value)
+    value.to_s.gsub(%r{([a-z][a-z0-9+\-.]*://)([^/\s@]+)@}i, '\1[REDACTED]@')
   end
 
   # Compare two Semantic::Version values, tolerating a bug in the `semantic` gem
@@ -87,5 +94,5 @@ module GitOperations
     core.zero? ? (left.to_s <=> right.to_s) : core
   end
 
-  private_class_method :ls_remote, :compare_semver
+  private_class_method :ls_remote, :redact_credentials, :compare_semver
 end
