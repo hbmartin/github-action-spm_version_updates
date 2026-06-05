@@ -17,23 +17,29 @@ RSpec.describe ManifestParser do
     end
   end
 
+  # Mirror the shape returned by ManifestParser.get_packages: the original
+  # (scheme-bearing) repository URL kept alongside its parsed requirement.
+  def declared(repository_url, requirement)
+    { "repository_url" => repository_url, "requirement" => requirement }
+  end
+
   describe ".get_packages" do
     it "parses the common declaration forms from a real manifest" do
       packages = described_class.get_packages(File.join(manifest_dir, "Modules", "Package.swift"))
 
       expect(packages).to eq(
-        "github.com/onevcat/Kingfisher" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "7.0.0" },
-        "github.com/apple/swift-argument-parser" => { "kind" => "exactVersion", "version" => "1.2.3" },
-        "github.com/kean/Nuke" => { "kind" => "versionRange", "minimumVersion" => "12.0.0", "maximumVersion" => "13.0.0" },
-        "github.com/hbmartin/analytics-swift" => { "kind" => "branch", "branch" => "main" },
-        "github.com/getsentry/sentry-cocoa" => { "kind" => "revision", "revision" => "14aa6e47b03b820fd2b338728637570b9e969994" }
+        "github.com/onevcat/Kingfisher" => declared("https://github.com/onevcat/Kingfisher", { "kind" => "upToNextMajorVersion", "minimumVersion" => "7.0.0" }),
+        "github.com/apple/swift-argument-parser" => declared("https://github.com/apple/swift-argument-parser.git", { "kind" => "exactVersion", "version" => "1.2.3" }),
+        "github.com/kean/Nuke" => declared("https://github.com/kean/Nuke", { "kind" => "versionRange", "minimumVersion" => "12.0.0", "maximumVersion" => "13.0.0" }),
+        "github.com/hbmartin/analytics-swift" => declared("https://github.com/hbmartin/analytics-swift.git", { "kind" => "branch", "branch" => "main" }),
+        "github.com/getsentry/sentry-cocoa" => declared("https://github.com/getsentry/sentry-cocoa.git", { "kind" => "revision", "revision" => "14aa6e47b03b820fd2b338728637570b9e969994" })
       )
     end
 
     it "skips local path packages" do
       packages = parse('let p = [.package(path: "../LocalOnly"), .package(url: "https://github.com/a/b", from: "1.0.0")]')
 
-      expect(packages).to eq("github.com/a/b" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" })
+      expect(packages).to eq("github.com/a/b" => declared("https://github.com/a/b", { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }))
     end
 
     it "ignores packages inside line and block comments" do
@@ -51,7 +57,7 @@ RSpec.describe ManifestParser do
     it "does not treat // inside a URL as a comment" do
       packages = parse('.package(url: "https://github.com/a/b", from: "1.0.0")')
 
-      expect(packages).to eq("github.com/a/b" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" })
+      expect(packages).to eq("github.com/a/b" => declared("https://github.com/a/b", { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }))
     end
 
     it "supports the method-style requirement forms" do
@@ -66,11 +72,11 @@ RSpec.describe ManifestParser do
       SWIFT
 
       expect(parse(content)).to eq(
-        "github.com/a/exact" => { "kind" => "exactVersion", "version" => "1.0.0" },
-        "github.com/a/branch" => { "kind" => "branch", "branch" => "dev" },
-        "github.com/a/revision" => { "kind" => "revision", "revision" => "deadbeef" },
-        "github.com/a/major" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "2.0.0" },
-        "github.com/a/minor" => { "kind" => "upToNextMinorVersion", "minimumVersion" => "3.0.0" }
+        "github.com/a/exact" => declared("https://github.com/a/exact", { "kind" => "exactVersion", "version" => "1.0.0" }),
+        "github.com/a/branch" => declared("https://github.com/a/branch", { "kind" => "branch", "branch" => "dev" }),
+        "github.com/a/revision" => declared("https://github.com/a/revision", { "kind" => "revision", "revision" => "deadbeef" }),
+        "github.com/a/major" => declared("https://github.com/a/major", { "kind" => "upToNextMajorVersion", "minimumVersion" => "2.0.0" }),
+        "github.com/a/minor" => declared("https://github.com/a/minor", { "kind" => "upToNextMinorVersion", "minimumVersion" => "3.0.0" })
       )
     end
 
@@ -86,8 +92,8 @@ RSpec.describe ManifestParser do
       # `a ..< (b with patch + 1)`, so the inclusive upper bound 2.0.0 becomes
       # an exclusive maximum of 2.0.1.
       expect(parse(content)).to eq(
-        "github.com/a/halfopen" => { "kind" => "versionRange", "minimumVersion" => "1.0.0", "maximumVersion" => "2.0.0" },
-        "github.com/a/closed" => { "kind" => "versionRange", "minimumVersion" => "1.0.0", "maximumVersion" => "2.0.1" }
+        "github.com/a/halfopen" => declared("https://github.com/a/halfopen", { "kind" => "versionRange", "minimumVersion" => "1.0.0", "maximumVersion" => "2.0.0" }),
+        "github.com/a/closed" => declared("https://github.com/a/closed", { "kind" => "versionRange", "minimumVersion" => "1.0.0", "maximumVersion" => "2.0.1" })
       )
     end
 
@@ -97,7 +103,7 @@ RSpec.describe ManifestParser do
       # Carrying the suffix (e.g. 2.0.1-beta) would over-expand the range; SwiftPM
       # derives the bound as Version(major, minor, patch + 1) without the suffix.
       expect(parse(content)).to eq(
-        "github.com/a/b" => { "kind" => "versionRange", "minimumVersion" => "1.0.0", "maximumVersion" => "2.0.1" }
+        "github.com/a/b" => declared("https://github.com/a/b", { "kind" => "versionRange", "minimumVersion" => "1.0.0", "maximumVersion" => "2.0.1" })
       )
     end
 
@@ -120,7 +126,7 @@ RSpec.describe ManifestParser do
         )
       SWIFT
 
-      expect(parse(content)).to eq("github.com/a/multiline" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "3.2.1" })
+      expect(parse(content)).to eq("github.com/a/multiline" => declared("https://github.com/a/multiline", { "kind" => "upToNextMajorVersion", "minimumVersion" => "3.2.1" }))
     end
 
     it "raises when the manifest path is blank" do

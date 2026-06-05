@@ -106,15 +106,22 @@ class SpmChecker
 
   # Compare a set of declared dependencies against the resolved pins.
   #
-  # @param remote_packages [Hash<String, Hash>] repository URL => requirement
-  # @param resolved_versions [Hash<String, String>] repository URL => version
+  # Packages are keyed by their normalized repository URL, which is what we match
+  # against `resolved_versions` and `ignore_repos`. The original, scheme-bearing
+  # URL travels in the entry as `repository_url` and is what we hand to git --
+  # the normalized key is not a valid git remote.
+  #
+  # @param remote_packages [Hash<String, Hash>] normalized URL => { "repository_url", "requirement" }
+  # @param resolved_versions [Hash<String, String>] normalized URL => version
   # @param source [String, nil] the manifest a warning should be attributed to
   def check_packages(remote_packages, resolved_versions, source = nil)
-    remote_packages.each { |repository_url, requirement|
-      next if @ignore_repos&.include?(repository_url)
+    remote_packages.each { |normalized_url, entry|
+      next if @ignore_repos&.include?(normalized_url)
 
-      name = GitOperations.repo_name(repository_url)
-      resolved_version = resolved_versions[repository_url]
+      repository_url = entry["repository_url"]
+      requirement = entry["requirement"]
+      name = GitOperations.repo_name(normalized_url)
+      resolved_version = resolved_versions[normalized_url]
       kind = requirement["kind"]
 
       if resolved_version.nil?
@@ -170,6 +177,8 @@ class SpmChecker
   # @param source [String, nil] the originating manifest, when applicable
   def warn_for_branch(branch, name, repository_url, resolved_version, source = nil)
     last_commit = GitOperations.branch_last_commit(repository_url, branch)
+    return if last_commit.nil?
+
     add_warning("Newer commit available for #{name} (#{branch}): #{last_commit}", source) unless last_commit == resolved_version
   end
 

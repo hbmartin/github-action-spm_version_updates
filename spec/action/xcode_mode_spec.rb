@@ -23,6 +23,17 @@ RSpec.describe "SpmChecker Xcode project mode" do
     expect(checker.check_for_updates(fixture("UpToNextMajor"))).to eq(["Newer version of kean/Nuke: 12.1.7"])
   end
 
+  it "queries git with the original scheme-bearing URL, not the normalized match key" do
+    received = []
+    allow(GitOperations).to receive(:version_tags) { |url| received << url; versions("12.1.7", "12.1.6") }
+
+    checker.check_for_updates(fixture("UpToNextMajor"))
+
+    # Regression: the normalized key "github.com/kean/Nuke" is not a valid git
+    # remote; git ls-remote needs the original "https://..." URL.
+    expect(received).to eq(["https://github.com/kean/Nuke"])
+  end
+
   it "reports newer versions for exact constraints when check_when_exact is set" do
     allow(GitOperations).to receive(:version_tags).and_return(versions("12.1.7", "12.1.6"))
     checker.check_when_exact = true
