@@ -1,8 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require_relative "spm_checker"
+require_relative "action_reporter"
 require_relative "github_integration"
+require_relative "spm_checker"
 
 # Main GitHub Action entry point.
 #
@@ -25,8 +26,11 @@ class Action
     print_config(inputs)
     move_to_workspace
 
-    warnings = run_checks(configure_checker(inputs), inputs)
-    report(warnings)
+    checker = configure_checker(inputs)
+    warnings = run_checks(checker, inputs)
+    warning_details = checker.warning_details if checker.respond_to?(:warning_details)
+    report(warnings, warning_details)
+    fail_with("Found #{warnings.size} SPM dependency update#{warnings.size == 1 ? '' : 's'}") if inputs[:fail_on_updates] && !warnings.empty?
 
     puts "SPM version check completed successfully!"
   rescue ModeError => e
@@ -60,6 +64,7 @@ class Action
       report_above_maximum: env_flag("INPUT_REPORT_ABOVE_MAXIMUM"),
       report_pre_releases: env_flag("INPUT_REPORT_PRE_RELEASES"),
       ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
+      fail_on_updates: env_flag("INPUT_FAIL_ON_UPDATES")
     }
   end
 
@@ -74,6 +79,7 @@ class Action
     puts "Report above maximum: #{inputs[:report_above_maximum]}"
     puts "Report pre-releases: #{inputs[:report_pre_releases]}"
     puts "Ignore repos: #{inputs[:ignore_repos].join(', ')}" unless inputs[:ignore_repos].empty?
+    puts "Fail on updates: #{inputs[:fail_on_updates]}"
   end
 
   def configure_checker(inputs)
@@ -104,13 +110,15 @@ class Action
     end
   end
 
-  def report(warnings)
+  def report(warnings, warning_details = nil)
+    ActionReporter.new(warnings, warning_details).write
+
     if warnings.empty?
       puts "✅ All SPM dependencies are up to date!"
       @github_integration.post_comment("✅ **SPM Dependencies**: All dependencies are up to date!")
     else
       puts "⚠️  Found #{warnings.size} potential updates"
-      @github_integration.post_comment_with_warnings(warnings)
+      @github_integration.post_comment_with_warnings(warnings, warning_details)
     end
   end
 
