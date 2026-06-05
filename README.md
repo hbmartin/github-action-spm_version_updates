@@ -205,7 +205,9 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `report-pre-releases` | Include pre-release versions in update reports | No | `false` |
 | `ignore-repos` | Comma-separated list of repository URLs to ignore | No | `''` |
 | `allow-hosts` | Comma-separated list of git remote hostnames allowed for version lookups. Empty allows any host. | No | `''` |
-| `fail-on-updates` | Fail the action when one or more dependency updates are found | No | `false` |
+| `fail-on-updates` | Legacy fail behavior. Set `true` to fail on any update, or `major` / `minor` / `patch` to fail on semantic version updates at or above that severity. | No | `false` |
+| `fail-on` | Fail on semantic version updates at or above this severity: `major`, `minor`, or `patch`. Overrides `fail-on-updates` when set. | No | `''` |
+| `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | No | `false` |
 | `github-token` | GitHub token for API access | No | `${{ github.token }}` |
 
 ## How dependency constraints are handled
@@ -227,21 +229,24 @@ Across all of the constraint types above, pre-release tags (versions with a `-` 
 
 ## Outputs
 
-The action always writes machine-readable outputs, appends a GitHub step summary, and emits `::warning` annotations for each update. Pull request runs still get the summary comment, but scheduled and `workflow_dispatch` runs now have visible results in the workflow run summary and annotations.
+The action always writes machine-readable outputs, appends a GitHub step summary, and emits `::warning` annotations for each update. Pull request runs get a summary comment when updates are found. Clean runs delete the prior generated comment by default; set `comment-on-success: true` to keep an up-to-date comment instead. Scheduled and `workflow_dispatch` runs still have visible results in the workflow run summary and annotations.
 
 | Output | Description |
 |--------|-------------|
 | `updates-found` | Number of dependency updates found. |
-| `updates-json` | JSON array of update objects. Each object has a `message` field and, when available, structured fields such as `type`, `package`, `repository_url`, `current_version`, `available_version`, `note`, and `source`. |
+| `major-updates-found` | Number of major semantic-version updates found. |
+| `minor-updates-found` | Number of minor semantic-version updates found. |
+| `patch-updates-found` | Number of patch semantic-version updates found. |
+| `updates-json` | JSON array of update objects. Each object has a `message` field and, when available, structured fields such as `type`, `package`, `repository_url`, `current_version`, `available_version`, `severity`, `note`, and `source`. |
 
-Use `fail-on-updates: true` when dependency updates should fail the job after the outputs, step summary, annotations, and PR comment have been written.
+Use `fail-on: major` when only major semantic-version updates should fail the job after the outputs, step summary, annotations, and PR comment have been written. Use `minor` to fail on major or minor updates, and `patch` to fail on any semantic-version update. `fail-on-updates: true` remains supported when any reported update, including branch or revision updates, should fail the job.
 
 ```yaml
 - id: spm-updates
   uses: hbmartin/github-action-spm_version_updates@v1
   with:
     package-manifest-paths: Modules/Package.swift
-    fail-on-updates: true
+    fail-on: major
 
 - name: Use update count
   if: ${{ always() && steps.spm-updates.outputs.updates-found != '0' }}
