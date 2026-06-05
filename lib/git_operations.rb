@@ -6,6 +6,9 @@ require "uri"
 
 # Git operations for SPM version checking (migrated from git.rb)
 module GitOperations
+  ALLOWED_PROTOCOLS = "https:ssh:git"
+  HOST_PATTERN = /\A[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\z/i
+
   # Removes protocol and trailing .git from a repo URL
   # @param   [String] repo_url The URL of the repository
   # @return [String]
@@ -80,7 +83,13 @@ module GitOperations
   # "no updates available").
   # @return [String, nil]
   def self.ls_remote(flag, repo_url)
-    stdout, stderr, status = Open3.capture3("git", "ls-remote", flag, repo_url)
+    stdout, stderr, status = Open3.capture3(
+      { "GIT_ALLOW_PROTOCOL" => ALLOWED_PROTOCOLS },
+      "git",
+      "ls-remote",
+      flag,
+      repo_url
+    )
     return stdout if status.success?
 
     warn("git ls-remote #{flag} failed for #{redact_credentials(repo_url)}: #{redact_credentials(stderr.strip)}")
@@ -133,7 +142,9 @@ module GitOperations
 
   def self.normalize_host(host)
     normalized = host.to_s.sub(/:\d+\z/, "").downcase
-    normalized.empty? ? nil : normalized
+    return nil if normalized.empty? || !normalized.match?(HOST_PATTERN)
+
+    normalized
   end
 
   private_class_method :ls_remote, :redact_credentials, :compare_semver, :normalize_version_tag, :parsed_host, :scp_like_host, :bare_host, :normalize_host

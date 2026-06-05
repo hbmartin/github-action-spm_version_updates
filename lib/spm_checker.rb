@@ -12,6 +12,48 @@ class SpmChecker
 
   class DisallowedRepositoryHost < StandardError; end
 
+  # Normalizes user-provided allow-host entries into hostnames.
+  class AllowedHost
+    MALFORMED_SCHEME_PATTERN = %r{\A[a-z][a-z0-9+\-.]*//}i
+
+    def self.normalize(entry)
+      new(entry).normalize
+    end
+
+    def initialize(entry)
+      @raw = entry.to_s.strip
+    end
+
+    def normalize
+      return nil if raw.empty?
+      return parsed if parsed && !malformed_scheme?
+      return fallback if fallback.match?(GitOperations::HOST_PATTERN)
+
+      warn_unparseable
+      nil
+    end
+
+    private
+
+    attr_reader :raw
+
+    def parsed
+      @parsed ||= GitOperations.host(raw)
+    end
+
+    def fallback
+      @fallback ||= raw.sub(/:\d+\z/, "").downcase
+    end
+
+    def malformed_scheme?
+      raw.match?(MALFORMED_SCHEME_PATTERN)
+    end
+
+    def warn_unparseable
+      warn("allow-hosts entry #{raw.inspect} could not be parsed as a host and will not match any repository URL")
+    end
+  end
+
   # Structured facts about each warning, used by the GitHub Action comment
   # renderer. `check_for_updates` and `check_manifests` still return the legacy
   # string warnings for compatibility with existing plugin-style callers.
@@ -37,6 +79,10 @@ class SpmChecker
 
   # A list of git remote hostnames allowed for dependency version lookups
   attr_accessor :allow_hosts
+
+  def self.redact_credentials(value)
+    value.to_s.gsub(%r{([a-z][a-z0-9+\-.]*://)([^/\s@]+)@}i, '\1[REDACTED]@')
+  end
 
   def initialize
     @check_when_exact = false
@@ -107,7 +153,7 @@ class SpmChecker
 
   def normalize_allow_hosts
     @allow_hosts = Array(@allow_hosts)
-      .filter_map { |host| GitOperations.host(host) || host.to_s.strip.sub(/:\d+\z/, "").downcase }
+      .filter_map { |host| AllowedHost.normalize(host) }
       .reject(&:empty?)
   end
 
@@ -199,18 +245,20 @@ class SpmChecker
       next if requirement.nil?
 
       name = GitOperations.repo_name(normalized_url)
-      ensure_repository_host_allowed!(name, repository_url, source)
 
       resolved_version = resolved_versions[normalized_url]
 
       if resolved_version.nil?
-        puts("Unable to locate the current version for #{name} (#{repository_url})")
+        puts("Unable to locate the current version for #{name} (#{self.class.redact_credentials(repository_url)})")
         next
       end
 
+      kind = requirement["kind"]
+      validate_repository_host(name, repository_url, source) if git_lookup_required?(kind)
+
       {
         cache_key: version_tags_cache_key(normalized_url, repository_url),
-        kind: requirement["kind"],
+        kind:,
         name:,
         normalized_url:,
         repository_url:,
@@ -221,25 +269,18 @@ class SpmChecker
     }
   end
 
-  def ensure_repository_host_allowed!(name, repository_url, source)
-    return if @allow_hosts.nil? || @allow_hosts.empty?
+  def validate_repository_host(name, repository_url, source)
+    return if @allow_hosts.empty?
 
     host = GitOperations.host(repository_url)
     return if host && @allow_hosts.include?(host)
 
-    source_note = source ? " from #{source}" : ""
-    host_note = host || "unknown host"
-    raise(
-      DisallowedRepositoryHost,
-      "Repository host #{host_note.inspect} for #{name}#{source_note} is not allowed by allow-hosts (allowed: #{@allow_hosts.join(', ')})"
-    )
+    raise(DisallowedRepositoryHost, disallowed_repository_host_message(name, source, host || "unknown host"))
   end
 
-  def ensure_repository_host_allowed(name, repository_url, source)
-    ensure_repository_host_allowed!(name, repository_url, source)
-    true
-  rescue DisallowedRepositoryHost
-    false
+  def disallowed_repository_host_message(name, source, host_note)
+    source_note = source ? " from #{source}" : ""
+    "Repository host #{host_note.inspect} for #{name}#{source_note} is not allowed by allow-hosts (allowed: #{@allow_hosts.join(', ')})"
   end
 
   def version_tags_cache_key(normalized_url, repository_url)
@@ -287,6 +328,12 @@ class SpmChecker
     true
   end
 
+  def git_lookup_required?(kind)
+    return @check_branches if kind == "branch"
+
+    version_tag_lookup_required?(kind)
+  end
+
   def version_tags_for(package)
     @version_tags_cache.fetch(package[:cache_key], [])
   end
@@ -308,7 +355,7 @@ class SpmChecker
     when "versionRange"
       warn_for_new_versions_range(available_versions, name, normalized_url, repository_url, requirement, resolved_version, source)
     else
-      puts("Not processing dependency rule '#{kind}' for #{name} (#{repository_url})")
+      puts("Not processing dependency rule '#{kind}' for #{name} (#{self.class.redact_credentials(repository_url)})")
     end
   end
 
@@ -383,8 +430,8 @@ class SpmChecker
   def warn_for_new_versions_range(available_versions, name, normalized_url, repository_url, requirement, resolved_version, source = nil)
     begin
       max_version = Semantic::Version.new(requirement["maximumVersion"])
-    rescue ArgumentError => e
-      puts("Unable to extract semver from #{requirement} for #{name} (#{e})")
+    rescue ArgumentError => error
+      puts("Unable to extract semver from #{requirement} for #{name} (#{error})")
       return
     end
     # Honor the pre-release policy: never report a pre-release as the newest
@@ -418,8 +465,8 @@ class SpmChecker
   def warn_for_new_versions(major_or_minor, available_versions, name, normalized_url, repository_url, resolved_version_string, source = nil)
     begin
       resolved_version = Semantic::Version.new(resolved_version_string)
-    rescue ArgumentError => e
-      puts("Unable to extract semver from #{resolved_version_string} for #{name} (#{e})")
+    rescue ArgumentError => error
+      puts("Unable to extract semver from #{resolved_version_string} for #{name} (#{error})")
       return
     end
     # upToNextMajor allows any version with the same major; upToNextMinor additionally

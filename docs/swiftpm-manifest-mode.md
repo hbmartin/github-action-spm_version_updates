@@ -69,9 +69,11 @@ parser. No macOS runner — manifest parsing is pure Ruby and runs on
 Fork PRs need extra care if you switch the trigger to `pull_request_target` so
 the action can write a summary comment. With that trigger, checking out the PR
 head makes `Package.swift` untrusted input: a malicious fork can change package
-URLs, and this action will ask `git ls-remote` to contact those remotes. Keep
-checkout credentials off, avoid extra secrets or SSH keys, and set
-`allow-hosts` to the git hosts your manifests are expected to use:
+URLs, and this action will ask `git ls-remote` to contact those remotes over
+Git's `https`, `ssh`, or `git` transports. `file`, `ext`, and remote-helper
+transports are blocked. Keep checkout credentials off, avoid extra secrets or
+SSH keys, and set `allow-hosts` to the git hosts your manifests are expected to
+use:
 
 ```yaml
 on:
@@ -251,7 +253,7 @@ it came from, so you know exactly where to make the change:
 | `report-above-maximum` | Report versions above the maximum constraint range. | `false` |
 | `report-pre-releases` | Include pre-release versions in update reports. | `false` |
 | `ignore-repos` | Comma-separated list of repository URLs to ignore. | `''` |
-| `allow-hosts` | Comma-separated list of git remote hostnames allowed for version lookups. Empty allows any host. | `''` |
+| `allow-hosts` | Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. A blocked lookup fails the action and writes `blocked=true` plus `error-message`. | `''` |
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | `false` |
 | `github-token` | GitHub token for posting the PR comment. | `${{ github.token }}` |
 

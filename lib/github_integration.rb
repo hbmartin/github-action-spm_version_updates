@@ -8,6 +8,100 @@ require "uri"
 class GithubIntegration
   COMMENT_IDENTIFIER = "<!-- spm-version-updates-action -->"
 
+  # Parses supported git remote URLs and renders host-specific links.
+  class RepositoryLink
+    URL_REMOTE_PATTERN = %r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>github\.com|gitlab\.com|bitbucket\.org)(?::\d+)?/(?<path>.+)\z}i
+    SCP_REMOTE_PATTERN = %r{\A(?:[^@/\s]+@)?(?<host>github\.com|gitlab\.com|bitbucket\.org)[:/](?<path>.+)\z}i
+    PATH_NORMALIZERS = {
+      "github.com" => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
+      "bitbucket.org" => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
+      "gitlab.com" => lambda { |segments|
+        project_segments = segments.take_while { |segment| segment != "-" }
+        project_segments.join("/") if project_segments.size >= 2
+      }
+    }.freeze
+    COMPARE_PATHS = {
+      "github.com" => ->(current, available) { "/compare/#{current}...#{available}" },
+      "gitlab.com" => ->(current, available) { "/-/compare/#{current}...#{available}" },
+      "bitbucket.org" => ->(current, available) { "/branches/compare/#{available}..#{current}" }
+    }.freeze
+    RELEASE_LINKS = {
+      "github.com" => ["Releases", "/releases"],
+      "gitlab.com" => ["Releases", "/-/releases"],
+      "bitbucket.org" => ["Tags", "/downloads/?tab=tags"]
+    }.freeze
+
+    def self.from(repository_url)
+      link = new(repository_url)
+      link if link.valid?
+    end
+
+    def initialize(repository_url)
+      @value = repository_url.to_s.strip
+      @host = nil
+      @raw_path = nil
+      @path = nil
+      configure_remote(remote_match)
+    end
+
+    def valid?
+      @host && @path
+    end
+
+    def compare_url(current, available)
+      current_ref = URI.encode_www_form_component(current.to_s)
+      available_ref = URI.encode_www_form_component(available.to_s)
+      "#{base_url}#{COMPARE_PATHS.fetch(@host).call(current_ref, available_ref)}"
+    end
+
+    def release_link
+      label, path = RELEASE_LINKS.fetch(@host)
+      "[#{label}](#{base_url}#{path})"
+    end
+
+    def markdown_links(updates)
+      compare_links = updates.map.with_index(1) { |update, index|
+        label = updates.size == 1 ? "Compare" : "Compare #{index}"
+        "[#{label}](#{compare_url(update[:current], update[:available])})"
+      }
+      (compare_links + [release_link]).join("<br>")
+    end
+
+    private
+
+    def remote_match
+      @value.match(URL_REMOTE_PATTERN) || @value.match(SCP_REMOTE_PATTERN)
+    end
+
+    def configure_remote(match)
+      return unless match
+
+      @host = match[:host].downcase
+      @raw_path = match[:path]
+      @path = normalized_path
+    end
+
+    def normalized_path
+      PATH_NORMALIZERS.fetch(@host).call(path_segments)
+    end
+
+    def path_segments
+      @raw_path.to_s
+        .split(/[?#]/, 2)
+        .first
+        .to_s
+        .sub(%r{\A/+}, "")
+        .sub(%r{/+\z}, "")
+        .sub(/\.git\z/i, "")
+        .split("/")
+        .reject(&:empty?)
+    end
+
+    def base_url
+      "https://#{@host}/#{@path}"
+    end
+  end
+
   def initialize
     @github_token = ENV.fetch("GITHUB_TOKEN", nil)
     @github_repository = ENV.fetch("GITHUB_REPOSITORY", nil)
@@ -26,10 +120,32 @@ class GithubIntegration
   end
 
   def post_comment(message)
-    return unless can_post_comments?
+    with_comment_target { post_comment_body(build_comment_message(message)) }
+  end
 
-    full_message = build_comment_message(message)
+  def post_comment_with_warnings(warnings, warning_details = nil)
+    with_comment_target {
+      message = build_warnings_message(warnings, warning_details)
+      post_comment_body(build_comment_message(message))
+    }
+  end
 
+  def delete_existing_comment
+    with_comment_target {
+      existing_comment = find_existing_comment
+      delete_comment(existing_comment[:id]) if existing_comment
+    }
+  end
+
+  private
+
+  def with_comment_target
+    return unless @client && @pr_number
+
+    yield
+  end
+
+  def post_comment_body(full_message)
     existing_comment = find_existing_comment
     if existing_comment
       update_comment(existing_comment[:id], full_message)
@@ -38,35 +154,13 @@ class GithubIntegration
     end
   end
 
-  def post_comment_with_warnings(warnings, warning_details = nil)
-    return unless can_post_comments?
-
-    message = build_warnings_message(warnings, warning_details)
-    post_comment(message)
-  end
-
-  def delete_existing_comment
-    return unless can_post_comments?
-
-    existing_comment = find_existing_comment
-    return unless existing_comment
-
-    delete_comment(existing_comment[:id])
-  end
-
-  private
-
-  def can_post_comments?
-    @client && @pr_number
-  end
-
   def extract_pr_number
     return nil unless @github_event_path && File.exist?(@github_event_path)
 
     event_data = JSON.parse(File.read(@github_event_path))
     event_data.dig("pull_request", "number") || event_data["number"]
-  rescue JSON::ParserError => e
-    puts("Error parsing GitHub event data: #{e.message}")
+  rescue JSON::ParserError => error
+    puts("Error parsing GitHub event data: #{error.message}")
     nil
   end
 
@@ -171,8 +265,12 @@ class GithubIntegration
   end
 
   def warning_group_row(group)
-    "| #{table_cell(inline_code(group[:package]))} | #{table_cell(update_cell(group[:updates]))} | " \
-      "#{table_cell(source_cell(group[:sources]))} | #{table_cell(links_cell(group))} |"
+    repository = RepositoryLink.from(group[:repository_url])
+    updates = group[:updates]
+    links = repository ? repository.markdown_links(updates) : "N/A"
+
+    "| #{table_cell(inline_code(group[:package]))} | #{table_cell(update_cell(updates))} | " \
+      "#{table_cell(source_cell(group[:sources]))} | #{table_cell(links)} |"
   end
 
   def update_cell(updates)
@@ -193,96 +291,6 @@ class GithubIntegration
     "#{sources.size} manifests<br>#{source_list}"
   end
 
-  def links_cell(group)
-    repository = repository_links(group[:repository_url])
-    return "N/A" unless repository
-
-    compare_links = group[:updates].map.with_index(1) { |update, index|
-      label = group[:updates].size == 1 ? "Compare" : "Compare #{index}"
-      "[#{label}](#{compare_url(repository, update[:current], update[:available])})"
-    }
-    (compare_links + [release_link(repository)]).join("<br>")
-  end
-
-  def compare_url(repository, current, available)
-    base_url = repository[:base_url]
-    current_ref = url_ref(current)
-    available_ref = url_ref(available)
-
-    case repository[:host]
-    when "github.com"
-      "#{base_url}/compare/#{current_ref}...#{available_ref}"
-    when "gitlab.com"
-      "#{base_url}/-/compare/#{current_ref}...#{available_ref}"
-    when "bitbucket.org"
-      "#{base_url}/branches/compare/#{current_ref}..#{available_ref}"
-    end
-  end
-
-  def release_link(repository)
-    case repository[:host]
-    when "github.com"
-      "[Releases](#{repository[:base_url]}/releases)"
-    when "gitlab.com"
-      "[Releases](#{repository[:base_url]}/-/releases)"
-    when "bitbucket.org"
-      "[Tags](#{repository[:base_url]}/downloads/?tab=tags)"
-    end
-  end
-
-  def repository_links(repository_url)
-    host, path = repository_host_and_path(repository_url)
-    return nil unless host && path
-
-    {
-      host:,
-      base_url: "https://#{host}/#{path}"
-    }
-  end
-
-  def repository_host_and_path(repository_url)
-    value = repository_url.to_s.strip
-    return nil if value.empty?
-
-    match = value.match(%r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>github\.com|gitlab\.com|bitbucket\.org)(?::\d+)?/(?<path>.+)\z}i)
-    match ||= value.match(%r{\A(?:[^@/\s]+@)?(?<host>github\.com|gitlab\.com|bitbucket\.org)[:/](?<path>.+)\z}i)
-    return nil unless match
-
-    host = match[:host].downcase
-    path = repository_path_for(host, match[:path])
-    return nil unless path
-
-    [host, path]
-  end
-
-  def repository_path_for(host, path)
-    segments = normalized_repository_path_segments(path)
-    segments = segments.take_while { |segment| segment != "-" } if host == "gitlab.com"
-
-    case host
-    when "github.com", "bitbucket.org"
-      return nil if segments.size < 2
-
-      segments.first(2).join("/")
-    when "gitlab.com"
-      return nil if segments.size < 2
-
-      segments.join("/")
-    end
-  end
-
-  def normalized_repository_path_segments(path)
-    path.to_s
-      .split(/[?#]/, 2)
-      .first
-      .to_s
-      .sub(%r{\A/+}, "")
-      .sub(%r{/+\z}, "")
-      .sub(/\.git\z/i, "")
-      .split("/")
-      .reject(&:empty?)
-  end
-
   def detail_value(detail, key)
     detail[key] || detail[key.to_s]
   end
@@ -301,38 +309,34 @@ class GithubIntegration
     value.to_s.gsub("|", "\\|").gsub("\n", "<br>")
   end
 
-  def url_ref(value)
-    URI.encode_www_form_component(value.to_s)
-  end
-
   def find_existing_comment
     return nil unless @pr_number
 
     comments = @client.issue_comments(@github_repository, @pr_number)
     comments.find { |comment| comment[:body].include?(COMMENT_IDENTIFIER) }
-  rescue Octokit::Error => e
-    puts("Error fetching existing comments: #{e.message}")
+  rescue Octokit::Error => error
+    puts("Error fetching existing comments: #{error.message}")
     nil
   end
 
   def create_comment(message)
     comment = @client.add_comment(@github_repository, @pr_number, message)
     puts("Created new comment: #{comment[:html_url]}")
-  rescue Octokit::Error => e
-    puts("Error creating comment: #{e.message}")
+  rescue Octokit::Error => error
+    puts("Error creating comment: #{error.message}")
   end
 
   def update_comment(comment_id, message)
     comment = @client.update_comment(@github_repository, comment_id, message)
     puts("Updated existing comment: #{comment[:html_url]}")
-  rescue Octokit::Error => e
-    puts("Error updating comment: #{e.message}")
+  rescue Octokit::Error => error
+    puts("Error updating comment: #{error.message}")
   end
 
   def delete_comment(comment_id)
     @client.delete_comment(@github_repository, comment_id)
     puts("Deleted resolved comment: #{comment_id}")
-  rescue Octokit::Error => e
-    puts("Error deleting comment: #{e.message}")
+  rescue Octokit::Error => error
+    puts("Error deleting comment: #{error.message}")
   end
 end

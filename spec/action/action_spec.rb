@@ -356,6 +356,45 @@ RSpec.describe Action do
       expect(github_integration).not_to have_received(:delete_existing_comment)
     end
 
+    it "writes structured output when allow-hosts blocks a lookup", :aggregate_failures do
+      message = 'Repository host "metadata.internal" for a/b is not allowed by allow-hosts (allowed: github.com)'
+      allow(configured_checker).to receive(:check_for_updates).and_raise(SpmChecker::DisallowedRepositoryHost, message)
+      allow(configured_checker).to receive(:check_manifests)
+
+      Dir.mktmpdir do |dir|
+        output_path = File.join(dir, "github_output")
+        summary_path = File.join(dir, "step_summary")
+
+        stdout = capture_stdout do
+          expect {
+            with_env(
+              input_env(
+                "INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj",
+                "GITHUB_OUTPUT" => output_path,
+                "GITHUB_STEP_SUMMARY" => summary_path
+              )
+            ) do
+              action.run
+            end
+          }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+        end
+
+        output = File.read(output_path)
+        expect(output).to include("updates-found=0")
+        expect(output).to include("major-updates-found=0")
+        expect(output).to include("minor-updates-found=0")
+        expect(output).to include("patch-updates-found=0")
+        expect(output).to include("blocked=true")
+        expect(output).to include("error-message<<")
+        expect(output).to include(message)
+        expect(output_json_from(output_path)).to eq([])
+        expect(File.read(summary_path)).to include("Version lookup was blocked", message)
+        expect(stdout).to include("::error title=SPM version check blocked::#{message}")
+        expect(github_integration).not_to have_received(:post_comment_with_warnings)
+        expect(github_integration).not_to have_received(:post_comment)
+      end
+    end
+
     it "fails after reporting when fail-on-updates is enabled and updates are found", :aggregate_failures do
       warnings = ["Newer version of onevcat/Kingfisher: 8.0.0"]
       allow(configured_checker).to receive(:check_for_updates).and_return(warnings)

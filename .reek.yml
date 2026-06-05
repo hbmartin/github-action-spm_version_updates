@@ -49,7 +49,6 @@ detectors:
     - ActionReporter#env_value
     - ActionReporter#write_update_summary
     - GithubIntegration#build_legacy_warnings_message
-    - GithubIntegration#links_cell
     - GithubIntegration#source_cell
     - ManifestParser#self.copy_string_literal
     - ManifestParser#self.matching_paren
@@ -77,7 +76,6 @@ detectors:
     - Action#print_config
     - ActionReporter#write_update_summary
     - GithubIntegration#build_legacy_warnings_message
-    - GithubIntegration#links_cell
     - GithubIntegration#source_cell
     - SpmChecker#check_packages
     - SpmChecker#version_tag_lookup_required?
@@ -148,13 +146,11 @@ detectors:
     - ActionReporter#parsed_warning_record
     - GitOperations#self.branch_last_commit
     - GitOperations#self.version_tags
-    - GithubIntegration#github_repository_url
     - GithubIntegration#initialize
     - ManifestParser#self.get_packages
     - ManifestParser#self.increment_patch_version
     - ManifestParser#self.package_calls
     - SpmChecker#add_warning
-    - SpmChecker#ensure_repository_host_allowed!
     - SpmChecker#merged_resolved_versions
     - SpmChecker#package_contexts
     - SpmChecker#warn_for_branch
@@ -213,8 +209,6 @@ detectors:
     - GithubIntegration#build_warnings_message
     - GithubIntegration#extract_pr_number
     - GithubIntegration#find_existing_comment
-    - GithubIntegration#github_repository_url
-    - GithubIntegration#links_cell
     - GithubIntegration#warning_group
     - ManifestParser#self.copy_string_literal
     - ManifestParser#self.get_packages
@@ -228,7 +222,6 @@ detectors:
     - SpmChecker#check_manifests
     - SpmChecker#check_packages
     - SpmChecker#check_versioned_package
-    - SpmChecker#ensure_repository_host_allowed!
     - SpmChecker#merged_resolved_versions
     - SpmChecker#package_contexts
     - SpmChecker#prefetch_version_tags
@@ -269,16 +262,7 @@ detectors:
     accept: []
   UncommunicativeVariableName:
     enabled: true
-    exclude:
-    - Action#run
-    - GithubIntegration#create_comment
-    - GithubIntegration#extract_pr_number
-    - GithubIntegration#find_existing_comment
-    - GithubIntegration#update_comment
-    - SpmChecker#warn_for_new_versions
-    - SpmChecker#warn_for_new_versions_range
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions_range
+    exclude: []
     reject:
     - "/^.$/"
     - "/[0-9]$/"
@@ -305,11 +289,9 @@ detectors:
     - ActionReporter#write_multiline_output
     - GithubIntegration#detail_value
     - GithubIntegration#display_version
-    - GithubIntegration#github_repository_url
     - GithubIntegration#how_to_update_details
     - GithubIntegration#inline_code
     - GithubIntegration#table_cell
-    - GithubIntegration#url_ref
     - SpmChecker#warning_detail
     - capture_stdout
     - input_env

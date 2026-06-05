@@ -28,6 +28,8 @@ jobs:
         run: bundle exec rubocop
       - name: Run Reek
         run: bundle exec rake reek
+      - name: Run Danger plugin lint
+        run: bundle exec danger plugins lint
 
   build:
     name: Action specs
@@ -50,11 +52,8 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
-      # Runs the GitHub Action's own RSpec suite, covering both Xcode-project
-      # mode and Swift manifest mode. The legacy spec/spm_version_updates_spec.rb
-      # targets the retired Danger plugin and is intentionally not run here.
-      - name: Run action specs
-        run: bundle exec ruby -r./spec/coverage_helper -e "require 'rspec/core'; exit RSpec::Core::Runner.run(['spec/action', '--format', 'progress'])"
+      - name: Run specs
+        run: bundle exec rspec
       - name: Upload coverage report
         if: always()
         # actions/upload-artifact v4.6.2
@@ -62,4 +61,4 @@ jobs:
         with:
           name: coverage-ruby-${{ matrix.ruby-version }}
           path: coverage/
-          if-no-files-found: warn
+          if-no-files-found: error
