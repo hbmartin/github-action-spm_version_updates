@@ -125,6 +125,22 @@ RSpec.describe SpmChecker do
       end
     end
 
+    it "does not report a pre-release as the newest version in a range when pre-releases are filtered" do
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", "1.0.0"..<"3.0.0")')
+        File.write(File.join(dir, "Package.resolved"), {
+          "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
+          "version" => 2,
+        }.to_json)
+        # 3.0.0-beta.1 is the absolute newest but a pre-release; report 2.0.0.
+        allow(GitOperations).to receive(:version_tags).and_return(versions("3.0.0-beta.1", "2.0.0", "1.0.0"))
+
+        warnings = checker.check_manifests([File.join(dir, "Package.swift")])
+
+        expect(warnings).to eq(["Newer version of a/b: 2.0.0\nSource: #{File.join(dir, 'Package.swift')}"])
+      end
+    end
+
     it "does not emit an empty warning when no available version satisfies the constraint" do
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", from: "1.0.0")')

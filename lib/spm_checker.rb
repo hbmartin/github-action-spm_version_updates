@@ -206,15 +206,20 @@ class SpmChecker
       puts "Unable to extract semver from #{requirement} for #{name} (#{e})"
       return
     end
-    if available_versions.first < max_version
-      add_warning("Newer version of #{name}: #{available_versions.first}", source)
+    # Honor the pre-release policy: never report a pre-release as the newest
+    # version when report_pre_releases is false.
+    newest = available_versions.find { |version| @report_pre_releases ? true : version.pre.nil? }
+    return if newest.nil?
+
+    if newest < max_version
+      add_warning("Newer version of #{name}: #{newest}", source) unless newest.to_s == resolved_version
     else
       newest_meeting_reqs = available_versions.find { |version|
         version < max_version && (@report_pre_releases ? true : version.pre.nil?)
       }
       add_warning("Newer version of #{name}: #{newest_meeting_reqs}", source) unless newest_meeting_reqs.nil? || newest_meeting_reqs.to_s == resolved_version
       add_warning(
-        "Newest version of #{name}: #{available_versions.first} (but this package is configured up to the next #{max_version} version)",
+        "Newest version of #{name}: #{newest} (but this package is configured up to the next #{max_version} version)",
         source
       ) if @report_above_maximum
     end
@@ -247,7 +252,7 @@ class SpmChecker
     # version is intentionally still reported here, since report_above_maximum
     # exists precisely to surface the out-of-range (e.g. next major) version.
     add_warning(
-      "Newest version of #{name}: #{available_versions.first} (but this package is configured up to the next #{major_or_minor} version)",
+      "Newest version of #{name}: #{newest_above_reqs} (but this package is configured up to the next #{major_or_minor} version)",
       source
     ) unless newest_above_reqs == newest_meeting_reqs
   end

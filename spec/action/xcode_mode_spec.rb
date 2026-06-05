@@ -70,6 +70,17 @@ RSpec.describe "SpmChecker Xcode project mode" do
     )
   end
 
+  it "reports a non-pre-release as the above-maximum version when pre-releases are filtered" do
+    # 14.0.0-beta.1 is the absolute newest but is a pre-release; the message must
+    # report 13.0.0 (the newest release) rather than the beta.
+    allow(GitOperations).to receive(:version_tags).and_return(versions("14.0.0-beta.1", "13.0.0", "12.1.6"))
+    checker.report_above_maximum = true
+
+    expect(checker.check_for_updates(fixture("UpToNextMajor"))).to eq(
+      ["Newest version of kean/Nuke: 13.0.0 (but this package is configured up to the next major version)"]
+    )
+  end
+
   it "reads version=1 Package.resolved files" do
     allow(GitOperations).to receive(:version_tags).and_return(versions("3.1.3"))
 
