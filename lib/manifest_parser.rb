@@ -120,16 +120,17 @@ module ManifestParser
     { "kind" => "versionRange", "minimumVersion" => minimum, "maximumVersion" => maximum }
   end
 
-  # Increment the patch component of an `x.y.z` version, preserving any
-  # pre-release/build suffix. Returns the input unchanged if it is not a
-  # three-part version.
+  # Increment the patch component of an `x.y.z` version, dropping any
+  # pre-release/build suffix (matching how SwiftPM derives the exclusive upper
+  # bound of a closed range as `Version(major, minor, patch + 1)`). Returns the
+  # input unchanged if it is not a three-part version.
   #
   # @return [String]
   def self.increment_patch_version(version)
-    major, minor, patch, suffix = version.match(/\A(\d+)\.(\d+)\.(\d+)(.*)\z/)&.captures
+    major, minor, patch = version.match(/\A(\d+)\.(\d+)\.(\d+)/)&.captures
     return version if patch.nil?
 
-    "#{major}.#{minor}.#{patch.to_i + 1}#{suffix}"
+    "#{major}.#{minor}.#{patch.to_i + 1}"
   end
 
   # Find the index of the `)` that closes the `(` at +open_index+, ignoring

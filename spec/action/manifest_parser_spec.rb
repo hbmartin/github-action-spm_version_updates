@@ -91,6 +91,16 @@ RSpec.describe ManifestParser do
       )
     end
 
+    it "drops the pre-release suffix when normalizing a closed range upper bound" do
+      content = '.package(url: "https://github.com/a/b", "1.0.0"..."2.0.0-beta")'
+
+      # Carrying the suffix (e.g. 2.0.1-beta) would over-expand the range; SwiftPM
+      # derives the bound as Version(major, minor, patch + 1) without the suffix.
+      expect(parse(content)).to eq(
+        "github.com/a/b" => { "kind" => "versionRange", "minimumVersion" => "1.0.0", "maximumVersion" => "2.0.1" }
+      )
+    end
+
     it "ignores packages inside nested block comments" do
       content = <<~SWIFT
         dependencies: [
