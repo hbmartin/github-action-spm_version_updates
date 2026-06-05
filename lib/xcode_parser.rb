@@ -57,7 +57,7 @@ module XcodeParser
     path = File.join(xcodeproj_path, "project.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved")
     locations << path if File.exist?(path)
 
-    puts "Searching for resolved packages in: #{locations}"
+    puts("Searching for resolved packages in: #{locations}")
     locations
   end
 

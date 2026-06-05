@@ -15,7 +15,7 @@ Gem::Specification.new do |spec|
   spec.license       = "MIT"
   spec.required_ruby_version = ">= 3.1"
 
-  spec.files         = Dir['lib/*'] + Dir['lib/**/*'] + Dir['*']
+  spec.files         = Dir["lib/*"] + Dir["lib/**/*"] + Dir["*"]
   spec.executables   = spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
   spec.metadata["rubygems_mfa_required"] = "true"

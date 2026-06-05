@@ -98,7 +98,7 @@ module ManifestParser
       version_range_requirement(range[1], range[2], range[3])
     elsif (version = call[/\.upToNextMinor\s*\(\s*from\s*:\s*"([^"]+)"/, 1])
       { "kind" => "upToNextMinorVersion", "minimumVersion" => version }
-    elsif (version = call[/\.upToNextMajor\s*\(\s*from\s*:\s*"([^"]+)"/, 1])
+    elsif (version = call[/\.upToNextMajor\s*\(\s*from\s*:\s*"([^"]+)"/, 1] || call[/\bfrom\s*:\s*"([^"]+)"/, 1])
       { "kind" => "upToNextMajorVersion", "minimumVersion" => version }
     elsif (version = call[/\bexact\s*:\s*"([^"]+)"/, 1] || call[/\.exact\s*\(\s*"([^"]+)"/, 1])
       { "kind" => "exactVersion", "version" => version }
@@ -106,8 +106,6 @@ module ManifestParser
       { "kind" => "branch", "branch" => branch }
     elsif (revision = call[/\brevision\s*:\s*"([^"]+)"/, 1] || call[/\.revision\s*\(\s*"([^"]+)"/, 1])
       { "kind" => "revision", "revision" => revision }
-    elsif (version = call[/\bfrom\s*:\s*"([^"]+)"/, 1])
-      { "kind" => "upToNextMajorVersion", "minimumVersion" => version }
     end
   end
 
@@ -237,9 +235,14 @@ module ManifestParser
     index
   end
 
-  private_class_method :package_calls, :requirement_for, :version_range_requirement,
-    :increment_patch_version, :matching_paren, :strip_comments, :copy_string_literal,
-    :skip_block_comment
+  private_class_method :package_calls,
+                       :requirement_for,
+                       :version_range_requirement,
+                       :increment_patch_version,
+                       :matching_paren,
+                       :strip_comments,
+                       :copy_string_literal,
+                       :skip_block_comment
 
   class ManifestPathMustBeSet < StandardError
   end

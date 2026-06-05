@@ -6,12 +6,14 @@ require_relative "../../lib/action"
 # Covers the source-mode selection logic that decides between Xcode-project mode
 # and Swift-manifest mode based on the configured inputs.
 RSpec.describe Action do
-  subject(:action) { described_class.new }
+  subject(:action) { described_class.new(github_integration:, checker_factory:) }
 
   let(:checker) { instance_double(SpmChecker) }
+  let(:checker_factory) { SpmChecker }
+  let(:github_integration) { instance_double(GithubIntegration, post_comment: nil, post_comment_with_warnings: nil) }
 
   def with_env(overrides)
-    original = overrides.to_h { |key, _value| [key, ENV[key]] }
+    original = overrides.to_h { |key, _value| [key, ENV.fetch(key, nil)] }
     overrides.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
 
     yield
@@ -33,7 +35,8 @@ RSpec.describe Action do
       INPUT_ALLOW_HOSTS
       INPUT_FAIL_ON_UPDATES
       GITHUB_WORKSPACE
-    ).to_h { |key| [key, nil] }.merge(overrides)
+    ).to_h { |key| [key, nil] }
+      .merge(overrides)
   end
 
   def inputs(overrides = {})
@@ -41,7 +44,7 @@ RSpec.describe Action do
       xcode_project_path: nil,
       manifest_paths: [],
       resolved_paths: [],
-      allow_hosts: [],
+      allow_hosts: []
     }.merge(overrides)
   end
 
@@ -49,11 +52,13 @@ RSpec.describe Action do
     it "raises when both source modes are provided" do
       both = inputs(xcode_project_path: "App.xcodeproj", manifest_paths: ["Modules/Package.swift"])
 
-      expect { action.send(:run_checks, checker, both) }.to raise_error(Action::ModeError, /not both/)
+      expect { action.send(:run_checks, checker, both) }
+        .to raise_error(Action::ModeError, /not both/)
     end
 
     it "raises when neither source mode is provided" do
-      expect { action.send(:run_checks, checker, inputs) }.to raise_error(Action::ModeError, /either/)
+      expect { action.send(:run_checks, checker, inputs) }
+        .to raise_error(Action::ModeError, /either/)
     end
 
     it "uses Xcode mode when only xcode-project-path is set" do
@@ -103,7 +108,7 @@ RSpec.describe Action do
             report_pre_releases: true,
             ignore_repos: ["https://github.com/a/b", "https://github.com/c/d"],
             allow_hosts: ["github.com", "gitlab.com"],
-            fail_on_updates: true,
+            fail_on_updates: true
           }
         )
       end
@@ -117,20 +122,14 @@ RSpec.describe Action do
   end
 
   describe "#report" do
-    let(:github_integration) { instance_double(GithubIntegration, post_comment: nil, post_comment_with_warnings: nil) }
-
-    before do
-      action.instance_variable_set(:@github_integration, github_integration)
-    end
-
-    it "writes outputs, a step summary, annotations, and a PR comment for updates" do
+    it "writes outputs, a step summary, annotations, and a PR comment for updates", :aggregate_failures do
       warnings = ["Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift"]
       warning_details = [
         {
           type: "version",
           package: "onevcat/Kingfisher",
           current_version: "7.0.0",
-          available_version: "8.0.0",
+          available_version: "8.0.0"
         },
       ]
 
@@ -153,7 +152,7 @@ RSpec.describe Action do
               "current_version" => "7.0.0",
               "available_version" => "8.0.0",
               "message" => "Newer version of onevcat/Kingfisher: 8.0.0",
-              "source" => "Modules/Package.swift",
+              "source" => "Modules/Package.swift"
             },
           ]
         )
@@ -166,7 +165,7 @@ RSpec.describe Action do
       end
     end
 
-    it "writes empty outputs and an up-to-date summary when no updates are found" do
+    it "writes empty outputs and an up-to-date summary when no updates are found", :aggregate_failures do
       Dir.mktmpdir do |dir|
         output_path = File.join(dir, "github_output")
         summary_path = File.join(dir, "step_summary")
@@ -184,14 +183,12 @@ RSpec.describe Action do
   end
 
   describe "#run" do
+    let(:checker_factory) { class_double(SpmChecker, new: configured_checker) }
+    let(:configured_checker) { SpmChecker.new }
+
     it "dispatches manifest mode from environment inputs", :aggregate_failures do
-      configured_checker = SpmChecker.new
-      allow(SpmChecker).to receive(:new).and_return(configured_checker)
       allow(configured_checker).to receive(:check_manifests).and_return([])
       allow(configured_checker).to receive(:check_for_updates)
-      allow(action).to receive(:print_config)
-      allow(action).to receive(:move_to_workspace)
-      allow(action).to receive(:report)
 
       with_env(
         input_env(
@@ -209,17 +206,12 @@ RSpec.describe Action do
       )
       expect(configured_checker.allow_hosts).to eq(["github.com"])
       expect(configured_checker).not_to have_received(:check_for_updates)
-      expect(action).to have_received(:report).with([], [])
+      expect(github_integration).to have_received(:post_comment).with("✅ **SPM Dependencies**: All dependencies are up to date!")
     end
 
     it "dispatches Xcode mode from environment inputs", :aggregate_failures do
-      configured_checker = SpmChecker.new
-      allow(SpmChecker).to receive(:new).and_return(configured_checker)
       allow(configured_checker).to receive(:check_for_updates).and_return([])
       allow(configured_checker).to receive(:check_manifests)
-      allow(action).to receive(:print_config)
-      allow(action).to receive(:move_to_workspace)
-      allow(action).to receive(:report)
 
       with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj")) do
         action.run
@@ -227,21 +219,20 @@ RSpec.describe Action do
 
       expect(configured_checker).to have_received(:check_for_updates).with("App.xcodeproj")
       expect(configured_checker).not_to have_received(:check_manifests)
-      expect(action).to have_received(:report).with([], [])
+      expect(github_integration).to have_received(:post_comment).with("✅ **SPM Dependencies**: All dependencies are up to date!")
     end
 
-    it "fails after reporting when fail-on-updates is enabled and updates are found" do
-      configured_inputs = inputs(fail_on_updates: true)
-      allow(action).to receive(:read_inputs).and_return(configured_inputs)
-      allow(action).to receive(:print_config)
-      allow(action).to receive(:move_to_workspace)
-      allow(action).to receive(:configure_checker).and_return(checker)
-      allow(action).to receive(:run_checks).and_return(["Newer version of onevcat/Kingfisher: 8.0.0"])
-      allow(action).to receive(:report)
-      allow(checker).to receive(:warning_details).and_return([])
+    it "fails after reporting when fail-on-updates is enabled and updates are found", :aggregate_failures do
+      warnings = ["Newer version of onevcat/Kingfisher: 8.0.0"]
+      allow(configured_checker).to receive(:check_for_updates).and_return(warnings)
 
-      expect { action.run }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
-      expect(action).to have_received(:report).with(["Newer version of onevcat/Kingfisher: 8.0.0"], [])
+      expect {
+        with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_FAIL_ON_UPDATES" => "true")) do
+          action.run
+        end
+      }
+        .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      expect(github_integration).to have_received(:post_comment_with_warnings).with(warnings, [])
     end
   end
 

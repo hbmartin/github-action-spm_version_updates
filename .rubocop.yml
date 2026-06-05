@@ -1,9 +1,3 @@
-inherit_from: .rubocop_todo.yml
-
-inherit_mode:
-  merge:
-    - Exclude
-
 # Defaults can be found here: https://github.com/bbatsov/rubocop/blob/master/config/default.yml
 
 require:
@@ -41,7 +35,7 @@ Style/BlockDelimiters:
   Enabled: true
   EnforcedStyle: always_braces
   Exclude:
-    - spec/*.rb
+    - spec/**/*.rb
     - Guardfile
     - Rakefile
     - danger-*.gemspec
@@ -49,7 +43,10 @@ Style/BlockDelimiters:
 Metrics/ModuleLength:
   Enabled: true
   Exclude:
-    - spec/*.rb
+    - spec/**/*.rb
+    # The Swift manifest parser is a cohesive, stateful parser; splitting it only
+    # to satisfy a line-count metric would make the implementation harder to read.
+    - lib/manifest_parser.rb
 
 Layout/ClassStructure:
   Enabled: true
@@ -85,7 +82,7 @@ Style/InvertibleUnlessCondition:
 Style/MethodCallWithArgsParentheses:
   Enabled: true
   Exclude:
-    - spec/*.rb
+    - spec/**/*.rb
 
 Style/MethodCalledOnDoEndBlock:
   Enabled: true
@@ -288,7 +285,7 @@ Performance/ChainArrayAllocation:
   Reference: "https://twitter.com/schneems/status/1034123879978029057"
   Enabled: true
   Exclude:
-    - spec/*.rb
+    - spec/**/*.rb
 
 Performance/CollectionLiteralInLoop:
   Description: "Extract Array and Hash literals outside of loops into local variables or constants."

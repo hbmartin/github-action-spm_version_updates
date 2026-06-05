@@ -130,11 +130,13 @@ RSpec.describe ManifestParser do
     end
 
     it "raises when the manifest path is blank" do
-      expect { described_class.get_packages("") }.to raise_error(ManifestParser::ManifestPathMustBeSet)
+      expect { described_class.get_packages("") }
+        .to raise_error(ManifestParser::ManifestPathMustBeSet)
     end
 
     it "raises when the manifest file is missing" do
-      expect { described_class.get_packages("/no/such/Package.swift") }.to raise_error(ManifestParser::CouldNotFindManifest)
+      expect { described_class.get_packages("/no/such/Package.swift") }
+        .to raise_error(ManifestParser::CouldNotFindManifest)
     end
   end
 

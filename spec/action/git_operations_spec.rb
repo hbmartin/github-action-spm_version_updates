@@ -16,11 +16,14 @@ RSpec.describe GitOperations do
 
   describe ".version_tags" do
     it "passes the URL to git ls-remote as a discrete argument (never through a shell)" do
-      expect(Open3).to receive(:capture3)
+      allow(Open3).to receive(:capture3)
         .with("git", "ls-remote", "-t", "https://github.com/swiftlang/swift-syntax")
         .and_return(["", "", status(true)])
 
       described_class.version_tags("https://github.com/swiftlang/swift-syntax")
+
+      expect(Open3).to have_received(:capture3)
+        .with("git", "ls-remote", "-t", "https://github.com/swiftlang/swift-syntax")
     end
 
     it "returns the parsed tags newest-first" do
@@ -37,7 +40,7 @@ RSpec.describe GitOperations do
       expect(described_class.version_tags("https://github.com/foo/bar").map(&:to_s)).to eq(["1.1.0", "1.0.1", "1.0.0"])
     end
 
-    it "warns and returns [] when git ls-remote exits non-zero" do
+    it "warns and returns [] when git ls-remote exits non-zero", :aggregate_failures do
       allow(Open3).to receive(:capture3)
         .and_return(["", "fatal: 'github.com/foo/bar' does not appear to be a git repository", status(false)])
 
@@ -47,7 +50,7 @@ RSpec.describe GitOperations do
       expect(result).to eq([])
     end
 
-    it "redacts embedded credentials from git failure warnings" do
+    it "redacts embedded credentials from git failure warnings", :aggregate_failures do
       allow(Open3).to receive(:capture3)
         .and_return(["", "fatal: could not read https://user:token@github.com/foo/bar", status(false)])
 
@@ -63,7 +66,7 @@ RSpec.describe GitOperations do
       expect(result).to eq([])
     end
 
-    it "warns and returns [] when the git executable is missing" do
+    it "warns and returns [] when the git executable is missing", :aggregate_failures do
       allow(Open3).to receive(:capture3).and_raise(Errno::ENOENT)
 
       result = nil
@@ -81,7 +84,8 @@ RSpec.describe GitOperations do
         "600.0.0-prerelease-2024-09-04",
         "510.0.1",
         "509.0.0",
-      ].map { |tag| "0000000000000000000000000000000000000000\trefs/tags/#{tag}" }.join("\n")
+      ].map { |tag| "0000000000000000000000000000000000000000\trefs/tags/#{tag}" }
+        .join("\n")
       allow(Open3).to receive(:capture3).and_return([refs, "", status(true)])
 
       result = described_class.version_tags("https://github.com/swiftlang/swift-syntax").map(&:to_s)
@@ -114,7 +118,7 @@ RSpec.describe GitOperations do
       expect(described_class.branch_last_commit("https://github.com/foo/bar", "missing")).to be_nil
     end
 
-    it "warns and returns nil when git ls-remote exits non-zero" do
+    it "warns and returns nil when git ls-remote exits non-zero", :aggregate_failures do
       allow(Open3).to receive(:capture3).and_return(["", "fatal: nope", status(false)])
 
       result = "unset"
@@ -129,7 +133,7 @@ RSpec.describe GitOperations do
       expect(described_class.trim_repo_url("https://github.com/foo/bar.git")).to eq("github.com/foo/bar")
     end
 
-    it "returns an empty key for blank repository URLs" do
+    it "returns an empty key for blank repository URLs", :aggregate_failures do
       expect(described_class.trim_repo_url(nil)).to eq("")
       expect(described_class.trim_repo_url("")).to eq("")
       expect(described_class.trim_repo_url("   ")).to eq("")

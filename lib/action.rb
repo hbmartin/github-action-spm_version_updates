@@ -1,4 +1,3 @@
-#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require_relative "action_reporter"
@@ -17,8 +16,9 @@ class Action
   # Raised when the configured combination of source inputs is invalid.
   class ModeError < StandardError; end
 
-  def initialize
-    @github_integration = GithubIntegration.new
+  def initialize(github_integration: GithubIntegration.new, checker_factory: SpmChecker)
+    @github_integration = github_integration
+    @checker_factory = checker_factory
   end
 
   def run
@@ -32,7 +32,7 @@ class Action
     report(warnings, warning_details)
     fail_with("Found #{warnings.size} SPM dependency update#{warnings.size == 1 ? '' : 's'}") if inputs[:fail_on_updates] && !warnings.empty?
 
-    puts "SPM version check completed successfully!"
+    puts("SPM version check completed successfully!")
   rescue ModeError => e
     fail_with(e.message)
   rescue XcodeParser::XcodeprojPathMustBeSet
@@ -47,7 +47,7 @@ class Action
       "Commit a Package.resolved next to each manifest or set package-resolved-paths."
     )
   rescue StandardError => e
-    puts e.backtrace if ENV["DEBUG"]
+    puts(e.backtrace) if ENV.fetch("DEBUG", nil)
     fail_with(e.message)
   end
 
@@ -70,22 +70,22 @@ class Action
   end
 
   def print_config(inputs)
-    puts "SPM Version Updates GitHub Action"
-    puts "Xcode project: #{inputs[:xcode_project_path]}" if inputs[:xcode_project_path]
-    puts "Package manifests: #{inputs[:manifest_paths].join(', ')}" unless inputs[:manifest_paths].empty?
-    puts "Package resolved: #{inputs[:resolved_paths].join(', ')}" unless inputs[:resolved_paths].empty?
-    puts "Check when exact: #{inputs[:check_when_exact]}"
-    puts "Check branches: #{inputs[:check_branches]}"
-    puts "Check revisions: #{inputs[:check_revisions]}"
-    puts "Report above maximum: #{inputs[:report_above_maximum]}"
-    puts "Report pre-releases: #{inputs[:report_pre_releases]}"
-    puts "Ignore repos: #{inputs[:ignore_repos].join(', ')}" unless inputs[:ignore_repos].empty?
-    puts "Allow hosts: #{inputs[:allow_hosts].join(', ')}" unless inputs[:allow_hosts].empty?
-    puts "Fail on updates: #{inputs[:fail_on_updates]}"
+    puts("SPM Version Updates GitHub Action")
+    puts("Xcode project: #{inputs[:xcode_project_path]}") if inputs[:xcode_project_path]
+    puts("Package manifests: #{inputs[:manifest_paths].join(', ')}") unless inputs[:manifest_paths].empty?
+    puts("Package resolved: #{inputs[:resolved_paths].join(', ')}") unless inputs[:resolved_paths].empty?
+    puts("Check when exact: #{inputs[:check_when_exact]}")
+    puts("Check branches: #{inputs[:check_branches]}")
+    puts("Check revisions: #{inputs[:check_revisions]}")
+    puts("Report above maximum: #{inputs[:report_above_maximum]}")
+    puts("Report pre-releases: #{inputs[:report_pre_releases]}")
+    puts("Ignore repos: #{inputs[:ignore_repos].join(', ')}") unless inputs[:ignore_repos].empty?
+    puts("Allow hosts: #{inputs[:allow_hosts].join(', ')}") unless inputs[:allow_hosts].empty?
+    puts("Fail on updates: #{inputs[:fail_on_updates]}")
   end
 
   def configure_checker(inputs)
-    checker = SpmChecker.new
+    checker = @checker_factory.new
     checker.check_when_exact = inputs[:check_when_exact]
     checker.check_branches = inputs[:check_branches]
     checker.check_revisions = inputs[:check_revisions]
@@ -103,10 +103,10 @@ class Action
     if xcode && !manifests.empty?
       raise(ModeError, "Set either xcode-project-path or package-manifest-paths, not both.")
     elsif !manifests.empty?
-      puts "Mode: Swift package manifests"
+      puts("Mode: Swift package manifests")
       checker.check_manifests(manifests, inputs[:resolved_paths])
     elsif xcode
-      puts "Mode: Xcode project"
+      puts("Mode: Xcode project")
       checker.check_for_updates(xcode)
     else
       raise(ModeError, "Set either xcode-project-path or package-manifest-paths.")
@@ -117,42 +117,48 @@ class Action
     ActionReporter.new(warnings, warning_details).write
 
     if warnings.empty?
-      puts "✅ All SPM dependencies are up to date!"
+      puts("✅ All SPM dependencies are up to date!")
       @github_integration.post_comment("✅ **SPM Dependencies**: All dependencies are up to date!")
     else
-      puts "⚠️  Found #{warnings.size} potential updates"
+      puts("⚠️  Found #{warnings.size} potential updates")
       @github_integration.post_comment_with_warnings(warnings, warning_details)
     end
   end
 
   def move_to_workspace
-    workspace = ENV["GITHUB_WORKSPACE"]
+    workspace = ENV.fetch("GITHUB_WORKSPACE", nil)
     return unless workspace && Dir.exist?(workspace)
 
     Dir.chdir(workspace)
-    puts "Changed to workspace directory: #{workspace}"
+    puts("Changed to workspace directory: #{workspace}")
   end
 
   def fail_with(message)
-    puts "Error: #{message}"
-    exit 1
+    puts("Error: #{message}")
+    exit(1)
   end
 
   def env_value(key)
-    value = ENV[key]
+    value = ENV.fetch(key, nil)
     value.nil? || value.strip.empty? ? nil : value.strip
   end
 
   def env_lines(key)
-    (ENV[key] || "").split("\n").map(&:strip).reject(&:empty?)
+    lines = ENV.fetch(key, "").split("\n")
+    lines.map!(&:strip)
+    lines.reject!(&:empty?)
+    lines
   end
 
   def env_csv(key)
-    (ENV[key] || "").split(",").map(&:strip).reject(&:empty?)
+    values = ENV.fetch(key, "").split(",")
+    values.map!(&:strip)
+    values.reject!(&:empty?)
+    values
   end
 
   def env_flag(key, default: false)
-    value = ENV[key]
+    value = ENV.fetch(key, nil)
     return default if value.nil? || value.strip.empty?
 
     value.strip == "true"
