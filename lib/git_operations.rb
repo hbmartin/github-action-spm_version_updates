@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "open3"
 require "semantic"
 
 # Git operations for SPM version checking (migrated from git.rb)
@@ -26,7 +27,10 @@ module GitOperations
   # @param   [String] repo_url The URL of the dependency's repository
   # @return [Array<Semantic::Version>]
   def self.version_tags(repo_url)
-    versions = `git ls-remote -t #{repo_url}`
+    output = ls_remote("-t", repo_url)
+    return [] if output.nil?
+
+    versions = output
       .split("\n")
       .map { |line| line.split("/tags/").last }
       .filter_map { |line|
@@ -36,18 +40,52 @@ module GitOperations
           nil
         end
       }
-    versions.sort!.reverse!
+    versions.sort! { |left, right| compare_semver(left, right) }.reverse!
     versions
   end
 
   # Call git to find the last commit on a branch
   # @param   [String] repo_url The URL of the dependency's repository
   # @param   [String] branch_name The name of the branch on which to find the last commit
-  # @return [String]
+  # @return [String, nil]
   def self.branch_last_commit(repo_url, branch_name)
-    `git ls-remote -h #{repo_url}`
+    output = ls_remote("-h", repo_url)
+    return nil if output.nil?
+
+    line = output
       .split("\n")
-      .find { |line| line.split("\trefs/heads/")[1] == branch_name }
-      .split("\trefs/heads/")[0]
+      .find { |remote_ref| remote_ref.split("\trefs/heads/")[1] == branch_name }
+    line&.split("\trefs/heads/")&.first
   end
+
+  # Run `git ls-remote` with +flag+ against +repo_url+ using an argument vector
+  # (no shell), so repository URLs are never word-split or interpreted by a
+  # shell. Returns git's stdout on success, or nil when the command exits
+  # non-zero -- logging git's stderr clearly instead of masking the failure as
+  # an empty result (which previously made every failed lookup look like
+  # "no updates available").
+  # @return [String, nil]
+  def self.ls_remote(flag, repo_url)
+    stdout, stderr, status = Open3.capture3("git", "ls-remote", flag, repo_url)
+    return stdout if status.success?
+
+    warn("git ls-remote #{flag} failed for #{repo_url}: #{stderr.strip}")
+    nil
+  end
+
+  # Compare two Semantic::Version values, tolerating a bug in the `semantic` gem
+  # where comparing certain pre-release identifiers raises ArgumentError -- e.g.
+  # date components with a leading zero ("08"/"09"), as in swift-syntax's
+  # "600.0.0-prerelease-2024-09-04" tags, which it feeds to Integer() and rejects
+  # as invalid octal. Falls back to comparing the stable core, then the string
+  # form, so a single odd tag can't abort the whole sort.
+  # @return [Integer]
+  def self.compare_semver(left, right)
+    left <=> right
+  rescue ArgumentError
+    core = [left.major, left.minor, left.patch] <=> [right.major, right.minor, right.patch]
+    core.zero? ? (left.to_s <=> right.to_s) : core
+  end
+
+  private_class_method :ls_remote, :compare_semver
 end

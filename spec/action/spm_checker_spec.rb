@@ -55,6 +55,16 @@ RSpec.describe SpmChecker do
       expect(warnings).not_to include(a_string_matching(/swift-argument-parser/))
     end
 
+    it "queries git with the original scheme-bearing URL, not the normalized match key" do
+      received = []
+      allow(GitOperations).to receive(:version_tags) { |url| received << url; [] }
+
+      checker.check_manifests([modules_manifest])
+
+      # Regression: the normalized keys (github.com/...) are not valid git remotes.
+      expect(received).to include("https://github.com/onevcat/Kingfisher", "https://github.com/kean/Nuke")
+    end
+
     it "does not check branches when check_branches is disabled" do
       checker.check_branches = false
 

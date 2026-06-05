@@ -26,10 +26,14 @@ module ManifestParser
   # Local packages (declared with `path:`) and packages without a recognizable
   # version requirement are skipped.
   #
+  # Keyed by the normalized repository URL (used to match against
+  # `Package.resolved` pins and `ignore-repos`), while the original,
+  # scheme-bearing `repository_url` is retained for git operations.
+  #
   # @param  [String] manifest_path The path to a `Package.swift` file
   # @raise  [ManifestPathMustBeSet] if the manifest_path is blank
   # @raise  [CouldNotFindManifest] if the file does not exist
-  # @return [Hash<String, Hash>] normalized repository URL => requirement
+  # @return [Hash<String, Hash>] normalized URL => { "repository_url", "requirement" }
   def self.get_packages(manifest_path)
     raise(ManifestPathMustBeSet) if manifest_path.nil? || manifest_path.empty?
     raise(CouldNotFindManifest, manifest_path) unless File.exist?(manifest_path)
@@ -42,7 +46,7 @@ module ManifestParser
       requirement = requirement_for(call)
       next if requirement.nil?
 
-      packages[GitOperations.trim_repo_url(url)] = requirement
+      packages[GitOperations.trim_repo_url(url)] = { "repository_url" => url, "requirement" => requirement }
     }
   end
 
