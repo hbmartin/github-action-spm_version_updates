@@ -4,19 +4,20 @@ require_relative "../../lib/xcode_parser"
 
 RSpec.describe XcodeParser do
   describe ".get_packages" do
-    it "handles package references with nil repository URLs" do
+    it "ignores package references with nil or blank repository URLs" do
       requirement = { "kind" => "branch", "branch" => "main" }
-      package = double("XCRemoteSwiftPackageReference", repositoryURL: nil, requirement: requirement)
-      project = double("Xcodeproj::Project", objects: [package])
+      nil_url_package = double("XCRemoteSwiftPackageReference", repositoryURL: nil, requirement: requirement)
+      blank_url_package = double("XCRemoteSwiftPackageReference", repositoryURL: "   ", requirement: requirement)
+      project = double("Xcodeproj::Project", objects: [nil_url_package, blank_url_package])
 
-      allow(package).to receive(:kind_of?)
-        .with(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
-        .and_return(true)
+      [nil_url_package, blank_url_package].each do |package|
+        allow(package).to receive(:kind_of?)
+          .with(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+          .and_return(true)
+      end
       allow(Xcodeproj::Project).to receive(:open).with("App.xcodeproj").and_return(project)
 
-      expect(described_class.get_packages("App.xcodeproj")).to eq(
-        "" => { "repository_url" => "", "requirement" => requirement }
-      )
+      expect(described_class.get_packages("App.xcodeproj")).to eq({})
     end
   end
 end
