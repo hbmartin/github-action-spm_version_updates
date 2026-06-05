@@ -2,6 +2,7 @@
 
 require "open3"
 require "semantic"
+require "uri"
 
 # Git operations for SPM version checking (migrated from git.rb)
 module GitOperations
@@ -24,6 +25,15 @@ module GitOperations
     else
       repo_url
     end
+  end
+
+  # Extracts the hostname from common git remote URL forms.
+  # @return [String, nil]
+  def self.host(repo_url)
+    url = repo_url.to_s.strip
+    return nil if url.empty?
+
+    parsed_host(url) || scp_like_host(url) || bare_host(url)
   end
 
   # Call git to list tags
@@ -101,5 +111,29 @@ module GitOperations
     tag.sub(/\A(\d+)\.(\d+)(?=\z|[-+])/, '\1.\2.0')
   end
 
-  private_class_method :ls_remote, :redact_credentials, :compare_semver, :normalize_version_tag
+  def self.parsed_host(url)
+    normalize_host(URI.parse(url).host)
+  rescue URI::InvalidURIError
+    nil
+  end
+
+  def self.scp_like_host(url)
+    match = url.match(%r{\A(?:[^@\s/]+@)?(?<host>[^:\s/]+):(?!/)[^:\s]+\z})
+    match && normalize_host(match[:host])
+  end
+
+  def self.bare_host(url)
+    return nil if url.start_with?("/", "./", "../")
+    return nil if url.include?("://")
+
+    host = url.split("/", 2).first
+    normalize_host(host)
+  end
+
+  def self.normalize_host(host)
+    normalized = host.to_s.sub(/:\d+\z/, "").downcase
+    normalized.empty? ? nil : normalized
+  end
+
+  private_class_method :ls_remote, :redact_credentials, :compare_semver, :normalize_version_tag, :parsed_host, :scp_like_host, :bare_host, :normalize_host
 end

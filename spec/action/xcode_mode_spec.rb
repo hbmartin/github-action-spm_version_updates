@@ -104,6 +104,13 @@ RSpec.describe "SpmChecker Xcode project mode" do
     expect(checker.check_for_updates(fixture("MangledUrl"))).to eq(["Newer version of kean/Nuke: 12.1.7"])
   end
 
+  it "allows ssh repository URLs when their host is configured" do
+    allow(GitOperations).to receive(:version_tags).and_return(versions("12.1.7", "12.1.6"))
+    checker.allow_hosts = ["github.com"]
+
+    expect(checker.check_for_updates(fixture("MangledUrl"))).to eq(["Newer version of kean/Nuke: 12.1.7"])
+  end
+
   it "merges both Package.resolved locations" do
     allow(GitOperations).to receive(:version_tags).and_return(versions("12.1.7", "12.1.6"))
 
