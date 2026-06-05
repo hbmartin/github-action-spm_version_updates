@@ -1,0 +1,20 @@
+name: Action Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  action-specs:
+    name: Action specs (ubuntu-latest, no Swift/Xcode)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Run action specs
+        run: bundle exec ruby -e "require 'rspec/core'; exit RSpec::Core::Runner.run(['spec/action', '--format', 'progress'])"

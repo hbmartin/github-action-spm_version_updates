@@ -4,76 +4,149 @@
 require_relative "spm_checker"
 require_relative "github_integration"
 
-# Main GitHub Action entry point
+# Main GitHub Action entry point.
+#
+# Inputs are read from the environment (see `action.yml`). The action runs in
+# one of two mutually exclusive source modes:
+#
+#   * Xcode project mode    - `xcode-project-path`
+#   * Swift manifest mode    - `package-manifest-paths` (+ optional
+#                              `package-resolved-paths`)
 class Action
+  # Raised when the configured combination of source inputs is invalid.
+  class ModeError < StandardError; end
+
   def initialize
     @github_integration = GithubIntegration.new
   end
 
   def run
-    # Parse command line arguments (passed from action.yml)
-    xcodeproj_path = ARGV[0]
-    check_when_exact = ARGV[1] == "true"
-    report_above_maximum = ARGV[2] == "true"
-    report_pre_releases = ARGV[3] == "true"
-    ignore_repos = ARGV[4]&.split(",")&.map(&:strip) || []
+    inputs = read_inputs
+    print_config(inputs)
+    move_to_workspace
 
-    puts "SPM Version Updates GitHub Action"
-    puts "Xcode project: #{xcodeproj_path}"
-    puts "Check when exact: #{check_when_exact}"
-    puts "Report above maximum: #{report_above_maximum}"
-    puts "Report pre-releases: #{report_pre_releases}"
-    puts "Ignore repos: #{ignore_repos.join(', ')}" unless ignore_repos.empty?
-
-    # Validate inputs
-    if xcodeproj_path.nil? || xcodeproj_path.empty?
-      puts "Error: xcode-project-path is required"
-      exit 1
-    end
-
-    # Change to workspace directory if available
-    workspace = ENV["GITHUB_WORKSPACE"]
-    if workspace && Dir.exist?(workspace)
-      Dir.chdir(workspace)
-      puts "Changed to workspace directory: #{workspace}"
-    end
-
-    # Configure SPM checker
-    checker = SpmChecker.new
-    checker.check_when_exact = check_when_exact
-    checker.report_above_maximum = report_above_maximum
-    checker.report_pre_releases = report_pre_releases
-    checker.ignore_repos = ignore_repos
-
-    begin
-      # Run the SPM version check
-      warnings = checker.check_for_updates(xcodeproj_path)
-      
-      if warnings.empty?
-        puts "✅ All SPM dependencies are up to date!"
-        @github_integration.post_comment("✅ **SPM Dependencies**: All dependencies are up to date!")
-      else
-        puts "⚠️  Found #{warnings.size} potential updates"
-        @github_integration.post_comment_with_warnings(warnings)
-      end
-
-    rescue XcodeParser::XcodeprojPathMustBeSet
-      puts "Error: Invalid Xcode project path: #{xcodeproj_path}"
-      exit 1
-    rescue XcodeParser::CouldNotFindResolvedFile
-      puts "Error: Could not find Package.resolved file for project: #{xcodeproj_path}"
-      exit 1
-    rescue StandardError => e
-      puts "Error: #{e.message}"
-      puts e.backtrace if ENV["DEBUG"]
-      exit 1
-    end
+    warnings = run_checks(configure_checker(inputs), inputs)
+    report(warnings)
 
     puts "SPM version check completed successfully!"
+  rescue ModeError => e
+    fail_with(e.message)
+  rescue XcodeParser::XcodeprojPathMustBeSet
+    fail_with("Invalid Xcode project path")
+  rescue XcodeParser::CouldNotFindResolvedFile
+    fail_with("Could not find a Package.resolved file for the Xcode project")
+  rescue ManifestParser::CouldNotFindManifest => e
+    fail_with("Could not find Package.swift manifest: #{e.message}")
+  rescue ManifestParser::CouldNotFindResolvedFile => e
+    fail_with(
+      "Could not find any Package.resolved file (looked in: #{e.message}). " \
+      "Commit a Package.resolved next to each manifest or set package-resolved-paths."
+    )
+  rescue StandardError => e
+    puts e.backtrace if ENV["DEBUG"]
+    fail_with(e.message)
+  end
+
+  private
+
+  def read_inputs
+    {
+      xcode_project_path: env_value("INPUT_XCODE_PROJECT_PATH"),
+      manifest_paths: env_lines("INPUT_PACKAGE_MANIFEST_PATHS"),
+      resolved_paths: env_lines("INPUT_PACKAGE_RESOLVED_PATHS"),
+      check_when_exact: env_flag("INPUT_CHECK_WHEN_EXACT"),
+      check_branches: env_flag("INPUT_CHECK_BRANCHES", default: true),
+      check_revisions: env_flag("INPUT_CHECK_REVISIONS"),
+      report_above_maximum: env_flag("INPUT_REPORT_ABOVE_MAXIMUM"),
+      report_pre_releases: env_flag("INPUT_REPORT_PRE_RELEASES"),
+      ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
+    }
+  end
+
+  def print_config(inputs)
+    puts "SPM Version Updates GitHub Action"
+    puts "Xcode project: #{inputs[:xcode_project_path]}" if inputs[:xcode_project_path]
+    puts "Package manifests: #{inputs[:manifest_paths].join(', ')}" unless inputs[:manifest_paths].empty?
+    puts "Package resolved: #{inputs[:resolved_paths].join(', ')}" unless inputs[:resolved_paths].empty?
+    puts "Check when exact: #{inputs[:check_when_exact]}"
+    puts "Check branches: #{inputs[:check_branches]}"
+    puts "Check revisions: #{inputs[:check_revisions]}"
+    puts "Report above maximum: #{inputs[:report_above_maximum]}"
+    puts "Report pre-releases: #{inputs[:report_pre_releases]}"
+    puts "Ignore repos: #{inputs[:ignore_repos].join(', ')}" unless inputs[:ignore_repos].empty?
+  end
+
+  def configure_checker(inputs)
+    checker = SpmChecker.new
+    checker.check_when_exact = inputs[:check_when_exact]
+    checker.check_branches = inputs[:check_branches]
+    checker.check_revisions = inputs[:check_revisions]
+    checker.report_above_maximum = inputs[:report_above_maximum]
+    checker.report_pre_releases = inputs[:report_pre_releases]
+    checker.ignore_repos = inputs[:ignore_repos]
+    checker
+  end
+
+  def run_checks(checker, inputs)
+    xcode = inputs[:xcode_project_path]
+    manifests = inputs[:manifest_paths]
+
+    if xcode && !manifests.empty?
+      raise(ModeError, "Set either xcode-project-path or package-manifest-paths, not both.")
+    elsif !manifests.empty?
+      puts "Mode: Swift package manifests"
+      checker.check_manifests(manifests, inputs[:resolved_paths])
+    elsif xcode
+      puts "Mode: Xcode project"
+      checker.check_for_updates(xcode)
+    else
+      raise(ModeError, "Set either xcode-project-path or package-manifest-paths.")
+    end
+  end
+
+  def report(warnings)
+    if warnings.empty?
+      puts "✅ All SPM dependencies are up to date!"
+      @github_integration.post_comment("✅ **SPM Dependencies**: All dependencies are up to date!")
+    else
+      puts "⚠️  Found #{warnings.size} potential updates"
+      @github_integration.post_comment_with_warnings(warnings)
+    end
+  end
+
+  def move_to_workspace
+    workspace = ENV["GITHUB_WORKSPACE"]
+    return unless workspace && Dir.exist?(workspace)
+
+    Dir.chdir(workspace)
+    puts "Changed to workspace directory: #{workspace}"
+  end
+
+  def fail_with(message)
+    puts "Error: #{message}"
+    exit 1
+  end
+
+  def env_value(key)
+    value = ENV[key]
+    value.nil? || value.strip.empty? ? nil : value.strip
+  end
+
+  def env_lines(key)
+    (ENV[key] || "").split("\n").map(&:strip).reject(&:empty?)
+  end
+
+  def env_csv(key)
+    (ENV[key] || "").split(",").map(&:strip).reject(&:empty?)
+  end
+
+  def env_flag(key, default: false)
+    value = ENV[key]
+    return default if value.nil? || value.strip.empty?
+
+    value.strip == "true"
   end
 end
 
 # Run the action
-if __FILE__ == $0
-  Action.new.run
-end
+Action.new.run if __FILE__ == $PROGRAM_NAME
