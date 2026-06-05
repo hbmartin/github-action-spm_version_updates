@@ -98,7 +98,9 @@ Use this when the `.xcodeproj` directly owns its remote package references.
 - Parses one or more `Package.swift` manifests and extracts their direct `.package(...)` dependencies.
 - Reads the matching `Package.resolved` files and compares declared dependencies against resolved pins.
 - For each manifest, the resolved file is inferred to sit next to it (e.g. `Modules/Package.swift` → `Modules/Package.resolved`). Override this with `package-resolved-paths`.
+- Every expected `Package.resolved` must exist — the action fails (rather than silently reporting incomplete results) if one is missing, naming the file so you can commit it or point `package-resolved-paths` elsewhere.
 - Resolved pins from every file are merged by normalized repository URL, and each warning is annotated with the manifest it came from.
+- Closed Swift ranges (`"1.0.0"..."2.0.0"`) are normalized the same way SwiftPM does — to the half-open range `"1.0.0"..<"2.0.1"` — so the inclusive upper bound is preserved.
 
 Manifest parsing is done with a lightweight, dependency-free scanner — **Swift is not required**, so the action runs on `ubuntu-latest`. The common declaration forms are supported:
 

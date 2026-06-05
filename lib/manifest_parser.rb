@@ -90,8 +90,8 @@ module ManifestParser
   # @param  [String] call The body of a `.package(...)` call
   # @return [Hash, nil]
   def self.requirement_for(call)
-    if (range = call.match(/"([^"]+)"\s*\.\.[.<]\s*"([^"]+)"/))
-      { "kind" => "versionRange", "minimumVersion" => range[1], "maximumVersion" => range[2] }
+    if (range = call.match(/"([^"]+)"\s*(\.\.[.<])\s*"([^"]+)"/))
+      version_range_requirement(range[1], range[2], range[3])
     elsif (version = call[/\.upToNextMinor\s*\(\s*from\s*:\s*"([^"]+)"/, 1])
       { "kind" => "upToNextMinorVersion", "minimumVersion" => version }
     elsif (version = call[/\.upToNextMajor\s*\(\s*from\s*:\s*"([^"]+)"/, 1])
@@ -105,6 +105,31 @@ module ManifestParser
     elsif (version = call[/\bfrom\s*:\s*"([^"]+)"/, 1])
       { "kind" => "upToNextMajorVersion", "minimumVersion" => version }
     end
+  end
+
+  # Build a versionRange requirement from a Swift range literal.
+  #
+  # Xcode's `versionRange` (like Swift's `..<`) uses an exclusive maximum. SwiftPM
+  # normalizes a closed range `a...b` to the half-open range `a ..< (b + 1 patch)`,
+  # so we do the same here for `...` to keep the inclusive upper bound — otherwise
+  # version `b` would be incorrectly excluded from update checks.
+  #
+  # @return [Hash]
+  def self.version_range_requirement(minimum, range_operator, maximum)
+    maximum = increment_patch_version(maximum) if range_operator == "..."
+    { "kind" => "versionRange", "minimumVersion" => minimum, "maximumVersion" => maximum }
+  end
+
+  # Increment the patch component of an `x.y.z` version, preserving any
+  # pre-release/build suffix. Returns the input unchanged if it is not a
+  # three-part version.
+  #
+  # @return [String]
+  def self.increment_patch_version(version)
+    major, minor, patch, suffix = version.match(/\A(\d+)\.(\d+)\.(\d+)(.*)\z/)&.captures
+    return version if patch.nil?
+
+    "#{major}.#{minor}.#{patch.to_i + 1}#{suffix}"
   end
 
   # Find the index of the `)` that closes the `(` at +open_index+, ignoring
@@ -185,18 +210,31 @@ module ManifestParser
     index
   end
 
-  # Return the index just past the closing `*/` of a block comment.
+  # Return the index just past the closing `*/` of a block comment. Swift block
+  # comments nest, so depth is tracked: `/* a /* b */ c */` is a single comment.
   #
   # @return [Integer]
   def self.skip_block_comment(content, index)
     length = content.length
-    index += 2
-    index += 1 while index < length && !(content[index] == "*" && content[index + 1] == "/")
-    index + 2
+    depth = 1
+    index += 2 # skip the opening "/*"
+    while index < length && depth.positive?
+      if content[index] == "/" && content[index + 1] == "*"
+        depth += 1
+        index += 2
+      elsif content[index] == "*" && content[index + 1] == "/"
+        depth -= 1
+        index += 2
+      else
+        index += 1
+      end
+    end
+    index
   end
 
-  private_class_method :package_calls, :requirement_for, :matching_paren,
-    :strip_comments, :copy_string_literal, :skip_block_comment
+  private_class_method :package_calls, :requirement_for, :version_range_requirement,
+    :increment_patch_version, :matching_paren, :strip_comments, :copy_string_literal,
+    :skip_block_comment
 
   class ManifestPathMustBeSet < StandardError
   end

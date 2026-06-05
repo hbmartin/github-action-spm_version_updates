@@ -82,10 +82,24 @@ RSpec.describe ManifestParser do
         ]
       SWIFT
 
+      # SwiftPM normalizes a closed range `a...b` to the half-open range
+      # `a ..< (b with patch + 1)`, so the inclusive upper bound 2.0.0 becomes
+      # an exclusive maximum of 2.0.1.
       expect(parse(content)).to eq(
         "github.com/a/halfopen" => { "kind" => "versionRange", "minimumVersion" => "1.0.0", "maximumVersion" => "2.0.0" },
-        "github.com/a/closed" => { "kind" => "versionRange", "minimumVersion" => "1.0.0", "maximumVersion" => "2.0.0" }
+        "github.com/a/closed" => { "kind" => "versionRange", "minimumVersion" => "1.0.0", "maximumVersion" => "2.0.1" }
       )
+    end
+
+    it "ignores packages inside nested block comments" do
+      content = <<~SWIFT
+        dependencies: [
+          /* outer /* .package(url: "https://github.com/a/nested", from: "9.9.9") */ still commented */
+          .package(url: "https://github.com/a/active", from: "1.0.0"),
+        ]
+      SWIFT
+
+      expect(parse(content).keys).to eq(["github.com/a/active"])
     end
 
     it "parses requirements that span multiple lines" do

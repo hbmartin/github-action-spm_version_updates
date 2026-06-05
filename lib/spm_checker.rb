@@ -87,16 +87,21 @@ class SpmChecker
   end
 
   # Merge the resolved pins of every relevant `Package.resolved` file.
+  #
+  # Every expected resolved file must exist. A missing one would silently drop a
+  # manifest's pins and produce misleading "all up to date" results, so we fail
+  # loudly and name the missing file(s) instead.
+  #
   # @return [Hash<String, String>]
   def merged_resolved_versions(manifest_paths, resolved_paths)
-    paths = Array(resolved_paths).reject(&:nil?).reject(&:empty?)
+    paths = Array(resolved_paths).reject { |path| path.nil? || path.empty? }
     paths = manifest_paths.map { |manifest| ManifestParser.default_resolved_path(manifest) } if paths.empty?
 
-    existing = paths.select { |path| File.exist?(path) }
-    puts "Reading resolved packages from: #{existing}"
-    raise(ManifestParser::CouldNotFindResolvedFile, paths.join(", ")) if existing.empty?
+    missing = paths.reject { |path| File.exist?(path) }
+    raise(ManifestParser::CouldNotFindResolvedFile, missing.join(", ")) unless missing.empty?
 
-    existing.map { |path| PackageResolved.versions_from(path) }.reduce({}, :merge)
+    puts "Reading resolved packages from: #{paths}"
+    paths.each_with_object({}) { |path, pins| pins.merge!(PackageResolved.versions_from(path)) }
   end
 
   # Compare a set of declared dependencies against the resolved pins.
@@ -205,7 +210,7 @@ class SpmChecker
       newest_meeting_reqs = available_versions.find { |version|
         version < max_version && (@report_pre_releases ? true : version.pre.nil?)
       }
-      add_warning("Newer version of #{name}: #{newest_meeting_reqs}", source) unless newest_meeting_reqs.to_s == resolved_version
+      add_warning("Newer version of #{name}: #{newest_meeting_reqs}", source) unless newest_meeting_reqs.nil? || newest_meeting_reqs.to_s == resolved_version
       add_warning(
         "Newest version of #{name}: #{available_versions.first} (but this package is configured up to the next #{max_version} version)",
         source
@@ -224,7 +229,7 @@ class SpmChecker
       (version.send(major_or_minor) == resolved_version.send(major_or_minor)) && (@report_pre_releases ? true : version.pre.nil?)
     }
 
-    add_warning("Newer version of #{name}: #{newest_meeting_reqs}", source) unless newest_meeting_reqs == resolved_version
+    add_warning("Newer version of #{name}: #{newest_meeting_reqs}", source) unless newest_meeting_reqs.nil? || newest_meeting_reqs == resolved_version
     return unless @report_above_maximum
 
     newest_above_reqs = available_versions.find { |version|

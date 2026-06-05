@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "tmpdir"
+require "json"
 require_relative "../../lib/spm_checker"
 
 # End-to-end specs for the manifest source mode of SpmChecker. Git access is
@@ -93,6 +94,34 @@ RSpec.describe SpmChecker do
         File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
 
         expect { checker.check_manifests([manifest]) }.to raise_error(ManifestParser::CouldNotFindResolvedFile)
+      end
+    end
+
+    it "raises when any one manifest is missing its resolved file" do
+      Dir.mktmpdir do |dir|
+        without_resolved = File.join(dir, "Package.swift")
+        File.write(without_resolved, '.package(url: "https://github.com/a/b", from: "1.0.0")')
+
+        # The first manifest has a resolved file; the second does not.
+        expect {
+          checker.check_manifests([modules_manifest, without_resolved])
+        }.to raise_error(ManifestParser::CouldNotFindResolvedFile, /#{Regexp.escape(without_resolved.sub(/Package\.swift\z/, 'Package.resolved'))}/)
+      end
+    end
+
+    it "does not emit an empty warning when no available version satisfies the constraint" do
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", from: "1.0.0")')
+        File.write(File.join(dir, "Package.resolved"), {
+          "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
+          "version" => 2,
+        }.to_json)
+        # Only a newer *major* exists, which an upToNextMajor (`from:`) constraint excludes.
+        allow(GitOperations).to receive(:version_tags).and_return(versions("2.0.0"))
+
+        warnings = checker.check_manifests([File.join(dir, "Package.swift")])
+
+        expect(warnings).to eq([])
       end
     end
   end
