@@ -1,14 +1,16 @@
 # frozen_string_literal: true
 
-require "tmpdir"
 require "json"
+require "timeout"
+require "tmpdir"
 require_relative "../../lib/spm_checker"
 
 # End-to-end specs for the manifest source mode of SpmChecker. Git access is
 # stubbed so these run without network access.
 RSpec.describe SpmChecker do
   def versions(*strings)
-    strings.map { |string| Semantic::Version.new(string) }.sort.reverse
+    strings.map { |string| Semantic::Version.new(string) }
+      .sort.reverse
   end
 
   subject(:checker) { described_class.new }
@@ -57,7 +59,10 @@ RSpec.describe SpmChecker do
 
     it "queries git with the original scheme-bearing URL, not the normalized match key" do
       received = []
-      allow(GitOperations).to receive(:version_tags) { |url| received << url; [] }
+      allow(GitOperations).to receive(:version_tags) { |url|
+                                received << url
+                                []
+                              }
 
       checker.check_manifests([modules_manifest])
 
@@ -73,73 +78,89 @@ RSpec.describe SpmChecker do
       expect(warnings).to include("Newer version of onevcat/Kingfisher: 7.10.2\nSource: #{modules_manifest}")
     end
 
-    it "fails before fetching version tags when a dependency host is not allowed" do
+    it "fails before fetching version tags when a dependency host is not allowed", :aggregate_failures do
       checker.allow_hosts = ["github.com"]
-      expect(GitOperations).not_to receive(:version_tags)
 
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, "Package.swift"), '.package(url: "https://metadata.internal/a/b", from: "1.0.0")')
-        File.write(File.join(dir, "Package.resolved"), {
-          "pins" => [{ "location" => "https://metadata.internal/a/b", "state" => { "version" => "1.0.0" } }],
-          "version" => 2,
-        }.to_json)
+        File.write(File.join(dir, "Package.resolved"),
+                   {
+                     "pins" => [{ "location" => "https://metadata.internal/a/b", "state" => { "version" => "1.0.0" } }],
+                     "version" => 2
+                   }.to_json)
 
         expect {
           checker.check_manifests([File.join(dir, "Package.swift")])
         }.to raise_error(SpmChecker::DisallowedRepositoryHost, /metadata\.internal.*allow-hosts/)
       end
+
+      expect(GitOperations).not_to have_received(:version_tags)
     end
 
-    it "fails before checking branch heads when a branch dependency host is not allowed" do
+    it "fails before checking branch heads when a branch dependency host is not allowed", :aggregate_failures do
       checker.allow_hosts = ["github.com"]
-      expect(GitOperations).not_to receive(:branch_last_commit)
 
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, "Package.swift"), '.package(url: "git@metadata.internal:a/b.git", branch: "main")')
-        File.write(File.join(dir, "Package.resolved"), {
-          "pins" => [{ "location" => "git@metadata.internal:a/b.git", "state" => { "revision" => "abc123" } }],
-          "version" => 2,
-        }.to_json)
+        File.write(File.join(dir, "Package.resolved"),
+                   {
+                     "pins" => [{ "location" => "git@metadata.internal:a/b.git", "state" => { "revision" => "abc123" } }],
+                     "version" => 2
+                   }.to_json)
 
         expect {
           checker.check_manifests([File.join(dir, "Package.swift")])
         }.to raise_error(SpmChecker::DisallowedRepositoryHost, /metadata\.internal.*allow-hosts/)
       end
+
+      expect(GitOperations).not_to have_received(:branch_last_commit)
     end
 
-    it "fetches version tags with a bounded worker pool and preserves warning order" do
+    it "fetches version tags with a bounded worker pool and preserves warning order", :aggregate_failures do
       package_count = SpmChecker::VERSION_TAG_WORKER_COUNT + 4
       remote_packages = (1..package_count).each_with_object({}) { |index, packages|
         packages["github.com/acme/pkg#{index}"] = {
           "repository_url" => "https://github.com/acme/pkg#{index}",
-          "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" },
+          "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }
         }
       }
       resolved_versions = remote_packages.keys.to_h { |url| [url, "1.0.0"] }
       in_flight = 0
       max_in_flight = 0
       mutex = Mutex.new
+      release = Queue.new
+      started = Queue.new
 
       allow(GitOperations).to receive(:version_tags) do |_url|
         mutex.synchronize {
           in_flight += 1
           max_in_flight = [max_in_flight, in_flight].max
         }
-        sleep 0.03
+        started << true
+        release.pop
         versions("1.1.0", "1.0.0")
       ensure
         mutex.synchronize { in_flight -= 1 }
       end
 
-      checker.send(:check_packages, remote_packages, resolved_versions)
+      checker_thread = Thread.new { checker.send(:check_packages, remote_packages, resolved_versions) }
 
-      expect(max_in_flight).to be_between(2, SpmChecker::VERSION_TAG_WORKER_COUNT).inclusive
+      begin
+        Timeout.timeout(2) {
+          SpmChecker::VERSION_TAG_WORKER_COUNT.times { started.pop }
+        }
+        expect(max_in_flight).to eq(SpmChecker::VERSION_TAG_WORKER_COUNT)
+      ensure
+        package_count.times { release << true }
+        checker_thread.value
+      end
+
       expect(checker.instance_variable_get(:@warnings)).to eq(
         (1..package_count).map { |index| "Newer version of acme/pkg#{index}: 1.1.0" }
       )
     end
 
-    it "memoizes version tags across manifests in one check" do
+    it "memoizes version tags across manifests in one check", :aggregate_failures do
       calls = []
       mutex = Mutex.new
       allow(GitOperations).to receive(:version_tags) do |url|
@@ -148,15 +169,16 @@ RSpec.describe SpmChecker do
       end
 
       Dir.mktmpdir do |dir|
-        manifests = %w[App Tools].map { |name|
+        manifests = %w(App Tools).map { |name|
           manifest_dir = File.join(dir, name)
           Dir.mkdir(manifest_dir)
           manifest = File.join(manifest_dir, "Package.swift")
           File.write(manifest, '.package(url: "https://github.com/acme/shared", from: "1.0.0")')
-          File.write(File.join(manifest_dir, "Package.resolved"), {
-            "pins" => [{ "location" => "https://github.com/acme/shared", "state" => { "version" => "1.0.0" } }],
-            "version" => 2,
-          }.to_json)
+          File.write(File.join(manifest_dir, "Package.resolved"),
+                     {
+                       "pins" => [{ "location" => "https://github.com/acme/shared", "state" => { "version" => "1.0.0" } }],
+                       "version" => 2
+                     }.to_json)
           manifest
         }
 
@@ -170,6 +192,35 @@ RSpec.describe SpmChecker do
           ]
         )
       end
+    end
+
+    it "scopes memoized version tags by repository URL", :aggregate_failures do
+      calls = []
+      allow(GitOperations).to receive(:version_tags) do |url|
+        calls << url
+        url.start_with?("https://") ? [] : versions("1.1.0", "1.0.0")
+      end
+      resolved_versions = { "github.com/acme/shared" => "1.0.0" }
+      https_packages = {
+        "github.com/acme/shared" => {
+          "repository_url" => "https://github.com/acme/shared",
+          "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }
+        }
+      }
+      git_packages = {
+        "github.com/acme/shared" => {
+          "repository_url" => "git://github.com/acme/shared",
+          "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }
+        }
+      }
+
+      checker.send(:check_packages, https_packages, resolved_versions, "App/Package.swift")
+      checker.send(:check_packages, git_packages, resolved_versions, "Tools/Package.swift")
+
+      expect(calls).to eq(["https://github.com/acme/shared", "git://github.com/acme/shared"])
+      expect(checker.instance_variable_get(:@warnings)).to eq(
+        ["Newer version of acme/shared: 1.1.0\nSource: Tools/Package.swift"]
+      )
     end
 
     it "does not check branches when check_branches is disabled" do
@@ -186,7 +237,7 @@ RSpec.describe SpmChecker do
 
       warnings = checker.check_manifests([modules_manifest])
 
-      expect(warnings).to include(a_string_matching(/getsentry\/sentry-cocoa is pinned to a revision .* latest tagged version is 8.20.0/))
+      expect(warnings).to include(a_string_matching(%r{getsentry/sentry-cocoa is pinned to a revision .* latest tagged version is 8.20.0}))
     end
 
     it "honors ignore_repos" do
@@ -202,10 +253,10 @@ RSpec.describe SpmChecker do
 
       warnings = checker.check_manifests([modules_manifest], [resolved])
 
-      expect(warnings).to include(a_string_matching(/Newer version of onevcat\/Kingfisher: 7.10.2/))
+      expect(warnings).to include(a_string_matching(%r{Newer version of onevcat/Kingfisher: 7.10.2}))
     end
 
-    it "exposes structured warning details for grouped PR comments" do
+    it "exposes structured warning details for grouped PR comments", :aggregate_failures do
       warnings = checker.check_manifests([modules_manifest])
 
       detail = checker.warning_details.find { |warning| warning[:package] == "onevcat/Kingfisher" }
@@ -227,7 +278,8 @@ RSpec.describe SpmChecker do
         manifest = File.join(dir, "Package.swift")
         File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
 
-        expect { checker.check_manifests([manifest]) }.to raise_error(ManifestParser::CouldNotFindResolvedFile)
+        expect { checker.check_manifests([manifest]) }
+          .to raise_error(ManifestParser::CouldNotFindResolvedFile)
       end
     end
 
@@ -246,10 +298,11 @@ RSpec.describe SpmChecker do
     it "does not match a different major version for up-to-next-minor constraints" do
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", .upToNextMinor(from: "1.5.0"))')
-        File.write(File.join(dir, "Package.resolved"), {
-          "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.5.0" } }],
-          "version" => 2,
-        }.to_json)
+        File.write(File.join(dir, "Package.resolved"),
+                   {
+                     "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.5.0" } }],
+                     "version" => 2
+                   }.to_json)
         # 2.5.0 shares the minor component but a different major; it must not match.
         allow(GitOperations).to receive(:version_tags).and_return(versions("2.5.0", "1.5.3", "1.5.0"))
 
@@ -262,10 +315,11 @@ RSpec.describe SpmChecker do
     it "does not report a pre-release as the newest version in a range when pre-releases are filtered" do
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", "1.0.0"..<"3.0.0")')
-        File.write(File.join(dir, "Package.resolved"), {
-          "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
-          "version" => 2,
-        }.to_json)
+        File.write(File.join(dir, "Package.resolved"),
+                   {
+                     "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
+                     "version" => 2
+                   }.to_json)
         # 3.0.0-beta.1 is the absolute newest but a pre-release; report 2.0.0.
         allow(GitOperations).to receive(:version_tags).and_return(versions("3.0.0-beta.1", "2.0.0", "1.0.0"))
 
@@ -278,10 +332,11 @@ RSpec.describe SpmChecker do
     it "does not emit an empty warning when no available version satisfies the constraint" do
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", from: "1.0.0")')
-        File.write(File.join(dir, "Package.resolved"), {
-          "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
-          "version" => 2,
-        }.to_json)
+        File.write(File.join(dir, "Package.resolved"),
+                   {
+                     "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
+                     "version" => 2
+                   }.to_json)
         # Only a newer *major* exists, which an upToNextMajor (`from:`) constraint excludes.
         allow(GitOperations).to receive(:version_tags).and_return(versions("2.0.0"))
 
@@ -291,15 +346,14 @@ RSpec.describe SpmChecker do
       end
     end
 
-    it "skips malformed package entries with nil requirements" do
+    it "skips malformed package entries with nil requirements", :aggregate_failures do
       remote_packages = {
-        "github.com/a/b" => { "repository_url" => "https://github.com/a/b", "requirement" => nil },
+        "github.com/a/b" => { "repository_url" => "https://github.com/a/b", "requirement" => nil }
       }
-
-      expect(GitOperations).not_to receive(:version_tags)
 
       checker.send(:check_packages, remote_packages, "github.com/a/b" => "1.0.0")
 
+      expect(GitOperations).not_to have_received(:version_tags)
       expect(checker.instance_variable_get(:@warnings)).to eq([])
     end
   end

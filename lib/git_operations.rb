@@ -53,7 +53,8 @@ module GitOperations
           nil
         end
       }
-    versions.sort! { |left, right| compare_semver(left, right) }.reverse!
+    versions.sort! { |left, right| compare_semver(left, right) }
+      .reverse!
     versions
   end
 

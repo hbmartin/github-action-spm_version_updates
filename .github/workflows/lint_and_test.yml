@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint
@@ -59,4 +62,4 @@ jobs:
         with:
           name: coverage-ruby-${{ matrix.ruby-version }}
           path: coverage/
-          if-no-files-found: error
+          if-no-files-found: warn

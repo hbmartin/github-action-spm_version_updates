@@ -1,11 +1,10 @@
 # frozen_string_literal: true
 
 require "semantic"
-require "thread"
 require_relative "git_operations"
-require_relative "xcode_parser"
 require_relative "manifest_parser"
 require_relative "package_resolved"
+require_relative "xcode_parser"
 
 # Core SPM version checking logic (migrated from Danger plugin)
 class SpmChecker
@@ -64,7 +63,7 @@ class SpmChecker
 
     remote_packages = XcodeParser.get_packages(xcodeproj_path)
     resolved_versions = XcodeParser.get_resolved_versions(xcodeproj_path)
-    puts "Found resolved versions for #{resolved_versions.size} packages"
+    puts("Found resolved versions for #{resolved_versions.size} packages")
 
     check_packages(remote_packages, resolved_versions)
     @warnings
@@ -91,7 +90,7 @@ class SpmChecker
     normalize_allow_hosts
 
     resolved_versions = merged_resolved_versions(manifest_paths, resolved_paths)
-    puts "Found resolved versions for #{resolved_versions.size} packages"
+    puts("Found resolved versions for #{resolved_versions.size} packages")
 
     manifest_paths.each { |manifest_path|
       remote_packages = ManifestParser.get_packages(manifest_path)
@@ -135,7 +134,7 @@ class SpmChecker
     missing = paths.reject { |path| File.exist?(path) }
     raise(ManifestParser::CouldNotFindResolvedFile, missing.join(", ")) unless missing.empty?
 
-    puts "Reading resolved packages from: #{paths}"
+    puts("Reading resolved packages from: #{paths}")
     paths.each_with_object({}) { |path, pins| pins.merge!(PackageResolved.versions_from(path)) }
   end
 
@@ -158,7 +157,7 @@ class SpmChecker
         warn_for_branch(
           package[:requirement]["branch"],
           package[:name],
-          package[:cache_key],
+          package[:normalized_url],
           package[:repository_url],
           package[:resolved_version],
           package[:source]
@@ -169,7 +168,7 @@ class SpmChecker
       if package[:kind] == "revision"
         warn_for_revision(
           package[:name],
-          package[:cache_key],
+          package[:normalized_url],
           package[:repository_url],
           package[:resolved_version],
           version_tags_for(package),
@@ -181,7 +180,7 @@ class SpmChecker
       check_versioned_package(
         package[:kind],
         package[:name],
-        package[:cache_key],
+        package[:normalized_url],
         package[:repository_url],
         package[:requirement],
         package[:resolved_version],
@@ -205,18 +204,19 @@ class SpmChecker
       resolved_version = resolved_versions[normalized_url]
 
       if resolved_version.nil?
-        puts "Unable to locate the current version for #{name} (#{repository_url})"
+        puts("Unable to locate the current version for #{name} (#{repository_url})")
         next
       end
 
       {
-        cache_key: normalized_url,
+        cache_key: version_tags_cache_key(normalized_url, repository_url),
         kind: requirement["kind"],
-        name: name,
-        repository_url: repository_url,
-        requirement: requirement,
-        resolved_version: resolved_version,
-        source: source,
+        name:,
+        normalized_url:,
+        repository_url:,
+        requirement:,
+        resolved_version:,
+        source:
       }
     }
   end
@@ -235,6 +235,17 @@ class SpmChecker
     )
   end
 
+  def ensure_repository_host_allowed(name, repository_url, source)
+    ensure_repository_host_allowed!(name, repository_url, source)
+    true
+  rescue DisallowedRepositoryHost
+    false
+  end
+
+  def version_tags_cache_key(normalized_url, repository_url)
+    "#{normalized_url}\n#{repository_url}"
+  end
+
   def prefetch_version_tags(packages)
     pending = packages.each_with_object({}) { |package, lookups|
       next unless version_tag_lookup_required?(package[:kind])
@@ -250,15 +261,17 @@ class SpmChecker
     results = {}
     results_mutex = Mutex.new
     worker_count = [VERSION_TAG_WORKER_COUNT, pending.size].min
-    workers = worker_count.times.map {
+    workers = Array.new(worker_count) {
       Thread.new {
-        loop do
-          cache_key, repository_url = queue.pop(true)
-          versions = GitOperations.version_tags(repository_url)
-          results_mutex.synchronize { results[cache_key] = versions }
-        rescue ThreadError
-          break
-        end
+        loop {
+          begin
+            cache_key, repository_url = queue.pop(true)
+            versions = GitOperations.version_tags(repository_url)
+            results_mutex.synchronize { results[cache_key] = versions }
+          rescue ThreadError
+            break
+          end
+        }
       }
     }
 
@@ -285,35 +298,41 @@ class SpmChecker
     return if available_versions.empty?
     return if available_versions.first.to_s == resolved_version
 
-    if kind == "exactVersion"
+    case kind
+    when "exactVersion"
       warn_for_new_versions_exact(available_versions, name, normalized_url, repository_url, resolved_version, source)
-    elsif kind == "upToNextMajorVersion"
+    when "upToNextMajorVersion"
       warn_for_new_versions(:major, available_versions, name, normalized_url, repository_url, resolved_version, source)
-    elsif kind == "upToNextMinorVersion"
+    when "upToNextMinorVersion"
       warn_for_new_versions(:minor, available_versions, name, normalized_url, repository_url, resolved_version, source)
-    elsif kind == "versionRange"
+    when "versionRange"
       warn_for_new_versions_range(available_versions, name, normalized_url, repository_url, requirement, resolved_version, source)
     else
-      puts "Not processing dependency rule '#{kind}' for #{name} (#{repository_url})"
+      puts("Not processing dependency rule '#{kind}' for #{name} (#{repository_url})")
     end
   end
 
   def add_warning(message, source = nil, detail = nil)
     full_message = source.nil? ? message : "#{message}\nSource: #{source}"
     @warnings << full_message
-    @warning_details << detail.merge(message: full_message, source: source) if detail
-    puts "WARNING: #{message}#{source ? " (#{source})" : ''}"
+    @warning_details << warning_detail_record(message, source, detail)
+    puts("WARNING: #{message}#{source ? " (#{source})" : ''}")
+  end
+
+  def warning_detail_record(message, source, detail)
+    record = detail ? detail.merge(message:, source:) : { message:, source: }
+    record.compact
   end
 
   def warning_detail(type, name, normalized_url, repository_url, resolved_version, available_version, note = nil)
     {
       type: type.to_s,
       package: name,
-      normalized_url: normalized_url,
-      repository_url: repository_url,
+      normalized_url:,
+      repository_url:,
       current_version: resolved_version.to_s,
       available_version: available_version.to_s,
-      note: note,
+      note:
     }
   end
 
@@ -365,7 +384,7 @@ class SpmChecker
     begin
       max_version = Semantic::Version.new(requirement["maximumVersion"])
     rescue ArgumentError => e
-      puts "Unable to extract semver from #{requirement} for #{name} (#{e})"
+      puts("Unable to extract semver from #{requirement} for #{name} (#{e})")
       return
     end
     # Honor the pre-release policy: never report a pre-release as the newest
@@ -400,7 +419,7 @@ class SpmChecker
     begin
       resolved_version = Semantic::Version.new(resolved_version_string)
     rescue ArgumentError => e
-      puts "Unable to extract semver from #{resolved_version_string} for #{name} (#{e})"
+      puts("Unable to extract semver from #{resolved_version_string} for #{name} (#{e})")
       return
     end
     # upToNextMajor allows any version with the same major; upToNextMinor additionally

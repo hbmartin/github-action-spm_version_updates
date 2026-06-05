@@ -71,6 +71,7 @@ detectors:
   FeatureEnvy:
     enabled: true
     exclude:
+    - Action#configure_checker
     - Action#print_config
     - ActionReporter#write_update_summary
     - GithubIntegration#build_legacy_warnings_message
@@ -151,6 +152,7 @@ detectors:
     - ManifestParser#self.increment_patch_version
     - ManifestParser#self.package_calls
     - SpmChecker#add_warning
+    - SpmChecker#ensure_repository_host_allowed!
     - SpmChecker#merged_resolved_versions
     - SpmChecker#package_contexts
     - SpmChecker#warn_for_branch
@@ -223,6 +225,7 @@ detectors:
     - SpmChecker#check_manifests
     - SpmChecker#check_packages
     - SpmChecker#check_versioned_package
+    - SpmChecker#ensure_repository_host_allowed!
     - SpmChecker#merged_resolved_versions
     - SpmChecker#package_contexts
     - SpmChecker#prefetch_version_tags
@@ -306,8 +309,10 @@ detectors:
     - GithubIntegration#url_ref
     - SpmChecker#warning_detail
     - capture_stdout
+    - input_env
     - inputs
     - output_json_from
     - with_env
+    - write_event_file
     - versions
     public_methods_only: false

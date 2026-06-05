@@ -6,16 +6,17 @@ require_relative "../../lib/spm_checker"
 # XcodeParser path against the committed .xcodeproj fixtures (including the v1
 # Package.resolved format, ssh/.git URLs, and the dual resolved-file locations).
 # Git access is stubbed so these run without network access.
-RSpec.describe "SpmChecker Xcode project mode" do
+RSpec.describe SpmChecker, "#check_for_updates" do
   def versions(*strings)
-    strings.map { |string| Semantic::Version.new(string) }.sort.reverse
+    strings.map { |string| Semantic::Version.new(string) }
+      .sort.reverse
   end
 
   def fixture(name)
     File.expand_path("../support/fixtures/#{name}.xcodeproj", __dir__)
   end
 
-  subject(:checker) { SpmChecker.new }
+  subject(:checker) { described_class.new }
 
   it "reports newer versions for up to next major" do
     allow(GitOperations).to receive(:version_tags).and_return(versions("12.1.7", "12.1.6"))
@@ -25,7 +26,10 @@ RSpec.describe "SpmChecker Xcode project mode" do
 
   it "queries git with the original scheme-bearing URL, not the normalized match key" do
     received = []
-    allow(GitOperations).to receive(:version_tags) { |url| received << url; versions("12.1.7", "12.1.6") }
+    allow(GitOperations).to receive(:version_tags) { |url|
+                              received << url
+                              versions("12.1.7", "12.1.6")
+                            }
 
     checker.check_for_updates(fixture("UpToNextMajor"))
 
