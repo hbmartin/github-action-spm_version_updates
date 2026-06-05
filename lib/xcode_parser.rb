@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 require "xcodeproj"
-require "json"
 require_relative "git_operations"
+require_relative "package_resolved"
 
 # Xcode project and Package.resolved parsing (migrated from xcode.rb)
 module XcodeParser
@@ -30,17 +30,7 @@ module XcodeParser
     resolved_paths = find_packages_resolved_file(xcodeproj_path)
     raise(CouldNotFindResolvedFile) if resolved_paths.empty?
 
-    resolved_versions = resolved_paths.map { |resolved_path|
-      contents = JSON.load_file!(resolved_path)
-      pins = contents["pins"] || contents["object"]["pins"]
-      pins.to_h { |pin|
-        [
-          GitOperations.trim_repo_url(pin["location"] || pin["repositoryURL"]),
-          pin["state"]["version"] || pin["state"]["revision"],
-        ]
-      }
-    }
-    resolved_versions.reduce(:merge!)
+    resolved_paths.each_with_object({}) { |resolved_path, pins| pins.merge!(PackageResolved.versions_from(resolved_path)) }
   end
 
   # Find the Packages.resolved file

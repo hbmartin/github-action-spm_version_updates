@@ -1,5 +1,5 @@
 name: 'SPM Version Updates'
-description: 'Check for available updates to Swift Package Manager dependencies in Xcode projects'
+description: 'Check for available updates to Swift Package Manager dependencies in Xcode projects or Package.swift manifests'
 author: 'hbmartin'
 branding:
   icon: 'package'
@@ -7,10 +7,27 @@ branding:
 
 inputs:
   xcode-project-path:
-    description: 'Path to the Xcode project file (.xcodeproj)'
-    required: true
+    description: 'Path to the Xcode project file (.xcodeproj). Provide this OR package-manifest-paths.'
+    required: false
+    default: ''
+  package-manifest-paths:
+    description: 'Newline-separated list of Package.swift manifest paths. Provide this OR xcode-project-path.'
+    required: false
+    default: ''
+  package-resolved-paths:
+    description: 'Optional newline-separated list of Package.resolved paths. Defaults to a Package.resolved next to each manifest.'
+    required: false
+    default: ''
   check-when-exact:
     description: 'Check for updates even when using exact version constraints'
+    required: false
+    default: 'false'
+  check-branches:
+    description: 'Check for newer commits on branch-pinned dependencies'
+    required: false
+    default: 'true'
+  check-revisions:
+    description: 'Report the latest tagged version for revision-pinned dependencies'
     required: false
     default: 'false'
   report-above-maximum:
@@ -33,11 +50,14 @@ inputs:
 runs:
   using: 'docker'
   image: 'Dockerfile'
-  args:
-    - ${{ inputs.xcode-project-path }}
-    - ${{ inputs.check-when-exact }}
-    - ${{ inputs.report-above-maximum }}
-    - ${{ inputs.report-pre-releases }}
-    - ${{ inputs.ignore-repos }}
   env:
+    INPUT_XCODE_PROJECT_PATH: ${{ inputs.xcode-project-path }}
+    INPUT_PACKAGE_MANIFEST_PATHS: ${{ inputs.package-manifest-paths }}
+    INPUT_PACKAGE_RESOLVED_PATHS: ${{ inputs.package-resolved-paths }}
+    INPUT_CHECK_WHEN_EXACT: ${{ inputs.check-when-exact }}
+    INPUT_CHECK_BRANCHES: ${{ inputs.check-branches }}
+    INPUT_CHECK_REVISIONS: ${{ inputs.check-revisions }}
+    INPUT_REPORT_ABOVE_MAXIMUM: ${{ inputs.report-above-maximum }}
+    INPUT_REPORT_PRE_RELEASES: ${{ inputs.report-pre-releases }}
+    INPUT_IGNORE_REPOS: ${{ inputs.ignore-repos }}
     GITHUB_TOKEN: ${{ inputs.github-token }}

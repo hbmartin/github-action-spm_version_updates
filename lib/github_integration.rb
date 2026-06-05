@@ -79,11 +79,13 @@ class GithubIntegration
       "✅ **All SPM dependencies are up to date!**"
     else
       header = "⚠️ **Found #{warnings.size} potential dependency update#{warnings.size > 1 ? 's' : ''}:**\n\n"
-      
+
+      # Continuation lines (e.g. "Source: ...") are indented so they stay part
+      # of the numbered list item when rendered as Markdown.
       warning_list = warnings.map.with_index(1) do |warning, index|
-        "#{index}. #{warning}"
+        "#{index}. #{warning.gsub("\n", "\n   ")}"
       end.join("\n")
-      
+
       <<~MARKDOWN
         #{header}#{warning_list}
 
@@ -91,9 +93,8 @@ class GithubIntegration
         <summary>💡 How to update dependencies</summary>
 
         To update your SPM dependencies:
-        1. Open your Xcode project
-        2. Go to **File → Swift Packages → Update to Latest Package Versions**
-        3. Or update individual packages from the Package Dependencies section in Project Navigator
+        - **Package.swift**: bump the version constraint and run `swift package update` (or `swift package resolve`)
+        - **Xcode project**: go to **File → Packages → Update to Latest Package Versions**, or update individual packages from the Package Dependencies section in the Project Navigator
 
         </details>
       MARKDOWN
