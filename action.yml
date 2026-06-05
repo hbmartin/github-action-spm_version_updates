@@ -47,7 +47,15 @@ inputs:
     required: false
     default: ''
   fail-on-updates:
-    description: 'Fail the action when one or more dependency updates are found'
+    description: 'Legacy fail behavior. Set true to fail on any update, or major/minor/patch to fail on semantic version updates at or above that severity.'
+    required: false
+    default: 'false'
+  fail-on:
+    description: 'Fail on semantic version updates at or above this severity: major, minor, or patch. Overrides fail-on-updates when set.'
+    required: false
+    default: ''
+  comment-on-success:
+    description: 'Post a pull request comment when all dependencies are up to date'
     required: false
     default: 'false'
   github-token:
@@ -59,8 +67,17 @@ outputs:
   updates-found:
     description: 'Number of dependency updates found'
     value: ${{ steps.check.outputs.updates-found }}
+  major-updates-found:
+    description: 'Number of major semantic-version updates found'
+    value: ${{ steps.check.outputs.major-updates-found }}
+  minor-updates-found:
+    description: 'Number of minor semantic-version updates found'
+    value: ${{ steps.check.outputs.minor-updates-found }}
+  patch-updates-found:
+    description: 'Number of patch semantic-version updates found'
+    value: ${{ steps.check.outputs.patch-updates-found }}
   updates-json:
-    description: 'JSON array of dependency update objects with message plus available package, version, repository, and source fields'
+    description: 'JSON array of dependency update objects with message plus available package, version, severity, repository, and source fields'
     value: ${{ steps.check.outputs.updates-json }}
 
 runs:
@@ -92,6 +109,8 @@ runs:
         INPUT_IGNORE_REPOS: ${{ inputs.ignore-repos }}
         INPUT_ALLOW_HOSTS: ${{ inputs.allow-hosts }}
         INPUT_FAIL_ON_UPDATES: ${{ inputs.fail-on-updates }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_COMMENT_ON_SUCCESS: ${{ inputs.comment-on-success }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         cd "$ACTION_PATH"
