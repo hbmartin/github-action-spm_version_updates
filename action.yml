@@ -42,22 +42,52 @@ inputs:
     description: 'Comma-separated list of repository URLs to ignore'
     required: false
     default: ''
+  fail-on-updates:
+    description: 'Fail the action when one or more dependency updates are found'
+    required: false
+    default: 'false'
   github-token:
     description: 'GitHub token for API access (automatic)'
     required: false
     default: ${{ github.token }}
 
+outputs:
+  updates-found:
+    description: 'Number of dependency updates found'
+    value: ${{ steps.check.outputs.updates-found }}
+  updates-json:
+    description: 'JSON array of dependency update objects with message plus available package, version, repository, and source fields'
+    value: ${{ steps.check.outputs.updates-json }}
+
 runs:
-  using: 'docker'
-  image: 'Dockerfile'
-  env:
-    INPUT_XCODE_PROJECT_PATH: ${{ inputs.xcode-project-path }}
-    INPUT_PACKAGE_MANIFEST_PATHS: ${{ inputs.package-manifest-paths }}
-    INPUT_PACKAGE_RESOLVED_PATHS: ${{ inputs.package-resolved-paths }}
-    INPUT_CHECK_WHEN_EXACT: ${{ inputs.check-when-exact }}
-    INPUT_CHECK_BRANCHES: ${{ inputs.check-branches }}
-    INPUT_CHECK_REVISIONS: ${{ inputs.check-revisions }}
-    INPUT_REPORT_ABOVE_MAXIMUM: ${{ inputs.report-above-maximum }}
-    INPUT_REPORT_PRE_RELEASES: ${{ inputs.report-pre-releases }}
-    INPUT_IGNORE_REPOS: ${{ inputs.ignore-repos }}
-    GITHUB_TOKEN: ${{ inputs.github-token }}
+  using: 'composite'
+  steps:
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f
+      env:
+        BUNDLE_WITHOUT: development:test
+      with:
+        ruby-version: '3.3'
+        bundler-cache: true
+        working-directory: ${{ github.action_path }}
+
+    - name: Check SPM dependencies
+      id: check
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BUNDLE_WITHOUT: development:test
+        INPUT_XCODE_PROJECT_PATH: ${{ inputs.xcode-project-path }}
+        INPUT_PACKAGE_MANIFEST_PATHS: ${{ inputs.package-manifest-paths }}
+        INPUT_PACKAGE_RESOLVED_PATHS: ${{ inputs.package-resolved-paths }}
+        INPUT_CHECK_WHEN_EXACT: ${{ inputs.check-when-exact }}
+        INPUT_CHECK_BRANCHES: ${{ inputs.check-branches }}
+        INPUT_CHECK_REVISIONS: ${{ inputs.check-revisions }}
+        INPUT_REPORT_ABOVE_MAXIMUM: ${{ inputs.report-above-maximum }}
+        INPUT_REPORT_PRE_RELEASES: ${{ inputs.report-pre-releases }}
+        INPUT_IGNORE_REPOS: ${{ inputs.ignore-repos }}
+        INPUT_FAIL_ON_UPDATES: ${{ inputs.fail-on-updates }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        cd "$ACTION_PATH"
+        bundle exec ruby "$ACTION_PATH/lib/action.rb"
