@@ -13,6 +13,8 @@ It works in two ways:
 - **Xcode project mode** — dependencies declared as `XCRemoteSwiftPackageReference` objects inside an `.xcodeproj`.
 - **Swift manifest mode** — dependencies declared in one or more `Package.swift` manifests (a SwiftPM-first / modular iOS layout).
 
+📖 **SwiftPM-first repo?** If your dependencies live in `Package.swift` manifests rather than in the `.xcodeproj`, see the [Swift manifest mode guide](docs/swiftpm-manifest-mode.md) for setup and migration steps.
+
 ## Features
 
 - ✅ **Two source modes** — point it at an `.xcodeproj` **or** at your `Package.swift` manifests
