@@ -166,5 +166,17 @@ RSpec.describe SpmChecker do
         expect(warnings).to eq([])
       end
     end
+
+    it "skips malformed package entries with nil requirements" do
+      remote_packages = {
+        "github.com/a/b" => { "repository_url" => "https://github.com/a/b", "requirement" => nil },
+      }
+
+      expect(GitOperations).not_to receive(:version_tags)
+
+      checker.send(:check_packages, remote_packages, "github.com/a/b" => "1.0.0")
+
+      expect(checker.instance_variable_get(:@warnings)).to eq([])
+    end
   end
 end

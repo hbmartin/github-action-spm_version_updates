@@ -1,12 +1,19 @@
 # SPM Version Updates GitHub Action
 
-[![CI](https://github.com/hbmartin/danger-spm_version_updates/actions/workflows/lint_and_test.yml/badge.svg)](https://github.com/hbmartin/danger-spm_version_updates/actions/workflows/lint_and_test.yml)
-[![CodeFactor](https://www.codefactor.io/repository/github/hbmartin/danger-spm_version_updates/badge/main)](https://www.codefactor.io/repository/github/hbmartin/danger-spm_version_updates/overview/main)
+[![CI](https://github.com/hbmartin/github-action-spm_version_updates/actions/workflows/lint_and_test.yml/badge.svg)](https://github.com/hbmartin/github-action-spm_version_updates/actions/workflows/lint_and_test.yml)
+[![CodeFactor](https://www.codefactor.io/repository/github/hbmartin/github-action-spm_version_updates/badge/main)](https://www.codefactor.io/repository/github/hbmartin/github-action-spm_version_updates/overview/main)
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-SPM%20Version%20Updates-blue?logo=github)](https://github.com/marketplace/actions/spm-version-updates)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A GitHub Action to automatically detect and report available updates for your Swift Package Manager (SPM) dependencies.
 
-🚀 **Fast, lightweight, and works without Swift or Xcode installed on your CI runner**
+🚀 **Fast, lightweight, and works without Swift or Xcode installed on your CI runner** — it parses your manifests directly and checks each dependency with `git ls-remote`, so there's no macOS runner, no Swift toolchain, and no Xcode to install.
+
+```yaml
+- uses: hbmartin/github-action-spm_version_updates@v1
+  with:
+    xcode-project-path: 'MyApp.xcodeproj'   # or: package-manifest-paths
+```
 
 It works in two ways:
 
@@ -14,6 +21,33 @@ It works in two ways:
 - **Swift manifest mode** — dependencies declared in one or more `Package.swift` manifests (a SwiftPM-first / modular iOS layout).
 
 📖 **SwiftPM-first repo?** If your dependencies live in `Package.swift` manifests rather than in the `.xcodeproj`, see the [Swift manifest mode guide](docs/swiftpm-manifest-mode.md) for setup and migration steps.
+
+## Contents
+
+- [Why this action?](#why-this-action)
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Permissions](#permissions)
+- [Source modes](#source-modes)
+- [Configuration Options](#configuration-options)
+- [How dependency constraints are handled](#how-dependency-constraints-are-handled)
+- [Outputs](#outputs)
+- [Example output](#example-output)
+- [Advanced configuration](#advanced-configuration)
+- [Limitations](#limitations)
+- [Versioning](#versioning)
+- [Development](#development)
+- [Authors](#authors)
+- [License](#license)
+
+## Why this action?
+
+Swift dependency updates are awkward to keep an eye on in CI:
+
+- **Dependabot's SPM support is limited.** It only reads packages declared in an `.xcodeproj`/workspace and doesn't handle the SwiftPM-first, multi-`Package.swift` modular layouts that many iOS apps have moved to. This action checks **either** an `.xcodeproj` **or** any number of `Package.swift` manifests.
+- **No toolchain, no macOS minutes.** It never resolves a graph or runs `swift package`; it parses your manifests/`Package.resolved` and queries each dependency's tags with `git ls-remote`. That means it runs on cheap `ubuntu-latest` runners in seconds.
+- **Report-only and non-intrusive.** Instead of opening a pull request per dependency, it posts and continuously updates a **single** PR comment summarizing what's available — so your PR list stays clean and you decide when to bump.
+- **You control the noise.** Pre-releases, branch/revision pins, exact pins, and above-maximum releases are all opt-in/opt-out, and you can ignore specific repositories entirely.
 
 ## Features
 
@@ -82,6 +116,22 @@ jobs:
 
 No temporary Xcode project, no synthetic `Package.resolved`, no repo-specific parser.
 
+## Permissions
+
+The action reads your manifests from the checked-out repo and posts a single comment on the pull request, so the job needs:
+
+```yaml
+permissions:
+  contents: read         # checkout / read the manifests
+  pull-requests: write   # create and update the summary comment
+```
+
+A few things worth knowing about the token:
+
+- **`github-token` defaults to `${{ github.token }}`**, the automatic per-job token. You only need to set it explicitly to use a PAT or a GitHub App token (for example, to raise the API rate limit or to comment on a repository the default token can't write to).
+- **The token is used to post the comment, not to look up versions.** Dependency tags are fetched with `git ls-remote`, so a low rate limit on the token won't slow checks down.
+- **Pull requests from forks get a read-only `GITHUB_TOKEN`**, so the comment step can't write. If you want this to run on fork PRs, trigger it with `pull_request_target` (and review the [security implications](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)) or post the results from a separate, trusted workflow.
+
 ## Source modes
 
 You must provide **exactly one** of `xcode-project-path` or `package-manifest-paths`. Providing both (or neither) fails with a clear error.
@@ -104,7 +154,7 @@ Use this when the `.xcodeproj` directly owns its remote package references.
 - Resolved pins from every file are merged by normalized repository URL, and each warning is annotated with the manifest it came from.
 - Closed Swift ranges (`"1.0.0"..."2.0.0"`) are normalized the same way SwiftPM does — to the half-open range `"1.0.0"..<"2.0.1"` — so the inclusive upper bound is preserved.
 
-Manifest parsing is done with a lightweight, dependency-free scanner — **Swift is not required**, so the action runs on `ubuntu-latest`. The common declaration forms are supported:
+Manifest parsing is done with a lightweight, dependency-free scanner. The common declaration forms are supported:
 
 ```swift
 .package(url: "https://github.com/foo/bar", from: "1.2.3")
@@ -147,9 +197,21 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 
 When `report-above-maximum: true`, the action additionally reports the newest version that exists above the configured maximum (e.g. a new major release that your constraint would not pick up).
 
+### Pre-releases
+
+Across all of the constraint types above, pre-release tags (versions with a `-` suffix such as `2.0.0-rc.1` or `600.0.0-prerelease-2024-09-04`) are **ignored by default** — only stable releases are reported. Set `report-pre-releases: true` to make pre-releases eligible, in which case the newest matching version is reported even if it is a pre-release.
+
+## Outputs
+
+This action is **report-only**: its result is the pull request comment, and it does not expose any `outputs` for downstream steps. The job succeeds whether or not updates are found; it only fails on configuration or input errors (for example, providing both source modes, or a missing `Package.resolved`). If you need to gate a workflow on the presence of updates, parse the rendered comment or open an issue describing the use case.
+
 ## Example output
 
 When the action finds available updates, it posts (and keeps updating) a single comment on your pull request:
+
+<!-- TODO: drop a real screenshot at docs/pr-comment-example.png and uncomment the line below for a more compelling, marketplace-style README.
+![Example SPM Version Updates pull request comment](docs/pr-comment-example.png)
+-->
 
 > ## 📦 SPM Version Updates
 >
@@ -180,6 +242,13 @@ The `Source:` line is only included in Swift manifest mode, where it tells you w
     ignore-repos: 'https://github.com/pointfreeco/swift-snapshot-testing'
 ```
 
+## Limitations
+
+- **Posting the comment is GitHub-specific.** The summary comment is created through the GitHub API, so the action has to run inside GitHub Actions on a GitHub-hosted pull request. (Checking for new versions is host-agnostic — see below.)
+- **Version lookups work against any git host the runner can reach.** Tags and branches are read with `git ls-remote`, so dependencies hosted on GitHub, GitLab, Bitbucket, or a self-hosted server all work. Private dependencies are supported as long as the runner is already authenticated to fetch them (SSH key or credentials in the environment); the action does not manage those credentials for you.
+- **Updates are detected from semver tags.** A dependency that doesn't publish semver-style version tags won't produce version updates. Branch- and revision-pinned dependencies are handled separately via `check-branches` / `check-revisions`.
+- **Local packages are skipped.** `.package(path: ...)` dependencies and commented-out declarations are ignored.
+
 ## Versioning
 
 Pin to a major version tag so you automatically receive backward-compatible updates:
@@ -204,29 +273,8 @@ To work on this action locally:
 
 - [Harold Martin](https://www.linkedin.com/in/harold-martin-98526971/) - harold.martin at gmail
 
-## Legal
+## License
+
+Released under the [MIT License](LICENSE.txt). Copyright (c) 2023-2026 Harold Martin.
 
 Swift and the Swift logo are trademarks of Apple Inc.
-
-Copyright (c) 2023-2024 Harold Martin
-
-MIT License
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
