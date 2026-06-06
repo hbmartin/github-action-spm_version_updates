@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "json"
+require "stringio"
 require "tmpdir"
 require "xcodeproj"
 require_relative "../../lib/xcode_parser"
@@ -37,6 +38,36 @@ RSpec.describe XcodeParser do
         }
       )
       expect(Xcodeproj::Project).not_to have_received(:open)
+    end
+
+    it "warns and falls back when the lightweight pbxproj parser cannot read the file", :aggregate_failures do
+      Dir.mktmpdir("xcode-parser") do |dir|
+        project_path = File.join(dir, "App.xcodeproj")
+        FileUtils.mkdir_p(project_path)
+        File.write(File.join(project_path, "project.pbxproj"), "broken")
+        allow(XcodeProjectPackageReader).to receive(:pbxproj_objects)
+          .and_raise(Xcodeproj::Informative, "invalid plist")
+
+        result = nil
+        expect {
+          result = XcodeProjectPackageReader.send(:package_references_from_pbxproj, project_path)
+        }.to output(/falling back to full Xcode project parsing/).to_stderr
+        expect(result).to be_nil
+      end
+    end
+
+    it "does not swallow unexpected bugs in the lightweight pbxproj reader" do
+      Dir.mktmpdir("xcode-parser") do |dir|
+        project_path = File.join(dir, "App.xcodeproj")
+        FileUtils.mkdir_p(project_path)
+        File.write(File.join(project_path, "project.pbxproj"), "{}")
+        allow(XcodeProjectPackageReader).to receive(:pbxproj_objects)
+          .and_raise(NoMethodError, "unexpected bug")
+
+        expect {
+          XcodeProjectPackageReader.send(:package_references_from_pbxproj, project_path)
+        }.to raise_error(NoMethodError, /unexpected bug/)
+      end
     end
 
     it "ignores package references with nil or blank repository URLs" do
@@ -86,6 +117,15 @@ RSpec.describe XcodeParser do
             File.join(project_path, "project.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved"),
           ]
         )
+      end
+    end
+
+    it "derives adjacent workspace paths when the project path has a trailing slash" do
+      Dir.mktmpdir("xcode-parser") do |dir|
+        project_path = File.join(dir, "Sample App.xcodeproj")
+        workspace_resolved = File.join(dir, "Sample App.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved")
+
+        expect(XcodeProjectPackageReader.package_resolved_candidate_paths("#{project_path}/")).to include(workspace_resolved)
       end
     end
 
