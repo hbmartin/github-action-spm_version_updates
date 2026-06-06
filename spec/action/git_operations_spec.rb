@@ -7,27 +7,27 @@ require_relative "../../lib/git_operations"
 # to `git ls-remote`, which git treats as a local path and rejects. Because the
 # old implementation shelled out with backticks (capturing stdout only), the
 # failure was swallowed and every lookup looked like "no versions available".
-# The wrappers now run git via Open3 (no shell) and surface a clear warning on a
-# non-zero exit instead of masking it as an empty result.
+# The wrappers now run git via Open3 (no shell) and fail clearly after bounded
+# non-interactive retries instead of masking lookup failures as empty results.
 RSpec.describe GitOperations do
   def status(success)
     instance_double(Process::Status, success?: success)
   end
 
-  def git_ls_remote_args(flag, repo_url)
-    [{ "GIT_ALLOW_PROTOCOL" => described_class::ALLOWED_PROTOCOLS }, "git", "ls-remote", flag, "--", repo_url]
+  def git_ls_remote_args(repo_url, options:, patterns: [])
+    [described_class::NON_INTERACTIVE_ENV, "git", "ls-remote", *options, "--", repo_url, *patterns]
   end
 
   describe ".version_tags" do
-    it "passes the URL to git ls-remote as a discrete argument (never through a shell)" do
+    it "passes the URL to git ls-remote as a discrete non-interactive argument with tag filters" do
       allow(Open3).to receive(:capture3)
-        .with(*git_ls_remote_args("-t", "https://github.com/swiftlang/swift-syntax"))
+        .with(*git_ls_remote_args("https://github.com/swiftlang/swift-syntax", options: ["--tags", "--refs"], patterns: described_class::TAG_REF_PATTERNS))
         .and_return(["", "", status(true)])
 
       described_class.version_tags("https://github.com/swiftlang/swift-syntax")
 
       expect(Open3).to have_received(:capture3)
-        .with(*git_ls_remote_args("-t", "https://github.com/swiftlang/swift-syntax"))
+        .with(*git_ls_remote_args("https://github.com/swiftlang/swift-syntax", options: ["--tags", "--refs"], patterns: described_class::TAG_REF_PATTERNS))
     end
 
     it "returns the parsed tags newest-first" do
@@ -44,6 +44,13 @@ RSpec.describe GitOperations do
       expect(described_class.version_tags("https://github.com/foo/bar").map(&:to_s)).to eq(["1.1.0", "1.0.1", "1.0.0"])
     end
 
+    it "normalizes v-prefixed version tags" do
+      output = "aaa\trefs/tags/v1.2.3\nbbb\trefs/tags/v2.0.0-beta.1\n"
+      allow(Open3).to receive(:capture3).and_return([output, "", status(true)])
+
+      expect(described_class.version_tags("https://github.com/foo/bar").map(&:to_s)).to eq(["2.0.0-beta.1", "1.2.3"])
+    end
+
     it "preserves build metadata in parsed tags" do
       output = "aaa\trefs/tags/1.2.3+20210102.9c8096a\nbbb\trefs/tags/1.2.4\n"
       allow(Open3).to receive(:capture3).and_return([output, "", status(true)])
@@ -51,61 +58,62 @@ RSpec.describe GitOperations do
       expect(described_class.version_tags("https://github.com/foo/bar").map(&:to_s)).to eq(["1.2.4", "1.2.3+20210102.9c8096a"])
     end
 
-    it "warns and returns [] when git ls-remote exits non-zero", :aggregate_failures do
+    it "retries, warns, and raises when git ls-remote exits non-zero", :aggregate_failures do
+      allow(described_class).to receive(:sleep)
       allow(Open3).to receive(:capture3)
         .and_return(["", "fatal: 'github.com/foo/bar' does not appear to be a git repository", status(false)])
 
-      result = nil
-      expect { result = described_class.version_tags("github.com/foo/bar") }
-        .to output(%r{git ls-remote .* failed for github\.com/foo/bar}).to_stderr
-      expect(result).to eq([])
+      expect { described_class.version_tags("github.com/foo/bar") }
+        .to output(%r{git ls-remote failed for github\.com/foo/bar after 3 attempts}).to_stderr
+        .and raise_error(described_class::LsRemoteError, /after 3 attempts/)
+      expect(Open3).to have_received(:capture3).exactly(3).times
+      expect(described_class).to have_received(:sleep).twice
     end
 
     it "runs git with a transport allowlist that blocks helper protocols", :aggregate_failures do
+      allow(described_class).to receive(:sleep)
       allow(Open3).to receive(:capture3)
-        .with(*git_ls_remote_args("-t", "foo://github.com/foo/bar"))
+        .with(*git_ls_remote_args("foo://github.com/foo/bar", options: ["--tags", "--refs"], patterns: described_class::TAG_REF_PATTERNS))
         .and_return(["", "fatal: transport 'foo' not allowed", status(false)])
 
-      result = nil
-      expect { result = described_class.version_tags("foo://github.com/foo/bar") }
+      expect { described_class.version_tags("foo://github.com/foo/bar") }
         .to output(/transport 'foo' not allowed/).to_stderr
-      expect(result).to eq([])
+        .and raise_error(described_class::LsRemoteError)
     end
 
     it "separates option-like repository URLs from git options", :aggregate_failures do
       allow(Open3).to receive(:capture3)
-        .with(*git_ls_remote_args("-t", "--upload-pack=touch /tmp/pwned"))
-        .and_return(["", "fatal: not a repository", status(false)])
+        .with(*git_ls_remote_args("--upload-pack=touch /tmp/pwned", options: ["--tags", "--refs"], patterns: described_class::TAG_REF_PATTERNS))
+        .and_return(["", "", status(true)])
 
       described_class.version_tags("--upload-pack=touch /tmp/pwned")
 
       expect(Open3).to have_received(:capture3)
-        .with(*git_ls_remote_args("-t", "--upload-pack=touch /tmp/pwned"))
+        .with(*git_ls_remote_args("--upload-pack=touch /tmp/pwned", options: ["--tags", "--refs"], patterns: described_class::TAG_REF_PATTERNS))
     end
 
-    it "redacts embedded credentials from git failure warnings", :aggregate_failures do
+    it "redacts embedded credentials from git failure warnings and errors", :aggregate_failures do
+      allow(described_class).to receive(:sleep)
       allow(Open3).to receive(:capture3)
         .and_return(["", "fatal: could not read https://user:token@github.com/foo/bar", status(false)])
 
-      result = nil
       expect {
-        result = described_class.version_tags("https://user:token@github.com/foo/bar")
+        described_class.version_tags("https://user:token@github.com/foo/bar")
       }.to output(
         a_string_including(
           "failed for https://[REDACTED]@github.com/foo/bar",
           "https://[REDACTED]@github.com/foo/bar"
         ).and(not_outputting_credentials)
       ).to_stderr
-      expect(result).to eq([])
+        .and raise_error(described_class::LsRemoteError, not_outputting_credentials)
     end
 
-    it "warns and returns [] when the git executable is missing", :aggregate_failures do
+    it "warns and raises when the git executable is missing", :aggregate_failures do
       allow(Open3).to receive(:capture3).and_raise(Errno::ENOENT)
 
-      result = nil
-      expect { result = described_class.version_tags("https://github.com/foo/bar") }
+      expect { described_class.version_tags("https://github.com/foo/bar") }
         .to output(/git command not found/).to_stderr
-      expect(result).to eq([])
+        .and raise_error(described_class::LsRemoteError, /git command not found/)
     end
 
     it "sorts without crashing on date-style pre-release tags" do
@@ -135,28 +143,30 @@ RSpec.describe GitOperations do
 
   describe ".branch_last_commit" do
     # Named to avoid shadowing RSpec's `output` matcher used below.
-    let(:heads_output) { "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\trefs/heads/main\ncafecafe\trefs/heads/dev\n" }
+    let(:heads_output) { "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\trefs/heads/main\n" }
 
-    it "returns the commit for the requested branch" do
+    it "returns the commit for the requested branch", :aggregate_failures do
       allow(Open3).to receive(:capture3).and_return([heads_output, "", status(true)])
 
       expect(described_class.branch_last_commit("https://github.com/foo/bar", "main"))
         .to eq("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+      expect(Open3).to have_received(:capture3)
+        .with(*git_ls_remote_args("https://github.com/foo/bar", options: ["--branches"], patterns: ["refs/heads/main"]))
     end
 
     it "returns nil (rather than raising) when the branch is absent" do
-      allow(Open3).to receive(:capture3).and_return([heads_output, "", status(true)])
+      allow(Open3).to receive(:capture3).and_return(["", "", status(true)])
 
       expect(described_class.branch_last_commit("https://github.com/foo/bar", "missing")).to be_nil
     end
 
-    it "warns and returns nil when git ls-remote exits non-zero", :aggregate_failures do
+    it "warns and raises when git ls-remote exits non-zero", :aggregate_failures do
+      allow(described_class).to receive(:sleep)
       allow(Open3).to receive(:capture3).and_return(["", "fatal: nope", status(false)])
 
-      result = "unset"
-      expect { result = described_class.branch_last_commit("github.com/foo/bar", "main") }
-        .to output(/git ls-remote .* failed/).to_stderr
-      expect(result).to be_nil
+      expect { described_class.branch_last_commit("github.com/foo/bar", "main") }
+        .to output(/git ls-remote failed/).to_stderr
+        .and raise_error(described_class::LsRemoteError)
     end
   end
 

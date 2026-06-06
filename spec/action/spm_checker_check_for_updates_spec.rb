@@ -138,4 +138,20 @@ RSpec.describe SpmChecker, "#check_for_updates" do
       checker.check_for_updates(fixture("NoPackagesResolved"))
     }.to raise_error(XcodeParser::CouldNotFindResolvedFile)
   end
+
+  it "warns when Package.resolved has pins but the Xcode project has no remote package references", :aggregate_failures do
+    allow(XcodeParser).to receive(:get_packages).with("App.xcodeproj").and_return({})
+    allow(XcodeParser).to receive(:get_resolved_versions)
+      .with("App.xcodeproj")
+      .and_return("github.com/acme/Package" => "1.2.3")
+
+    expect {
+      expect(checker.check_for_updates("App.xcodeproj")).to eq([])
+    }.to output(
+      a_string_including(
+        "WARNING: No XCRemoteSwiftPackageReference entries were found in App.xcodeproj",
+        "use package-manifest-paths instead"
+      )
+    ).to_stdout
+  end
 end

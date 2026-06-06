@@ -9,6 +9,15 @@ require_relative "spm_version_updates/semver"
 module GitOperations
   ALLOWED_PROTOCOLS = "https:ssh:git"
   HOST_PATTERN = GitHostNormalizer::HOST_PATTERN
+  LS_REMOTE_RETRY_DELAYS = [0.25, 0.5].freeze
+  NON_INTERACTIVE_ENV = {
+    "GIT_ALLOW_PROTOCOL" => ALLOWED_PROTOCOLS,
+    "GIT_TERMINAL_PROMPT" => "0"
+  }.freeze
+  TAG_REF_PATTERNS = ["[0-9]*.[0-9]*", "v[0-9]*.[0-9]*"].freeze
+
+  # Raised when git cannot complete a remote reference lookup.
+  class LsRemoteError < StandardError; end
 
   # Removes protocol and trailing .git from a repo URL
   # @param   [String] repo_url The URL of the repository
@@ -41,12 +50,11 @@ module GitOperations
   # @param   [String] repo_url The URL of the dependency's repository
   # @return [Array<SpmVersionUpdates::Semver>]
   def self.version_tags(repo_url)
-    output = ls_remote("-t", repo_url)
-    return [] if output.nil?
+    output = ls_remote(repo_url, options: ["--tags", "--refs"], patterns: TAG_REF_PATTERNS)
 
     versions = output
       .split("\n")
-      .map { |line| line.split("/tags/").last }
+      .filter_map { |line| tag_name(line) }
       .filter_map { |line|
         begin
           SpmVersionUpdates::Semver.new(line)
@@ -63,43 +71,79 @@ module GitOperations
   # @param   [String] branch_name The name of the branch on which to find the last commit
   # @return [String, nil]
   def self.branch_last_commit(repo_url, branch_name)
-    output = ls_remote("-h", repo_url)
-    return nil if output.nil?
+    branch_ref = "refs/heads/#{branch_name}"
+    output = ls_remote(repo_url, options: ["--branches"], patterns: [branch_ref])
 
     line = output
       .split("\n")
-      .find { |remote_ref| remote_ref.split("\trefs/heads/")[1] == branch_name }
-    line&.split("\trefs/heads/")&.first
+      .find { |remote_ref| remote_ref.split("\t")[1] == branch_ref }
+    line&.split("\t")&.first
   end
 
-  # Run `git ls-remote` with +flag+ against +repo_url+ using an argument vector
-  # (no shell), so repository URLs are never word-split or interpreted by a
-  # shell. Returns git's stdout on success, or nil when the command exits
-  # non-zero -- logging git's stderr clearly instead of masking the failure as
-  # an empty result (which previously made every failed lookup look like
-  # "no updates available").
-  # @return [String, nil]
-  def self.ls_remote(flag, repo_url)
-    stdout, stderr, status = Open3.capture3(
-      { "GIT_ALLOW_PROTOCOL" => ALLOWED_PROTOCOLS },
+  # Run `git ls-remote` with an argument vector (no shell), so repository URLs
+  # are never word-split or interpreted by a shell. Raises after bounded retries
+  # instead of masking network/auth failures as "no updates available".
+  # @return [String]
+  def self.ls_remote(repo_url, options:, patterns: [])
+    attempts = 0
+    stdout = nil
+    stderr = nil
+
+    loop {
+      attempts += 1
+      stdout, stderr, status = capture_ls_remote(repo_url, options, patterns)
+      return stdout if status.success?
+
+      break if attempts >= ls_remote_attempts
+
+      sleep(LS_REMOTE_RETRY_DELAYS.fetch(attempts - 1))
+    }
+
+    raise_ls_remote_error(failure_message(repo_url, stderr, attempts))
+  rescue Errno::ENOENT
+    raise_ls_remote_error("git command not found. Please ensure git is installed and available in your PATH.")
+  end
+
+  def self.ls_remote_attempts
+    LS_REMOTE_RETRY_DELAYS.size + 1
+  end
+
+  def self.capture_ls_remote(repo_url, options, patterns)
+    Open3.capture3(
+      NON_INTERACTIVE_ENV,
       "git",
       "ls-remote",
-      flag,
+      *options,
       "--",
-      repo_url
+      repo_url,
+      *patterns
     )
-    return stdout if status.success?
+  end
 
-    warn("git ls-remote #{flag} failed for #{redact_credentials(repo_url)}: #{redact_credentials(stderr.strip)}")
-    nil
-  rescue Errno::ENOENT
-    warn("git command not found. Please ensure git is installed and available in your PATH.")
-    nil
+  def self.failure_message(repo_url, stderr, attempts)
+    details = stderr.to_s.strip
+    details = "no stderr" if details.empty?
+    "git ls-remote failed for #{redact_credentials(repo_url)} after #{attempts} attempts: #{redact_credentials(details)}"
+  end
+
+  def self.raise_ls_remote_error(message)
+    warn(message)
+    raise(LsRemoteError, message)
+  end
+
+  def self.tag_name(line)
+    line[%r{\A[^\t]+\trefs/tags/(.+)\z}, 1]
   end
 
   def self.redact_credentials(value)
     CredentialRedactor.redact(value)
   end
 
-  private_class_method :ls_remote, :redact_credentials
+  private_class_method :ls_remote,
+                       :ls_remote_attempts,
+                       :capture_ls_remote,
+                       :failure_message,
+                       :raise_ls_remote_error,
+                       :tag_name,
+                       :redact_credentials
 end

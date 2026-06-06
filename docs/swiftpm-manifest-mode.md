@@ -25,7 +25,8 @@ and the resolved pins live in the `Package.resolved` file next to each manifest.
 
 Pointing the action at `podcasts.xcodeproj` in this layout doesn't work well: the
 `.xcodeproj` owns no remote package references, so the action finds nothing to
-check (or reports a misleading "all up to date"), and `Package.resolved` is not in
+check. If an Xcode-adjacent `Package.resolved` exists, the action logs a warning
+that the project may need manifest mode; otherwise `Package.resolved` is not in
 any Xcode-adjacent workspace location.
 
 ## TL;DR — the workflow you want
@@ -62,7 +63,8 @@ jobs:
 
 No temporary Xcode project. No synthetic `Package.resolved`. No repo-specific
 parser. No macOS runner — manifest parsing is pure Ruby and runs on
-`ubuntu-latest` without a Swift or Xcode toolchain.
+`ubuntu-latest` without a Swift or Xcode toolchain. Manifest mode also skips the
+`xcodeproj` runtime dependency during action setup.
 
 ### Fork pull requests
 
@@ -255,10 +257,17 @@ it came from, so you know exactly where to make the change:
 | `ignore-repos` | Comma-separated list of repository URLs to ignore. | `''` |
 | `allow-hosts` | Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. A blocked lookup fails the action and writes `blocked=true` plus `error-message`. | `''` |
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | `false` |
+| `cache-version-tags` | Persist successful git tag lookups between runs with `actions/cache`. | `true` |
+| `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Set `0` to disable persistent cache reads and writes. | `21600` |
+| `setup-ruby` | Set up Ruby and install this action's bundle. Set to `false` only for later invocations in the same job after an earlier invocation has already run setup. | `true` |
 | `github-token` | GitHub token for posting the PR comment. | `${{ github.token }}` |
 
 Provide **exactly one** of `package-manifest-paths` or `xcode-project-path`.
 Supplying both (or neither) fails with a clear error.
+
+When invoking the action more than once in a job, keep `setup-ruby` enabled on
+the first invocation and use `setup-ruby: false` on later manifest-mode
+invocations to avoid repeating Ruby setup and Bundler cache work.
 
 ## A note on versioning
 

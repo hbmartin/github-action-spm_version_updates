@@ -13,22 +13,26 @@ This document provides instructions for maintaining, developing, and releasing t
 ### Local Development
 
 1. **Clone the repository**:
+
    ```bash
    git clone https://github.com/hbmartin/spm-version-updates-action.git
    cd spm-version-updates-action
    ```
 
 2. **Install dependencies**:
+
    ```bash
    bundle install
    ```
 
 3. **Run tests**:
+
    ```bash
    bundle exec rspec
    ```
 
 4. **Test locally with fixture**:
+
    ```bash
    GITHUB_WORKSPACE="$(pwd)" \
      INPUT_XCODE_PROJECT_PATH=spec/support/fixtures/UpToNextMajor.xcodeproj \
@@ -56,6 +60,7 @@ This document provides instructions for maintaining, developing, and releasing t
 ### Code Changes
 
 1. **Create a feature branch**:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -65,6 +70,7 @@ This document provides instructions for maintaining, developing, and releasing t
 3. **Update tests** in `spec/` if needed
 
 4. **Test your changes**:
+
    ```bash
    bundle exec rspec
    GITHUB_WORKSPACE="$(pwd)" INPUT_XCODE_PROJECT_PATH=spec/support/fixtures/UpToNextMajor.xcodeproj bundle exec ruby lib/action.rb
@@ -84,7 +90,9 @@ This document provides instructions for maintaining, developing, and releasing t
 
 1. **Update `Gemfile`** for Ruby gem changes
 2. **Run `bundle install`** to refresh `Gemfile.lock`
-3. **Verify the composite action** in a real GitHub Actions workflow so `ruby/setup-ruby` caching is exercised
+3. **Verify the manifest fast path** with `BUNDLE_WITHOUT=development:test:xcode`
+4. **Verify the composite action** in a real GitHub Actions workflow so `ruby/setup-ruby` caching is exercised
+5. **Verify `setup-ruby: false`** only after an earlier invocation has installed the same or a superset of runtime dependencies
 
 ## Testing
 
@@ -135,6 +143,7 @@ jobs:
 ### Version Strategy
 
 This action follows semantic versioning:
+
 - **Major (v2.0.0)**: Breaking changes to action interface or behavior
 - **Minor (v1.1.0)**: New features, backward compatible
 - **Patch (v1.0.1)**: Bug fixes, no interface changes
@@ -159,6 +168,7 @@ This action follows semantic versioning:
 ### Creating a Release
 
 1. **Prepare the release**:
+
    ```bash
    # Ensure you're on main branch
    git checkout main
@@ -169,6 +179,7 @@ This action follows semantic versioning:
    ```
 
 2. **Update CHANGELOG.md**:
+
    ```markdown
    ## [1.2.0] - 2024-XX-XX
    ### Added
@@ -180,6 +191,7 @@ This action follows semantic versioning:
    ```
 
 3. **Commit changes**:
+
    ```bash
    git add .
    git commit -m "Prepare release v1.2.0"
@@ -189,6 +201,7 @@ This action follows semantic versioning:
 4. **Create Pull Request** for review
 
 5. **After PR approval and merge**, create the release:
+
    ```bash
    git checkout main
    git pull origin main
@@ -197,6 +210,7 @@ This action follows semantic versioning:
    ```
 
 6. **Create GitHub Release**:
+
    ```bash
    gh release create v1.2.0 \
      --title "v1.2.0 - Release Title" \
@@ -208,6 +222,7 @@ This action follows semantic versioning:
 ### Post-Release Tasks
 
 1. **Update major version tag** (for major/minor releases):
+
    ```bash
    # For v1.2.0, update v1 tag
    git tag -d v1
@@ -221,6 +236,7 @@ This action follows semantic versioning:
    - Verify all metadata and descriptions are correct
 
 3. **Test the released version**:
+
    ```yaml
    - uses: hbmartin/spm-version-updates-action@v1.2.0
    ```
@@ -230,6 +246,7 @@ This action follows semantic versioning:
 ### Initial Publication
 
 1. **Ensure action.yml is properly configured**:
+
    ```yaml
    name: 'SPM Version Updates'
    description: 'Check for available updates to Swift Package Manager dependencies'
@@ -267,11 +284,13 @@ The marketplace automatically updates when you create new releases, but you may 
 2. **Action doesn't work in GitHub**:
    - Verify action.yml syntax
    - Check that `ruby/setup-ruby` installed dependencies from this action directory
+   - If `setup-ruby: false` is set, confirm an earlier action invocation in the same job ran with `setup-ruby: true`
    - Ensure all required files are included in repository
 
 ### Debug Mode
 
 Enable debug output by setting environment variables:
+
 ```bash
 DEBUG=true GITHUB_WORKSPACE="$(pwd)" INPUT_XCODE_PROJECT_PATH=MyApp.xcodeproj bundle exec ruby lib/action.rb
 ```
@@ -301,6 +320,7 @@ DEBUG=true GITHUB_WORKSPACE="$(pwd)" INPUT_XCODE_PROJECT_PATH=MyApp.xcodeproj bu
 ### Usage Metrics
 
 Monitor action usage through:
+
 - GitHub repository insights
 - Marketplace analytics
 - GitHub API usage (if applicable)

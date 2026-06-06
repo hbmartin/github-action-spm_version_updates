@@ -256,7 +256,6 @@ DEPENDENCIES
   faraday-retry (~> 2.4)
   guard
   guard-rspec
-  json (~> 2.0)
   octokit (~> 8.0)
   rake (~> 13.2)
   reek
