@@ -488,6 +488,64 @@ RSpec.describe SpmChecker do
       expect(checker.instance_variable_get(:@warnings)).to eq([])
     end
 
+    it "uses fresh persistent version tag cache entries before fetching", :aggregate_failures do
+      Dir.mktmpdir do |dir|
+        checker.version_tags_cache_dir = dir
+        persistent_cache = VersionTagsPersistentCache.new(directory: dir, ttl_seconds: 21_600)
+        persistent_cache.write(persistent_cache_key, versions("1.1.0", "1.0.0"))
+
+        checker.send(:check_packages, cache_remote_packages, cache_resolved_versions)
+
+        expect(GitOperations).not_to have_received(:version_tags)
+        expect(checker.instance_variable_get(:@warnings)).to eq(["Newer version of acme/shared: 1.1.0"])
+      end
+    end
+
+    it "refetches expired persistent cache entries and overwrites them", :aggregate_failures do
+      Dir.mktmpdir do |dir|
+        repository_url = "https://user:token@github.com/acme/shared"
+        checker.version_tags_cache_dir = dir
+        checker.version_tags_cache_ttl_seconds = 60
+        write_cache_record(dir, repository_url:, fetched_at: "1970-01-01T00:00:00Z", tags: ["1.1.0", "1.0.0"])
+        allow(GitOperations).to receive(:version_tags).with(repository_url).and_return(versions("1.2.0", "1.0.0"))
+
+        checker.send(:check_packages, cache_remote_packages(repository_url), cache_resolved_versions)
+
+        cache_contents = Dir.children(dir)
+          .map { |entry| File.read(File.join(dir, entry)) }
+          .join("\n")
+        expect(GitOperations).to have_received(:version_tags).with(repository_url)
+        expect(checker.instance_variable_get(:@warnings)).to eq(["Newer version of acme/shared: 1.2.0"])
+        expect(cache_contents).to include("1.2.0")
+        expect(cache_contents).not_to include("user:token")
+      end
+    end
+
+    it "ignores persistent cache entries when the TTL is zero", :aggregate_failures do
+      Dir.mktmpdir do |dir|
+        checker.version_tags_cache_dir = dir
+        checker.version_tags_cache_ttl_seconds = 0
+        write_cache_record(dir, tags: ["1.1.0", "1.0.0"])
+        allow(GitOperations).to receive(:version_tags).with("https://github.com/acme/shared").and_return(versions("1.2.0", "1.0.0"))
+
+        checker.send(:check_packages, cache_remote_packages, cache_resolved_versions)
+
+        expect(GitOperations).to have_received(:version_tags).with("https://github.com/acme/shared")
+        expect(checker.instance_variable_get(:@warnings)).to eq(["Newer version of acme/shared: 1.2.0"])
+      end
+    end
+
+    it "does not turn exhausted version tag lookup failures into no updates", :aggregate_failures do
+      allow(GitOperations).to receive(:version_tags)
+        .with("https://github.com/acme/shared")
+        .and_raise(GitOperations::LsRemoteError, "git ls-remote failed for https://github.com/acme/shared")
+
+      expect {
+        checker.send(:check_packages, cache_remote_packages, cache_resolved_versions)
+      }.to raise_error(GitOperations::LsRemoteError)
+      expect(checker.instance_variable_get(:@warnings)).to eq([])
+    end
+
     it "redacts embedded credentials when logging missing resolved versions" do
       remote_packages = {
         "github.com/acme/private" => {
@@ -519,5 +577,35 @@ RSpec.describe SpmChecker do
   def redacted_repository_url_log
     a_string_including("https://[REDACTED]@github.com/acme/private")
       .and(satisfy("not output raw credentials") { |output| !output.include?("user:token") })
+  end
+
+  def cache_remote_packages(repository_url = "https://github.com/acme/shared")
+    {
+      "github.com/acme/shared" => {
+        "repository_url" => repository_url,
+        "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }
+      }
+    }
+  end
+
+  def cache_resolved_versions
+    { "github.com/acme/shared" => "1.0.0" }
+  end
+
+  def persistent_cache_key(repository_url = "https://github.com/acme/shared")
+    VersionTagsPersistentCache.cache_key("github.com/acme/shared", repository_url)
+  end
+
+  def write_cache_record(dir, tags:, repository_url: "https://github.com/acme/shared", fetched_at: Time.now.utc.iso8601)
+    File.write(
+      File.join(dir, "#{persistent_cache_key(repository_url)}.json"),
+      JSON.pretty_generate(
+        {
+          "schema_version" => VersionTagsPersistentCache::SCHEMA_VERSION,
+          "fetched_at" => fetched_at,
+          "tags" => tags
+        }
+      )
+    )
   end
 end

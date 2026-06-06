@@ -4,21 +4,39 @@ require_relative "git_operations"
 
 # Fetches git tag versions concurrently for cache-key/repository URL lookup pairs.
 class VersionTagFetcher
-  def self.call(lookups, worker_limit:)
-    new(lookups, worker_limit).call
+  # Thread-safe result/error accumulator shared by fetcher workers.
+  FetchState = Struct.new(:mutex, :results, :errors, keyword_init: true) {
+    def self.build
+      new(mutex: Mutex.new, results: {}, errors: [])
+    end
+
+    def record_result(cache_key, versions)
+      mutex.synchronize { results[cache_key] = versions }
+    end
+
+    def record_error(error)
+      mutex.synchronize { errors << error }
+    end
+  }
+  private_constant :FetchState
+
+  def self.call(lookups, worker_limit:, persistent_cache: nil)
+    new(lookups, worker_limit, persistent_cache:).call
   end
 
-  def initialize(lookups, worker_limit)
+  def initialize(lookups, worker_limit, persistent_cache: nil)
     @lookups = lookups
     @worker_limit = worker_limit
-    @mutex = Mutex.new
-    @results = {}
+    @persistent_cache = persistent_cache
+    @state = FetchState.build
   end
 
   def call
     queue = build_queue
     workers(queue).each(&:value)
-    @results
+    raise_lookup_error unless @state.errors.empty?
+
+    @state.results
   end
 
   private
@@ -42,8 +60,22 @@ class VersionTagFetcher
   end
 
   def fetch_lookup(queue)
-    cache_key, repository_url = queue.pop(true)
-    versions = GitOperations.version_tags(repository_url)
-    @mutex.synchronize { @results[cache_key] = versions }
+    cache_key, repository_url, persistent_cache_key = queue.pop(true)
+    @state.record_result(cache_key, versions_for(repository_url, persistent_cache_key))
+  rescue GitOperations::LsRemoteError => error
+    @state.record_error(error)
+  end
+
+  def versions_for(repository_url, persistent_cache_key)
+    cached_versions = @persistent_cache&.read(persistent_cache_key)
+    return cached_versions if cached_versions
+
+    GitOperations.version_tags(repository_url)
+      .tap { |versions| @persistent_cache&.write(persistent_cache_key, versions) }
+  end
+
+  def raise_lookup_error
+    message = @state.errors.map(&:message).uniq.join("\n")
+    raise(GitOperations::LsRemoteError, message)
   end
 end

@@ -6,12 +6,12 @@ require_relative "../../lib/action"
 # Covers the source-mode selection logic that decides between Xcode-project mode
 # and Swift-manifest mode based on the configured inputs.
 RSpec.describe Action do
-  subject(:action) { described_class.new(github_integration:, checker_factory:) }
+  subject(:action) { described_class.new(reporter_sink:, checker_factory:) }
 
   let(:checker) { instance_double(SpmChecker) }
   let(:checker_factory) { SpmChecker }
-  let(:github_integration) {
-    instance_double(GithubIntegration, delete_existing_comment: nil, post_comment: nil, post_comment_with_warnings: nil)
+  let(:reporter_sink) {
+    instance_double(ReporterSink, clear: nil, publish_success: nil, publish_updates: nil)
   }
 
   def with_env(overrides)
@@ -38,6 +38,9 @@ RSpec.describe Action do
       INPUT_FAIL_ON_UPDATES
       INPUT_FAIL_ON
       INPUT_COMMENT_ON_SUCCESS
+      INPUT_CACHE_VERSION_TAGS
+      INPUT_VERSION_TAGS_CACHE_TTL
+      SPM_VERSION_UPDATES_TAG_CACHE_DIR
       GITHUB_WORKSPACE
     ).to_h { |key| [key, nil] }
       .merge(overrides)
@@ -115,7 +118,10 @@ RSpec.describe Action do
             ignore_repos: ["https://github.com/a/b", "https://github.com/c/d"],
             allow_hosts: ["github.com", "gitlab.com"],
             fail_on: "minor",
-            comment_on_success: true
+            comment_on_success: true,
+            cache_version_tags: true,
+            version_tags_cache_ttl: 21_600,
+            version_tags_cache_dir: nil
           }
         )
       end
@@ -130,6 +136,29 @@ RSpec.describe Action do
     it "uses the legacy fail-on-updates boolean as fail-on any" do
       with_env(input_env("INPUT_FAIL_ON_UPDATES" => "true")) do
         expect(action.send(:read_inputs)[:fail_on]).to eq("any")
+      end
+    end
+
+    it "parses version tag cache controls", :aggregate_failures do
+      with_env(
+        input_env(
+          "INPUT_CACHE_VERSION_TAGS" => "false",
+          "INPUT_VERSION_TAGS_CACHE_TTL" => "3600",
+          "SPM_VERSION_UPDATES_TAG_CACHE_DIR" => "/tmp/spm-tags"
+        )
+      ) do
+        parsed = action.send(:read_inputs)
+
+        expect(parsed[:cache_version_tags]).to be(false)
+        expect(parsed[:version_tags_cache_ttl]).to eq(3600)
+        expect(parsed[:version_tags_cache_dir]).to eq("/tmp/spm-tags")
+      end
+    end
+
+    it "rejects non-integer version tag cache TTLs" do
+      with_env(input_env("INPUT_VERSION_TAGS_CACHE_TTL" => "six hours")) do
+        expect { action.send(:read_inputs) }
+          .to raise_error(ArgumentError, /INPUT_VERSION_TAGS_CACHE_TTL must be an integer/)
       end
     end
   end
@@ -182,7 +211,7 @@ RSpec.describe Action do
           "::warning title=SPM dependency update,file=Modules/Package.swift::" \
           "Newer version of onevcat/Kingfisher: 8.0.0"
         )
-        expect(github_integration).to have_received(:post_comment_with_warnings).with(warnings, warning_details)
+        expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details)
       end
     end
 
@@ -285,8 +314,8 @@ RSpec.describe Action do
         expect(output).to include("patch-updates-found=0")
         expect(output_json_from(output_path)).to eq([])
         expect(File.read(summary_path)).to include("All SPM dependencies are up to date.")
-        expect(github_integration).to have_received(:delete_existing_comment)
-        expect(github_integration).not_to have_received(:post_comment)
+        expect(reporter_sink).to have_received(:clear)
+        expect(reporter_sink).not_to have_received(:publish_success)
       end
     end
 
@@ -299,8 +328,8 @@ RSpec.describe Action do
           action.send(:report, [], nil, comment_on_success: true)
         end
 
-        expect(github_integration).to have_received(:post_comment).with("✅ **SPM Dependencies**: All dependencies are up to date!")
-        expect(github_integration).not_to have_received(:delete_existing_comment)
+        expect(reporter_sink).to have_received(:publish_success)
+        expect(reporter_sink).not_to have_received(:clear)
       end
     end
   end
@@ -317,7 +346,8 @@ RSpec.describe Action do
         input_env(
           "INPUT_PACKAGE_MANIFEST_PATHS" => "Modules/Package.swift\nBuildTools/Package.swift",
           "INPUT_PACKAGE_RESOLVED_PATHS" => "Modules/Package.resolved\nBuildTools/Package.resolved",
-          "INPUT_ALLOW_HOSTS" => "github.com"
+          "INPUT_ALLOW_HOSTS" => "github.com",
+          "SPM_VERSION_UPDATES_TAG_CACHE_DIR" => "/tmp/spm-tags"
         )
       ) do
         action.run
@@ -328,9 +358,11 @@ RSpec.describe Action do
         ["Modules/Package.resolved", "BuildTools/Package.resolved"]
       )
       expect(configured_checker.allow_hosts).to eq(["github.com"])
+      expect(configured_checker.version_tags_cache_dir).to eq("/tmp/spm-tags")
+      expect(configured_checker.version_tags_cache_ttl_seconds).to eq(21_600)
       expect(configured_checker).not_to have_received(:check_for_updates)
-      expect(github_integration).to have_received(:delete_existing_comment)
-      expect(github_integration).not_to have_received(:post_comment)
+      expect(reporter_sink).to have_received(:clear)
+      expect(reporter_sink).not_to have_received(:publish_success)
     end
 
     it "dispatches Xcode mode from environment inputs", :aggregate_failures do
@@ -343,8 +375,8 @@ RSpec.describe Action do
 
       expect(configured_checker).to have_received(:check_for_updates).with("App.xcodeproj")
       expect(configured_checker).not_to have_received(:check_manifests)
-      expect(github_integration).to have_received(:delete_existing_comment)
-      expect(github_integration).not_to have_received(:post_comment)
+      expect(reporter_sink).to have_received(:clear)
+      expect(reporter_sink).not_to have_received(:publish_success)
     end
 
     it "posts a clean-run comment when comment-on-success is enabled", :aggregate_failures do
@@ -355,8 +387,8 @@ RSpec.describe Action do
         action.run
       end
 
-      expect(github_integration).to have_received(:post_comment).with("✅ **SPM Dependencies**: All dependencies are up to date!")
-      expect(github_integration).not_to have_received(:delete_existing_comment)
+      expect(reporter_sink).to have_received(:publish_success)
+      expect(reporter_sink).not_to have_received(:clear)
     end
 
     it "writes structured output when allow-hosts blocks a lookup", :aggregate_failures do
@@ -393,8 +425,8 @@ RSpec.describe Action do
         expect(output_json_from(output_path)).to eq([])
         expect(File.read(summary_path)).to include("Version lookup was blocked", message)
         expect(stdout).to include("::error title=SPM version check blocked::#{message}")
-        expect(github_integration).not_to have_received(:post_comment_with_warnings)
-        expect(github_integration).not_to have_received(:post_comment)
+        expect(reporter_sink).not_to have_received(:publish_updates)
+        expect(reporter_sink).not_to have_received(:publish_success)
       end
     end
 
@@ -408,7 +440,7 @@ RSpec.describe Action do
         end
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
-      expect(github_integration).to have_received(:post_comment_with_warnings).with(warnings, [])
+      expect(reporter_sink).to have_received(:publish_updates).with(warnings, [])
     end
 
     it "fails when a semantic update meets the fail-on threshold", :aggregate_failures do
@@ -432,7 +464,7 @@ RSpec.describe Action do
         end
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
-      expect(github_integration).to have_received(:post_comment_with_warnings).with(warnings, warning_details)
+      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details)
     end
 
     it "does not fail when semantic updates are below the fail-on threshold", :aggregate_failures do
@@ -454,7 +486,7 @@ RSpec.describe Action do
         action.run
       end
 
-      expect(github_integration).to have_received(:post_comment_with_warnings).with(warnings, warning_details)
+      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details)
     end
   end
 

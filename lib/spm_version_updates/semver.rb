@@ -7,8 +7,14 @@ module SpmVersionUpdates
   class Semver
     include Comparable
 
+    def self.normalize(value)
+      value.to_s
+        .sub(/\Av(?=\d)/, "")
+        .sub(/\A(\d+)\.(\d+)(?=\z|[-+])/, '\1.\2.0')
+    end
+
     def initialize(value)
-      @version = Semverify::Semver.new(value.to_s.sub(/\A(\d+)\.(\d+)(?=\z|[-+])/, '\1.\2.0'))
+      @version = Semverify::Semver.new(self.class.normalize(value))
     rescue Semverify::Error => error
       raise(ArgumentError, error.message)
     end

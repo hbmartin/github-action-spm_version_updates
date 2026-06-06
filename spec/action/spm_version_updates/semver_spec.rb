@@ -11,6 +11,10 @@ RSpec.describe SpmVersionUpdates::Semver do
     expect(semver("1.0").to_s).to eq("1.0.0")
   end
 
+  it "normalizes v-prefixed versions" do
+    expect(semver("v1.2.3").to_s).to eq("1.2.3")
+  end
+
   it "orders canonical SemVer pre-release identifiers" do
     versions = [
       "1.0.0",
