@@ -5,9 +5,7 @@ module CredentialRedactor
   module_function
 
   def redact(value)
-    return nil if value.nil?
-
-    value.to_s.gsub(%r{([a-z][a-z0-9+\-.]*://)([^/\s@]+)@}i, '\1[REDACTED]@')
+    value&.to_s&.gsub(%r{([a-z][a-z0-9+\-.]*://)([^/\s@]+)@}i, '\1[REDACTED]@')
   end
 
   def redact_hash_value(hash, key)
