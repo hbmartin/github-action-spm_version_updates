@@ -5,7 +5,33 @@
 module XcodeProjectPackageReader
   # Lightweight package reference read from either project objects or pbxproj data.
   PackageReference = Struct.new(:repository_url, :requirement, keyword_init: true)
-  private_constant :PackageReference
+
+  # Builds the lightweight pbxproj parser fallback error list without triggering autoloads.
+  module PbxprojFallbackErrors
+    def self.to_a
+      [
+        SystemCallError,
+        IOError,
+        loaded_nested_constant(:Xcodeproj, :Informative),
+        loaded_nested_constant(:Nanaimo, :Error),
+        loaded_nested_constant(:CFPropertyList, :CFPlistError),
+      ].compact
+    end
+
+    def self.loaded_nested_constant(parent_name, child_name)
+      parent = loaded_constant(Object, parent_name)
+      loaded_constant(parent, child_name) if parent
+    end
+
+    def self.loaded_constant(namespace, name)
+      return if namespace.autoload?(name)
+      return unless namespace.const_defined?(name, false)
+
+      namespace.const_get(name, false)
+    end
+  end
+
+  private_constant :PackageReference, :PbxprojFallbackErrors
 
   def self.package_references(xcodeproj_path)
     package_references_from_pbxproj(xcodeproj_path) || package_references_from_project(xcodeproj_path)
@@ -20,7 +46,7 @@ module XcodeProjectPackageReader
 
   def self.package_references_from_pbxproj(xcodeproj_path)
     read_existing_pbxproj(xcodeproj_path)
-  rescue *pbxproj_fallback_errors => error
+  rescue *PbxprojFallbackErrors.to_a => error
     warn(pbxproj_fallback_message(pbxproj_path_for(xcodeproj_path), error))
     nil
   end
@@ -40,28 +66,6 @@ module XcodeProjectPackageReader
   def self.pbxproj_fallback_message(pbxproj_path, error)
     "WARNING: Could not read #{pbxproj_path} with the lightweight pbxproj parser " \
       "(#{error.class}: #{error.message}); falling back to full Xcode project parsing."
-  end
-
-  def self.pbxproj_fallback_errors
-    [
-      SystemCallError,
-      IOError,
-      loaded_nested_constant(:Xcodeproj, :Informative),
-      loaded_nested_constant(:Nanaimo, :Error),
-      loaded_nested_constant(:CFPropertyList, :CFPlistError),
-    ].compact
-  end
-
-  def self.loaded_nested_constant(parent_name, child_name)
-    parent = loaded_constant(Object, parent_name)
-    loaded_constant(parent, child_name) if parent
-  end
-
-  def self.loaded_constant(namespace, name)
-    return if namespace.autoload?(name)
-    return unless namespace.const_defined?(name, false)
-
-    namespace.const_get(name, false)
   end
 
   def self.pbxproj_path_for(xcodeproj_path)
@@ -120,9 +124,6 @@ module XcodeProjectPackageReader
                        :read_existing_pbxproj,
                        :existing_pbxproj_path,
                        :pbxproj_fallback_message,
-                       :pbxproj_fallback_errors,
-                       :loaded_nested_constant,
-                       :loaded_constant,
                        :pbxproj_path_for,
                        :pbxproj_objects,
                        :package_references_from_pbxproj_objects,
