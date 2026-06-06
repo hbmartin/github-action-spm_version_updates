@@ -60,10 +60,11 @@ class RepositoryUpdateRules
   end
 
   def self.from_hash(config = {}, source: "repo rules", **keyword_config)
-    config = keyword_config unless keyword_config.empty?
-    raise(ArgumentError, "#{source} must contain a YAML mapping") unless config.kind_of?(Hash)
+    effective_config = keyword_config.empty? ? config : keyword_config
+    effective_config ||= {}
+    raise(ArgumentError, "#{source} must contain a YAML mapping") unless effective_config.kind_of?(Hash)
 
-    new(parse_repositories(repositories_from(config, source), source))
+    new(parse_repositories(repositories_from(effective_config, source), source))
   end
 
   def self.semver(value)

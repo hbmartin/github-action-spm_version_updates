@@ -379,14 +379,14 @@ Behavioral fixes and additions since `v0.2.0`:
 - Swift manifest mode supports common `.package(...)` forms, including `from:`,
   `exact:`, `branch:`, `revision:`, `.upToNextMajor`, `.upToNextMinor`,
   `.exact`, `.branch`, `.revision`, and open or closed version ranges.
-- Closed manifest ranges such as `"1"..."2"` are normalized to preserve
+- Closed manifest ranges such as `"1.0.0"..."2.0.0"` are normalized to preserve
   the inclusive upper bound.
 - Local manifest packages declared with `.package(path: ...)` are ignored.
 - Declarations inside Swift line comments and nested block comments are ignored.
 - `Package.resolved` v1 and v2 formats are both supported.
 - Up-to-next-minor checks now require the same major and minor version, avoiding
   false matches such as `2.5.0` for a dependency resolved at `1.5.0`.
-- Two-component tags such as `1.0` are normalized to `1` before parsing.
+- Two-component tags such as `1.0` are normalized to `1.0.0` before parsing.
 - Range and above-maximum reporting respect the pre-release filter.
 - Revision pins are opt-in through `check-revisions`; when enabled, the action
   reports the latest tagged version for reference rather than claiming an

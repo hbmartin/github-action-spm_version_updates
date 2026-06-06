@@ -27,9 +27,12 @@ Gem::Specification.new do |spec|
     "action.yml",
     "danger-spm_version_updates.gemspec",
   ]
-  spec.files         = `git ls-files -z lib docs #{release_paths.join(" ")}`
+  git_files = `git ls-files -z lib docs #{release_paths.join(" ")} 2>/dev/null`
     .split("\x0")
     .reject(&:empty?)
+  fallback_files = Dir.glob(["lib/**/*", "docs/**/*", *release_paths])
+    .select { |path| File.file?(path) }
+  spec.files         = (git_files.empty? ? fallback_files : git_files).sort
   spec.executables   = spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
   spec.metadata["rubygems_mfa_required"] = "true"
