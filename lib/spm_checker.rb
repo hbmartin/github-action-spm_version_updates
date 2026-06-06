@@ -6,6 +6,7 @@ require_relative "git_operations"
 require_relative "manifest_parser"
 require_relative "package_resolved"
 require_relative "spm_version_updates/semver"
+require_relative "version_tag_fetcher"
 require_relative "xcode_parser"
 
 # Core SPM version checking logic (migrated from Danger plugin)
@@ -23,7 +24,32 @@ class SpmChecker
     :resolved_version,
     :source,
     keyword_init: true
-  )
+  ) {
+    def add_version_tag_lookup(lookups, cache)
+      key = cache_key
+      lookups[key] ||= repository_url unless cache.key?(key)
+    end
+
+    def branch
+      requirement["branch"]
+    end
+
+    def branch_update?(last_commit)
+      last_commit && last_commit != resolved_version
+    end
+
+    def branch_warning_message(last_commit)
+      "Newer commit available for #{name} (#{branch}): #{last_commit}"
+    end
+
+    def source_line
+      "Source: #{source}" if source
+    end
+
+    def source_suffix
+      source ? " (#{source})" : ""
+    end
+  }
   private_constant :PackageContext
 
   # Raised when allow-hosts blocks a repository before git is contacted.
@@ -241,43 +267,15 @@ class SpmChecker
     pending = pending_version_tag_lookups(packages)
     return if pending.empty?
 
-    @version_tags_cache.merge!(version_tag_results(pending))
+    @version_tags_cache.merge!(VersionTagFetcher.call(pending, worker_limit: VERSION_TAG_WORKER_COUNT))
   end
 
   def pending_version_tag_lookups(packages)
     packages.each_with_object({}) { |package, lookups|
       next unless version_tag_lookup_required?(package.kind)
 
-      cache_key = package.cache_key
-      next if @version_tags_cache.key?(cache_key)
-
-      lookups[cache_key] ||= package.repository_url
+      package.add_version_tag_lookup(lookups, @version_tags_cache)
     }.to_a
-  end
-
-  def version_tag_results(pending)
-    queue = Queue.new
-    pending.each { |lookup| queue << lookup }
-
-    results = {}
-    results_mutex = Mutex.new
-    worker_count = [VERSION_TAG_WORKER_COUNT, pending.size].min
-    workers = Array.new(worker_count) {
-      Thread.new { fetch_version_tags(queue, results, results_mutex) }
-    }
-
-    workers.each(&:value)
-    results
-  end
-
-  def fetch_version_tags(queue, results, results_mutex)
-    loop {
-      cache_key, repository_url = queue.pop(true)
-      versions = GitOperations.version_tags(repository_url)
-      results_mutex.synchronize { results[cache_key] = versions }
-    }
-  rescue ThreadError
-    nil
   end
 
   def version_tag_lookup_required?(kind)
@@ -343,19 +341,10 @@ class SpmChecker
   end
 
   def add_warning(message, package, detail)
-    source = package.source
-    full_message = [message, source_line(source)].compact.join("\n")
+    full_message = [message, package.source_line].compact.join("\n")
     @warnings << full_message
     @warning_details << warning_detail_record(message, package, detail)
-    puts("WARNING: #{message}#{source_suffix(source)}")
-  end
-
-  def source_line(source)
-    "Source: #{source}" if source
-  end
-
-  def source_suffix(source)
-    source ? " (#{source})" : ""
+    puts("WARNING: #{message}#{package.source_suffix}")
   end
 
   def warning_detail_record(message, package, detail)
@@ -376,18 +365,13 @@ class SpmChecker
 
   # Warns if the branch has a newer commit than the resolved version.
   def warn_for_branch(package)
-    name = package.name
-    branch = package.requirement["branch"]
-    resolved_version = package.resolved_version
-    repository_url = package.repository_url
-    last_commit = GitOperations.branch_last_commit(repository_url, branch)
-    return unless last_commit
-    return if last_commit == resolved_version
+    last_commit = GitOperations.branch_last_commit(package.repository_url, package.branch)
+    return unless package.branch_update?(last_commit)
 
     add_warning(
-      "Newer commit available for #{name} (#{branch}): #{last_commit}",
+      package.branch_warning_message(last_commit),
       package,
-      warning_detail(:branch, package, last_commit, "branch: #{branch}")
+      warning_detail(:branch, package, last_commit, "branch: #{package.branch}")
     )
   end
 
