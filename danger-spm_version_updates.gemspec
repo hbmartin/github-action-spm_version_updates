@@ -15,7 +15,21 @@ Gem::Specification.new do |spec|
   spec.license       = "MIT"
   spec.required_ruby_version = ">= 3.2"
 
-  spec.files         = Dir["lib/*"] + Dir["lib/**/*"] + Dir["*"]
+  release_paths = [
+    "CODE_OF_CONDUCT.md",
+    "Gemfile",
+    "Gemfile.lock",
+    "Guardfile",
+    "LICENSE.txt",
+    "MAINTENANCE.md",
+    "README.md",
+    "Rakefile",
+    "action.yml",
+    "danger-spm_version_updates.gemspec",
+  ]
+  spec.files         = `git ls-files -z lib docs #{release_paths.join(" ")}`
+    .split("\x0")
+    .reject(&:empty?)
   spec.executables   = spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
   spec.metadata["rubygems_mfa_required"] = "true"

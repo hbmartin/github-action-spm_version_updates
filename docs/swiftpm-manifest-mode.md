@@ -294,8 +294,7 @@ reports; branch and revision reports use their existing controls.
 
 Examples above pin to `@v1`. Pinning to the major tag means you automatically
 receive backward-compatible updates. You can also pin to an exact release (e.g.
-`@v1.0.0`) or to a commit SHA for maximum reproducibility. Until a `v1` tag is
-published you can pin to `@main` or a specific commit SHA.
+`@v1.0.0`) or to a commit SHA for maximum reproducibility.
 
 ## Still using a classic Xcode project?
 
