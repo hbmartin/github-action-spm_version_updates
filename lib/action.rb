@@ -61,7 +61,7 @@ class Action
 
   def read_inputs
     cache_ttl_value = env_value("INPUT_VERSION_TAGS_CACHE_TTL")
-    cache_ttl = Integer(cache_ttl_value || VersionTagsPersistentCache::DEFAULT_TTL_SECONDS.to_s, exception: false)
+    cache_ttl = Integer(cache_ttl_value || VersionTagsPersistentCache::DEFAULT_TTL_SECONDS.to_s, 10, exception: false)
     raise(ArgumentError, "INPUT_VERSION_TAGS_CACHE_TTL must be an integer") unless cache_ttl
 
     {

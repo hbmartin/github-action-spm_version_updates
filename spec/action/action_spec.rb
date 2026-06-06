@@ -158,6 +158,12 @@ RSpec.describe Action do
       end
     end
 
+    it "parses version tag cache TTLs as base 10" do
+      with_env(input_env("INPUT_VERSION_TAGS_CACHE_TTL" => "010")) do
+        expect(action.send(:read_inputs)[:version_tags_cache_ttl]).to eq(10)
+      end
+    end
+
     it "rejects non-integer version tag cache TTLs" do
       with_env(input_env("INPUT_VERSION_TAGS_CACHE_TTL" => "six hours")) do
         expect { action.send(:read_inputs) }

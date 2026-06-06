@@ -3,9 +3,10 @@
 require "json"
 require "octokit"
 require "uri"
+require_relative "reporter_sink"
 
-# GitHub API integration for posting PR comments
-class GithubIntegration
+# GitHub-backed reporter sink for posting PR comments.
+class GithubIntegration < ReporterSink
   COMMENT_IDENTIFIER = "<!-- spm-version-updates-action -->"
 
   # Parses supported git remote URLs and renders host-specific links.
@@ -166,6 +167,7 @@ class GithubIntegration
   end
 
   def initialize
+    super
     @github_token = ENV.fetch("GITHUB_TOKEN", nil)
     @github_repository = ENV.fetch("GITHUB_REPOSITORY", nil)
     @github_event_path = ENV.fetch("GITHUB_EVENT_PATH", nil)
@@ -182,22 +184,34 @@ class GithubIntegration
     puts("GitHub integration initialized for #{@github_repository}, PR ##{@pr_number}")
   end
 
-  def post_comment(message)
-    with_comment_target { post_comment_body(build_comment_message(message)) }
-  end
-
-  def post_comment_with_warnings(warnings, warning_details = nil)
+  def publish_updates(warnings, warning_details = nil)
     with_comment_target {
       message = build_warnings_message(warnings, warning_details)
       post_comment_body(build_comment_message(message))
     }
   end
 
-  def delete_existing_comment
+  def publish_success
+    post_comment(SUCCESS_MESSAGE)
+  end
+
+  def clear
     with_comment_target {
       existing_comment = find_existing_comment
       delete_comment(existing_comment[:id]) if existing_comment
     }
+  end
+
+  def post_comment(message)
+    with_comment_target { post_comment_body(build_comment_message(message)) }
+  end
+
+  def post_comment_with_warnings(warnings, warning_details = nil)
+    publish_updates(warnings, warning_details)
+  end
+
+  def delete_existing_comment
+    clear
   end
 
   private

@@ -255,6 +255,7 @@ it came from, so you know exactly where to make the change:
 | `report-above-maximum` | Report versions above the maximum constraint range. | `false` |
 | `report-pre-releases` | Include pre-release versions in update reports. | `false` |
 | `ignore-repos` | Comma-separated list of repository URLs to ignore. | `''` |
+| `repo-rules-path` | Path to a YAML file with per-repository semantic update suppression rules. | `''` |
 | `allow-hosts` | Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. A blocked lookup fails the action and writes `blocked=true` plus `error-message`. | `''` |
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | `false` |
 | `cache-version-tags` | Persist successful git tag lookups between runs with `actions/cache`. | `true` |
@@ -268,6 +269,26 @@ Supplying both (or neither) fails with a clear error.
 When invoking the action more than once in a job, keep `setup-ruby` enabled on
 the first invocation and use `setup-ruby: false` on later manifest-mode
 invocations to avoid repeating Ruby setup and Bundler cache work.
+
+### Per-repository rules
+
+`ignore-repos` still skips a dependency entirely before lookup. For dependencies
+that should still be checked but should not report selected semantic updates, set
+`repo-rules-path` to a YAML file:
+
+```yaml
+repositories:
+  - url: "https://github.com/example/noise"
+    ignore-until: "2.0.0"
+
+  - url: "https://github.com/example/no-major"
+    allowed-updates: "minor"
+```
+
+`ignore-until` reports version X and newer, while suppressing lower available
+versions. `allowed-updates: minor` allows patch and minor reports but suppresses
+major reports. Rules apply only to semantic `version` and `above_maximum`
+reports; branch and revision reports use their existing controls.
 
 ## A note on versioning
 

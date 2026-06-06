@@ -316,8 +316,9 @@ Version checks still use `git ls-remote`, but `0.3.0` hardens how git is called:
 - Git is invoked without a shell and with `--` before the repository URL.
 - `GIT_ALLOW_PROTOCOL` is set to `https:ssh:git`.
 - `file`, `ext`, and remote-helper transports are blocked by git protocol policy.
-- In the GitHub Action checker path, git lookup failures are logged instead of
-  being silently treated as a successful empty result.
+- In the GitHub Action checker path, git lookup failures are logged and fail
+  the action after bounded retries instead of being silently treated as a
+  successful empty result.
 - Credentials embedded in URLs are redacted in logs and JSON output.
 
 Private dependencies still work if the runner is already authenticated for those

@@ -164,7 +164,7 @@ RSpec.describe(GithubIntegration) {
     end
   }
 
-  describe("#post_comment") {
+  describe("#publish_success") {
     it("updates the existing generated comment instead of creating a duplicate", :aggregate_failures) do
       client = instance_double(Octokit::Client)
       allow(Octokit::Client).to(receive(:new).with(access_token: "token").and_return(client))
@@ -178,11 +178,14 @@ RSpec.describe(GithubIntegration) {
 
       Dir.mktmpdir do |dir|
         with_env(github_env(write_event_file(dir))) do
-          described_class.new.post_comment("New comment body")
+          described_class.new.publish_success
         end
       end
 
-      expect(client).to(have_received(:update_comment).with("owner/repo", 123, include(described_class::COMMENT_IDENTIFIER, "New comment body")))
+      expect(client).to(
+        have_received(:update_comment)
+          .with("owner/repo", 123, include(described_class::COMMENT_IDENTIFIER, ReporterSink::SUCCESS_MESSAGE))
+      )
       expect(client).not_to(have_received(:add_comment))
     end
 
@@ -199,14 +202,14 @@ RSpec.describe(GithubIntegration) {
 
       Dir.mktmpdir do |dir|
         with_env(github_env(write_event_file(dir))) do
-          described_class.new.post_comment("Fresh comment")
+          described_class.new.publish_success
         end
       end
 
       expect(client).to(have_received(:add_comment)) do |repo, pr_number, body|
         expect(repo).to(eq("owner/repo"))
         expect(pr_number).to(eq(42))
-        expect(body).to(include(described_class::COMMENT_IDENTIFIER, "Fresh comment"))
+        expect(body).to(include(described_class::COMMENT_IDENTIFIER, ReporterSink::SUCCESS_MESSAGE))
       end
       expect(client).not_to(have_received(:update_comment))
     end
@@ -220,7 +223,7 @@ RSpec.describe(GithubIntegration) {
       Dir.mktmpdir do |dir|
         stdout = capture_stdout do
           with_env(github_env(write_event_file(dir))) do
-            described_class.new.post_comment("Recovered comment")
+            described_class.new.publish_success
           end
         end
 
@@ -240,7 +243,7 @@ RSpec.describe(GithubIntegration) {
       Dir.mktmpdir do |dir|
         stdout = capture_stdout do
           with_env(github_env(write_event_file(dir))) do
-            described_class.new.post_comment("Updated comment")
+            described_class.new.publish_success
           end
         end
 
@@ -252,7 +255,32 @@ RSpec.describe(GithubIntegration) {
     end
   }
 
-  describe("#delete_existing_comment") {
+  describe("#publish_updates") {
+    it("publishes rendered warning details through the GitHub comment path", :aggregate_failures) do
+      client = instance_double(Octokit::Client)
+      allow(Octokit::Client).to(receive(:new).with(access_token: "token").and_return(client))
+      allow(client).to(
+        receive_messages(
+          issue_comments: [],
+          add_comment: { html_url: "https://github.com/owner/repo/issues/42#issuecomment-789" }
+        )
+      )
+
+      Dir.mktmpdir do |dir|
+        with_env(github_env(write_event_file(dir))) do
+          described_class.new.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+        end
+      end
+
+      expect(client).to(have_received(:add_comment)) do |_repo, _pr_number, body|
+        expect(body).to(include(described_class::COMMENT_IDENTIFIER))
+        expect(body).to(include("Found 1 potential dependency update"))
+        expect(body).to(include("Newer version of onevcat/Kingfisher: 8.0.0"))
+      end
+    end
+  }
+
+  describe("#clear") {
     it("deletes an existing generated comment", :aggregate_failures) do
       client = instance_double(Octokit::Client)
       allow(Octokit::Client).to(receive(:new).with(access_token: "token").and_return(client))
@@ -265,7 +293,7 @@ RSpec.describe(GithubIntegration) {
 
       Dir.mktmpdir do |dir|
         with_env(github_env(write_event_file(dir))) do
-          described_class.new.delete_existing_comment
+          described_class.new.clear
         end
       end
 
@@ -280,7 +308,7 @@ RSpec.describe(GithubIntegration) {
 
       Dir.mktmpdir do |dir|
         with_env(github_env(write_event_file(dir))) do
-          described_class.new.delete_existing_comment
+          described_class.new.clear
         end
       end
 
@@ -296,7 +324,7 @@ RSpec.describe(GithubIntegration) {
       Dir.mktmpdir do |dir|
         stdout = capture_stdout do
           with_env(github_env(write_event_file(dir))) do
-            described_class.new.delete_existing_comment
+            described_class.new.clear
           end
         end
 
