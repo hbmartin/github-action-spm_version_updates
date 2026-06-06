@@ -48,6 +48,7 @@ module XcodeProjectPackageReader
       IOError,
       defined?(Xcodeproj::Informative) ? Xcodeproj::Informative : nil,
       defined?(Nanaimo::Error) ? Nanaimo::Error : nil,
+      defined?(CFPropertyList::CFPlistError) ? CFPropertyList::CFPlistError : nil,
     ].compact
   end
 

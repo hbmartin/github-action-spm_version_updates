@@ -60,6 +60,7 @@ class RepositoryUpdateRules
 
   def self.from_hash(config = :default_config, source: "repo rules", **keyword_config)
     config = config_from(config, keyword_config)
+    config ||= {}
     raise(ArgumentError, "#{source} must contain a YAML mapping") unless config.kind_of?(Hash)
 
     new(parse_repositories(repositories_from(config, source), source))
@@ -106,7 +107,8 @@ class RepositoryUpdateRules
     string_keys = config.transform_keys(&:to_s)
     validate_keys!(string_keys, ROOT_KEYS, "#{source} root")
 
-    repositories = string_keys["repositories"]
+    repositories = string_keys.key?("repositories") ? string_keys["repositories"] : []
+    repositories = [] if repositories.nil?
     raise(ArgumentError, "#{source} repositories must be a list") unless repositories.kind_of?(Array)
 
     repositories

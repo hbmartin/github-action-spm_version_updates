@@ -39,6 +39,12 @@ RSpec.describe RepositoryUpdateRules do
     expect(rules).not_to be_suppressed(record_for.call(available_version: "2.0.0"))
   end
 
+  it "treats empty or nil repository rules as an empty configuration", :aggregate_failures do
+    expect(load_yaml("")).to be_empty
+    expect(described_class.from_hash({})).to be_empty
+    expect(described_class.from_hash("repositories" => nil)).to be_empty
+  end
+
   it "allows semantic updates at or below the configured allowed-updates level", :aggregate_failures do
     rules = described_class.from_hash(
       "repositories" => [

@@ -25,11 +25,9 @@ class VersionTagFetcher
     def raise_error
       first_error = errors.first
 
-      begin
-        raise(first_error)
-      rescue GitOperations::LsRemoteError
-        raise(combined_error(first_error))
-      end
+      raise(combined_error(first_error), cause: first_error) if first_error.kind_of?(GitOperations::LsRemoteError)
+
+      raise(first_error)
     end
 
     private

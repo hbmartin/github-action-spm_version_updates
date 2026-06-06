@@ -241,7 +241,7 @@ RSpec.describe Action do
       end
     end
 
-    it "keeps every warning when structured details are partial or mis-sized", :aggregate_failures do
+    it "keeps every warning when structured details are partial or mismatched", :aggregate_failures do
       warnings = [
         "Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift",
         "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0\nSource: BuildTools/Package.swift",

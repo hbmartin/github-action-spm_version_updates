@@ -33,15 +33,16 @@ RSpec.describe VersionTagsPersistentCache do
       cache = described_class.new(directory: dir, ttl_seconds: 21_600)
       written_paths = Queue.new
       allow(File).to(
-        receive(:write).and_wrap_original { |original, path, contents|
+        receive(:write).and_wrap_original do |original, path, contents|
           written_paths << path
           original.call(path, contents)
-        }
+        end
       )
 
-      Array.new(2) {
+      threads = Array.new(2) do
         Thread.new { cache.write("cache-key", versions("1.1.0", "1.0.0")) }
-      }.each(&:join)
+      end
+      threads.each(&:join)
 
       paths = Array.new(2) { written_paths.pop }
       expect(paths.uniq.size).to eq(2)
