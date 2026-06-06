@@ -194,7 +194,7 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 ## Configuration Options
 
 | Input | Description | Required | Default |
-|-------|-------------|----------|---------|
+| ----- | ----------- | -------- | ------- |
 | `xcode-project-path` | Path to your Xcode project file (`.xcodeproj`). Provide this **or** `package-manifest-paths`. | One of the two | |
 | `package-manifest-paths` | Newline-separated list of `Package.swift` paths. Provide this **or** `xcode-project-path`. | One of the two | |
 | `package-resolved-paths` | Optional newline-separated list of `Package.resolved` paths. Defaults to a `Package.resolved` next to each manifest. | No | inferred |
@@ -213,7 +213,7 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 ## How dependency constraints are handled
 
 | Constraint | Manifest form | Behavior |
-|------------|---------------|----------|
+| ---------- | ------------- | -------- |
 | Up to next major | `from:` / `.upToNextMajor(from:)` | Reports newer versions within the same major version. |
 | Up to next minor | `.upToNextMinor(from:)` | Reports newer versions within the same minor version. |
 | Version range | `"1.0.0"..<"2.0.0"` | Reports newer versions below the maximum. |
@@ -232,7 +232,7 @@ Across all of the constraint types above, pre-release tags (versions with a `-` 
 The action always writes machine-readable outputs, appends a GitHub step summary, and emits `::warning` annotations for each update. Pull request runs get a summary comment when updates are found. Clean runs delete the prior generated comment by default; set `comment-on-success: true` to keep an up-to-date comment instead. Scheduled and `workflow_dispatch` runs still have visible results in the workflow run summary and annotations.
 
 | Output | Description |
-|--------|-------------|
+| ------ | ----------- |
 | `updates-found` | Number of dependency updates found. |
 | `major-updates-found` | Number of major semantic-version updates found. |
 | `minor-updates-found` | Number of minor semantic-version updates found. |
@@ -319,6 +319,7 @@ To work on this action locally:
 2. Make your changes to the Ruby files in `lib/`
 3. Run the action specs: `bundle exec ruby -e "require 'rspec/core'; exit RSpec::Core::Runner.run(['spec/action'])"`
 4. Test against a sample project:
+
    ```bash
    GITHUB_WORKSPACE="$(pwd)" \
      INPUT_XCODE_PROJECT_PATH=path/to/project.xcodeproj \

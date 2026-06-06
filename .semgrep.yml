@@ -1,0 +1,28 @@
+rules:
+  - id: ruby.credential-redactor.no-explicit-nil-return
+    languages:
+      - ruby
+    severity: ERROR
+    message: >-
+      Avoid explicit nil-return guards in CredentialRedactor.redact; they trigger
+      Reek's NilCheck. Use nil-preserving safe navigation or another expression
+      form instead.
+    paths:
+      include:
+        - /lib/credential_redactor.rb
+    patterns:
+      - pattern-either:
+          - pattern-inside: |
+              def redact($VALUE)
+                ...
+              end
+          - pattern-inside: |
+              def self.redact($VALUE)
+                ...
+              end
+      - pattern-either:
+          - pattern: return nil if $VALUE.nil?
+          - pattern: |
+              if $VALUE.nil?
+                return nil
+              end
