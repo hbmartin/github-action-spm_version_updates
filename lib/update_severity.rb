@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "semantic"
+require_relative "spm_version_updates/semver"
 
 # Classifies semantic-version update deltas for reporting and fail thresholds.
 module UpdateSeverity
@@ -47,7 +47,7 @@ module UpdateSeverity
   end
 
   def self.parse_version(value)
-    Semantic::Version.new(value.to_s)
+    SpmVersionUpdates::Semver.new(value.to_s)
   rescue ArgumentError
     nil
   end

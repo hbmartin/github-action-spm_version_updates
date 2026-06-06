@@ -141,6 +141,7 @@ RSpec.describe Action do
         {
           type: "version",
           package: "onevcat/Kingfisher",
+          repository_url: "https://token@github.com/onevcat/Kingfisher",
           current_version: "7.0.0",
           available_version: "8.0.0"
         },
@@ -166,6 +167,7 @@ RSpec.describe Action do
             {
               "type" => "version",
               "package" => "onevcat/Kingfisher",
+              "repository_url" => "https://[REDACTED]@github.com/onevcat/Kingfisher",
               "current_version" => "7.0.0",
               "available_version" => "8.0.0",
               "severity" => "major",
@@ -174,6 +176,7 @@ RSpec.describe Action do
             },
           ]
         )
+        expect(output).not_to include("token@")
         expect(File.read(summary_path)).to include("Found **1** potential dependency update.")
         expect(stdout).to include(
           "::warning title=SPM dependency update,file=Modules/Package.swift::" \

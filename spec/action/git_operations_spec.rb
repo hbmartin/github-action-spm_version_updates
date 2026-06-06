@@ -15,7 +15,7 @@ RSpec.describe GitOperations do
   end
 
   def git_ls_remote_args(flag, repo_url)
-    [{ "GIT_ALLOW_PROTOCOL" => described_class::ALLOWED_PROTOCOLS }, "git", "ls-remote", flag, repo_url]
+    [{ "GIT_ALLOW_PROTOCOL" => described_class::ALLOWED_PROTOCOLS }, "git", "ls-remote", flag, "--", repo_url]
   end
 
   describe ".version_tags" do
@@ -44,6 +44,13 @@ RSpec.describe GitOperations do
       expect(described_class.version_tags("https://github.com/foo/bar").map(&:to_s)).to eq(["1.1.0", "1.0.1", "1.0.0"])
     end
 
+    it "preserves build metadata in parsed tags" do
+      output = "aaa\trefs/tags/1.2.3+20210102.9c8096a\nbbb\trefs/tags/1.2.4\n"
+      allow(Open3).to receive(:capture3).and_return([output, "", status(true)])
+
+      expect(described_class.version_tags("https://github.com/foo/bar").map(&:to_s)).to eq(["1.2.4", "1.2.3+20210102.9c8096a"])
+    end
+
     it "warns and returns [] when git ls-remote exits non-zero", :aggregate_failures do
       allow(Open3).to receive(:capture3)
         .and_return(["", "fatal: 'github.com/foo/bar' does not appear to be a git repository", status(false)])
@@ -63,6 +70,17 @@ RSpec.describe GitOperations do
       expect { result = described_class.version_tags("foo://github.com/foo/bar") }
         .to output(/transport 'foo' not allowed/).to_stderr
       expect(result).to eq([])
+    end
+
+    it "separates option-like repository URLs from git options", :aggregate_failures do
+      allow(Open3).to receive(:capture3)
+        .with(*git_ls_remote_args("-t", "--upload-pack=touch /tmp/pwned"))
+        .and_return(["", "fatal: not a repository", status(false)])
+
+      described_class.version_tags("--upload-pack=touch /tmp/pwned")
+
+      expect(Open3).to have_received(:capture3)
+        .with(*git_ls_remote_args("-t", "--upload-pack=touch /tmp/pwned"))
     end
 
     it "redacts embedded credentials from git failure warnings", :aggregate_failures do
@@ -90,10 +108,9 @@ RSpec.describe GitOperations do
       expect(result).to eq([])
     end
 
-    it "sorts without crashing on pre-release tags the semantic gem mishandles" do
+    it "sorts without crashing on date-style pre-release tags" do
       # swift-syntax publishes tags like 600.0.0-prerelease-2024-09-04; the
-      # `semantic` gem raises Integer("09") when comparing two of these. The sort
-      # must not abort the whole list because of them.
+      # sort must not abort the whole list because of the zero-padded date parts.
       refs = [
         "600.0.0-prerelease-2024-08-14",
         "600.0.0-prerelease-2024-09-04",
@@ -163,6 +180,8 @@ RSpec.describe GitOperations do
       expect(described_class.host("github.com/foo/bar")).to eq("github.com")
       expect(described_class.host("https://user:token@GitHub.com:8443/foo/bar")).to eq("github.com")
       expect(described_class.host("https://github.com@evil.com/foo/bar")).to eq("evil.com")
+      expect(described_class.host("https://[2001:db8::1]/org/repo.git")).to eq("2001:db8::1")
+      expect(described_class.host("[2001:db8::1]:8443")).to eq("2001:db8::1")
     end
 
     it "returns nil for blank, local path, and non-host remotes", :aggregate_failures do

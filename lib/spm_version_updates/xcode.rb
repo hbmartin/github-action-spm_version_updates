@@ -57,7 +57,8 @@ module Xcode
 
   def self.remote_swift_packages(project)
     project.objects.select { |obj|
-      obj.kind_of?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+      obj.kind_of?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference) &&
+        !obj.repositoryURL.to_s.strip.empty?
     }
   end
 

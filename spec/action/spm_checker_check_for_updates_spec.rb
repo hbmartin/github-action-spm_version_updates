@@ -8,7 +8,7 @@ require_relative "../../lib/spm_checker"
 # Git access is stubbed so these run without network access.
 RSpec.describe SpmChecker, "#check_for_updates" do
   def versions(*strings)
-    strings.map { |string| Semantic::Version.new(string) }
+    strings.map { |string| SpmVersionUpdates::Semver.new(string) }
       .sort.reverse
   end
 

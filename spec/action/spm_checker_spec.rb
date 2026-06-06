@@ -9,7 +9,7 @@ require_relative "../../lib/spm_checker"
 # stubbed so these run without network access.
 RSpec.describe SpmChecker do
   def versions(*strings)
-    strings.map { |string| Semantic::Version.new(string) }
+    strings.map { |string| SpmVersionUpdates::Semver.new(string) }
       .sort.reverse
   end
 
@@ -99,6 +99,21 @@ RSpec.describe SpmChecker do
         )
       ).to_stderr
       expect(checker.allow_hosts).to eq(["github.com"])
+    end
+
+    it "fails closed when every configured dependency host is malformed", :aggregate_failures do
+      checker.allow_hosts = ["https//github.com", "not a host!"]
+
+      expect {
+        expect {
+          checker.send(:normalize_allow_hosts)
+        }.to raise_error(ArgumentError, /allow-hosts was configured/)
+      }.to output(
+        a_string_including(
+          'allow-hosts entry "https//github.com"',
+          'allow-hosts entry "not a host!"'
+        )
+      ).to_stderr
     end
 
     it "fails before fetching version tags when a dependency host is not allowed", :aggregate_failures do
@@ -487,18 +502,16 @@ RSpec.describe SpmChecker do
     end
 
     it "redacts embedded credentials when logging unsupported dependency rules" do
+      remote_packages = {
+        "github.com/acme/private" => {
+          "repository_url" => "https://user:token@github.com/acme/private",
+          "requirement" => { "kind" => "unsupported" }
+        }
+      }
+      allow(GitOperations).to receive(:version_tags).and_return(versions("1.1.0"))
+
       expect {
-        checker.send(
-          :check_versioned_package,
-          "unsupported",
-          "acme/private",
-          "github.com/acme/private",
-          "https://user:token@github.com/acme/private",
-          { "kind" => "unsupported" },
-          "1.0.0",
-          nil,
-          versions("1.1.0")
-        )
+        checker.send(:check_packages, remote_packages, "github.com/acme/private" => "1.0.0")
       }.to output(redacted_repository_url_log).to_stdout
     end
   end

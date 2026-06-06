@@ -29,14 +29,14 @@ class Action
 
     checker = configure_checker(inputs)
     warnings = run_checks(checker, inputs)
-    warning_details = checker.warning_details if checker.respond_to?(:warning_details)
+    warning_details = checker.warning_details
     reporter = report(warnings, warning_details, comment_on_success: inputs[:comment_on_success])
     failure_message = FailOnThreshold.failure_message(inputs[:fail_on], reporter)
     fail_with(failure_message) if failure_message
 
     puts("SPM version check completed successfully!")
   rescue ModeError => error
-    fail_with(error.message)
+    fail_with_error(error)
   rescue XcodeParser::XcodeprojPathMustBeSet
     fail_with("Invalid Xcode project path")
   rescue XcodeParser::CouldNotFindResolvedFile
@@ -50,10 +50,10 @@ class Action
     )
   rescue SpmChecker::DisallowedRepositoryHost => error
     ActionReporter::BlockedReport.write(error.message)
-    fail_with(error.message)
+    fail_with_error(error)
   rescue StandardError => error
     puts(error.backtrace) if ENV.fetch("DEBUG", nil)
-    fail_with(error.message)
+    fail_with_error(error)
   end
 
   private
@@ -64,7 +64,7 @@ class Action
       manifest_paths: env_lines("INPUT_PACKAGE_MANIFEST_PATHS"),
       resolved_paths: env_lines("INPUT_PACKAGE_RESOLVED_PATHS"),
       check_when_exact: env_flag("INPUT_CHECK_WHEN_EXACT"),
-      check_branches: env_flag("INPUT_CHECK_BRANCHES", default: true),
+      check_branches: env_flag_default_true("INPUT_CHECK_BRANCHES"),
       check_revisions: env_flag("INPUT_CHECK_REVISIONS"),
       report_above_maximum: env_flag("INPUT_REPORT_ABOVE_MAXIMUM"),
       report_pre_releases: env_flag("INPUT_REPORT_PRE_RELEASES"),
@@ -127,13 +127,13 @@ class Action
     end
   end
 
-  def report(warnings, warning_details = nil, comment_on_success: false)
+  def report(warnings, warning_details = nil, options = {})
     reporter = ActionReporter.new(warnings, warning_details)
     reporter.write
 
     if warnings.empty?
       puts("✅ All SPM dependencies are up to date!")
-      if comment_on_success
+      if options.fetch(:comment_on_success, false)
         @github_integration.post_comment("✅ **SPM Dependencies**: All dependencies are up to date!")
       else
         @github_integration.delete_existing_comment
@@ -159,9 +159,13 @@ class Action
     exit(1)
   end
 
+  def fail_with_error(error)
+    fail_with(error.message)
+  end
+
   def env_value(key)
-    value = ENV.fetch(key, nil)&.strip
-    value.nil? || value.empty? ? nil : value
+    value = ENV.fetch(key, "").strip
+    value.empty? ? nil : value
   end
 
   def env_lines(key)
@@ -178,15 +182,13 @@ class Action
     values
   end
 
-  def env_flag(key, default: false)
-    case env_value(key)
-    when nil
-      default
-    when "true"
-      true
-    else
-      false
-    end
+  def env_flag(key)
+    env_value(key) == "true"
+  end
+
+  def env_flag_default_true(key)
+    value = env_value(key)
+    value ? value == "true" : true
   end
 end
 

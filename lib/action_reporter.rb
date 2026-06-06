@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "credential_redactor"
 require_relative "update_severity"
 
 # Writes GitHub Actions-visible reports for the dependency update results.
@@ -105,6 +106,50 @@ class ActionReporter
     end
   end
 
+  # Normalizes one legacy warning string plus optional structured detail.
+  class WarningRecord
+    def self.build(warnings, details)
+      Array(warnings).map.with_index { |warning, index| new(warning, details[index]).to_h }
+    end
+
+    def self.parse(warning)
+      message, source = warning.to_s.split("\nSource: ", 2)
+      record = { "message" => message }
+      record["source"] = source unless source.to_s.empty?
+      record
+    end
+    private_class_method :parse
+
+    def initialize(warning, detail)
+      @warning = warning
+      @detail = detail
+      @record = {}
+    end
+
+    def to_h
+      @record = parsed_warning.merge(string_keyed_detail)
+      normalize_message
+    end
+
+    private
+
+    def normalize_message
+      parsed_message = self.class.parse(@record["message"])
+      @record.merge(
+        "message" => parsed_message["message"],
+        "source" => @record["source"] || parsed_message["source"]
+      ).compact
+    end
+
+    def parsed_warning
+      self.class.parse(@warning)
+    end
+
+    def string_keyed_detail
+      @detail.to_h.transform_keys(&:to_s).compact
+    end
+  end
+
   def initialize(warnings, warning_details = nil)
     @warnings = Array(warnings)
     @warning_details = Array(warning_details)
@@ -117,7 +162,7 @@ class ActionReporter
   end
 
   def records
-    @records ||= detail_records.map { |record| UpdateSeverity.apply(record) }
+    @records ||= warning_records.map { |record| UpdateSeverity.apply(record) }
   end
 
   def severity_counts
@@ -127,30 +172,7 @@ class ActionReporter
   private
 
   def warning_records
-    @warnings.map { |warning| parsed_warning_record(warning) }
-  end
-
-  def detail_records
-    warning_records.map.with_index { |fallback, index|
-      record = fallback.dup
-      detail = @warning_details[index]
-      detail&.each_with_object(record) { |(key, value), result|
-        result[key.to_s] = value unless value.nil?
-      }
-
-      parsed_message = parsed_warning_record(record["message"])
-      record["message"] = parsed_message["message"]
-      parsed_source = parsed_message["source"]
-      record["source"] ||= parsed_source if parsed_source
-      record
-    }
-  end
-
-  def parsed_warning_record(warning)
-    message, source = warning.to_s.split("\nSource: ", 2)
-    record = { "message" => message }
-    record["source"] = source unless source.nil? || source.empty?
-    record
+    WarningRecord.build(@warnings, @warning_details)
   end
 
   def write_action_outputs
@@ -159,8 +181,12 @@ class ActionReporter
 
     File.open(output_path, "a") { |file|
       file.puts(action_output_lines)
-      WorkflowCommand.write_multiline_output(file, "updates-json", JSON.generate(records))
+      WorkflowCommand.write_multiline_output(file, "updates-json", JSON.generate(sanitized_records))
     }
+  end
+
+  def sanitized_records
+    records.map { |record| CredentialRedactor.redact_hash_value(record, "repository_url") }
   end
 
   def write_step_summary

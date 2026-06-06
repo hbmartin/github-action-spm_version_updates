@@ -21,7 +21,7 @@ Gem::Specification.new do |spec|
   spec.metadata["rubygems_mfa_required"] = "true"
 
   spec.add_runtime_dependency("danger-plugin-api", "~> 1.0")
-  spec.add_runtime_dependency("semantic", "~> 1.6")
+  spec.add_runtime_dependency("semverify", "~> 0.3")
   spec.add_runtime_dependency("xcodeproj", "~> 1.24")
 
   # General ruby development
