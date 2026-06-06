@@ -94,11 +94,6 @@ Style/StringLiterals:
 Style/ClassCheck:
   EnforcedStyle: kind_of?
 
-# specs sometimes have useless assignments, which is fine
-Lint/UselessAssignment:
-  Exclude:
-    - "**/spec/**/*"
-
 Layout/FirstHashElementIndentation:
   Enabled: true
 
@@ -149,11 +144,8 @@ Metrics/MethodLength:
 Layout/MultilineMethodCallIndentation:
   EnforcedStyle: indented
 
-# FIXME: 25
 Metrics/BlockLength:
   Max: 345
-  Exclude:
-    - "**/*_spec.rb"
 
 Style/MixinGrouping:
   Enabled: true
@@ -178,7 +170,3 @@ Gemspec/DevelopmentDependencies:
 
 Performance:
   Enabled: true
-
-Performance/ChainArrayAllocation:
-  Exclude:
-    - spec/**/*.rb
