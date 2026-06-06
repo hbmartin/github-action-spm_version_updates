@@ -4,18 +4,12 @@ detectors:
     enabled: false
   BooleanParameter:
     enabled: true
-    exclude:
-    - Action#report
-    - Action#env_flag
   ClassVariable:
     enabled: true
-    exclude: []
   ControlParameter:
     enabled: true
     exclude:
-    - Action#report
     - ManifestParser#self.version_range_requirement
-    - SpmChecker#version_tag_lookup_required?
     - Danger::DangerSpmVersionUpdates#warn_for_branch
     - Danger::DangerSpmVersionUpdates#warn_for_new_versions_range
   DataClump:
@@ -40,7 +34,6 @@ detectors:
     enabled: true
     exclude:
     - Action#configure_checker
-    - SpmChecker#version_tag_lookup_required?
     - parse
   InstanceVariableAssumption:
     enabled: true
@@ -48,42 +41,28 @@ detectors:
     - Danger::DangerSpmVersionUpdates
   IrresponsibleModule:
     enabled: true
-    exclude: []
   LongParameterList:
     enabled: true
     exclude:
-    - SpmChecker#check_versioned_package
-    - SpmChecker#warn_for_branch
-    - SpmChecker#warn_for_new_versions
-    - SpmChecker#warn_for_new_versions_exact
-    - SpmChecker#warn_for_new_versions_range
-    - SpmChecker#warn_for_revision
     - SpmChecker#warning_detail
     - Danger::DangerSpmVersionUpdates#warn_for_branch
     - Danger::DangerSpmVersionUpdates#warn_for_new_versions
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions_range
     max_params: 3
     overrides:
       initialize:
         max_params: 5
   LongYieldList:
     enabled: true
-    exclude: []
     max_params: 3
   ManualDispatch:
     enabled: true
-    exclude:
-    - Action#run
   MissingSafeMethod:
     enabled: true
-    exclude: []
   ModuleInitialize:
     enabled: true
-    exclude: []
   NestedIterators:
     enabled: true
     exclude:
-    - ActionReporter#detail_records
     - Xcode#self.get_resolved_versions
     max_allowed_nesting: 1
     ignore_iterators:
@@ -91,38 +70,23 @@ detectors:
   NilCheck:
     enabled: true
     exclude:
-    - Action#env_flag
-    - Action#env_value
-    - ActionReporter#detail_records
-    - ActionReporter#parsed_warning_record
     - GitOperations#self.branch_last_commit
     - GitOperations#self.version_tags
     - ManifestParser#self.get_packages
     - ManifestParser#self.increment_patch_version
     - ManifestParser#self.package_calls
-    - SpmChecker#add_warning
-    - SpmChecker#merged_resolved_versions
-    - SpmChecker#package_contexts
-    - SpmChecker#warn_for_branch
     - SpmChecker#warn_for_new_versions
-    - SpmChecker#warn_for_new_versions_exact
-    - SpmChecker#warn_for_new_versions_range
-    - SpmChecker#warn_for_revision
     - Danger::DangerSpmVersionUpdates#check_for_updates
     - Xcode#self.get_packages
     - XcodeParser#self.get_packages
     - with_env
   RepeatedConditional:
     enabled: true
-    exclude:
-    - SpmChecker
     max_ifs: 2
   SubclassedFromCoreClass:
     enabled: true
-    exclude: []
   TooManyConstants:
     enabled: true
-    exclude: []
     max_constants: 5
   TooManyInstanceVariables:
     enabled: true
@@ -143,8 +107,6 @@ detectors:
     - Action#configure_checker
     - Action#print_config
     - Action#run
-    - Action#run_checks
-    - ActionReporter#detail_records
     - GitOperations#self.ls_remote
     - GitOperations#self.version_tags
     - GithubIntegration#initialize
@@ -159,21 +121,16 @@ detectors:
     - ManifestParser#self.requirement_for
     - ManifestParser#self.skip_block_comment
     - ManifestParser#self.strip_comments
-    - SpmChecker#add_warning
     - SpmChecker#check_for_updates
     - SpmChecker#check_manifests
-    - SpmChecker#check_packages
     - SpmChecker#check_versioned_package
     - SpmChecker#initialize
     - SpmChecker#merged_resolved_versions
     - SpmChecker#package_contexts
-    - SpmChecker#prefetch_version_tags
     - SpmChecker#warn_for_new_versions
-    - SpmChecker#warn_for_new_versions_range
     - Git#self.version_tags
     - Danger::DangerSpmVersionUpdates#check_for_updates
     - Danger::DangerSpmVersionUpdates#warn_for_new_versions
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions_range
     - Xcode#self.find_packages_resolved_file
     - Xcode#self.get_resolved_versions
     - XcodeParser#self.find_packages_resolved_file
@@ -181,7 +138,6 @@ detectors:
     max_statements: 5
   UncommunicativeMethodName:
     enabled: true
-    exclude: []
     reject:
     - "/^[a-z]$/"
     - "/[0-9]$/"
@@ -189,14 +145,12 @@ detectors:
     accept: []
   UncommunicativeModuleName:
     enabled: true
-    exclude: []
     reject:
     - "/^.$/"
     - "/[0-9]$/"
     accept: []
   UncommunicativeParameterName:
     enabled: true
-    exclude: []
     reject:
     - "/^.$/"
     - "/[0-9]$/"
@@ -205,7 +159,6 @@ detectors:
     accept: []
   UncommunicativeVariableName:
     enabled: true
-    exclude: []
     reject:
     - "/^.$/"
     - "/[0-9]$/"
@@ -214,17 +167,14 @@ detectors:
     - "/^_$/"
   UnusedParameters:
     enabled: true
-    exclude: []
   UnusedPrivateMethod:
     enabled: true
-    exclude: []
   UtilityFunction:
     enabled: true
     exclude:
     - Action#env_csv
     - Action#env_lines
     - Action#env_value
-    - ActionReporter#parsed_warning_record
     - GithubIntegration#detail_value
     - GithubIntegration#display_version
     - GithubIntegration#how_to_update_details

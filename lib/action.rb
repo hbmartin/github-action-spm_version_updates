@@ -127,7 +127,7 @@ class Action
     end
   end
 
-  def report(warnings, warning_details = nil, options = {})
+  def report(warnings, warning_details = nil, **options)
     reporter = ActionReporter.new(warnings, warning_details)
     reporter.write
 

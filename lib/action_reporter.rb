@@ -118,7 +118,6 @@ class ActionReporter
       record["source"] = source unless source.to_s.empty?
       record
     end
-    private_class_method :parse
 
     def initialize(warning, detail)
       @warning = warning

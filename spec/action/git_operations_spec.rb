@@ -195,6 +195,12 @@ RSpec.describe GitOperations do
       expect(described_class.host("ext::sh -c touch /tmp/pwned")).to be_nil
       expect(described_class.host("foo bar/baz")).to be_nil
     end
+
+    it "returns nil for any IPAddr parsing error" do
+      allow(IPAddr).to receive(:new).and_raise(IPAddr::AddressFamilyError)
+
+      expect(described_class.host("[2001:db8::1]")).to be_nil
+    end
   end
 
   def not_outputting_credentials

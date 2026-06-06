@@ -57,7 +57,7 @@ module GitHostNormalizer
   def normalize_ipv6_address(address)
     parsed = IPAddr.new(address)
     parsed.ipv6? ? parsed.to_s : nil
-  rescue IPAddr::InvalidAddressError
+  rescue IPAddr::Error
     nil
   end
 end
