@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "xcodeproj"
+require_relative "../xcode_project_package_reader"
 
 # Legacy Xcode project parser used by the Danger plugin API.
 module Xcode
@@ -11,8 +12,8 @@ module Xcode
   def self.get_packages(xcodeproj_path)
     raise(XcodeprojPathMustBeSet) if xcodeproj_path.nil? || xcodeproj_path.empty?
 
-    remote_swift_packages(Xcodeproj::Project.open(xcodeproj_path)).to_h { |package|
-      repository_url = package.repositoryURL
+    XcodeProjectPackageReader.package_references(xcodeproj_path).to_h { |package|
+      repository_url = package.repository_url
       [Git.trim_repo_url(repository_url), package.requirement]
     }
   end
@@ -43,26 +44,15 @@ module Xcode
   # Find the Packages.resolved file
   # @return [Array<String>]
   def self.find_packages_resolved_file(xcodeproj_path)
-    # First check the workspace for a resolved file
-    workspace = xcodeproj_path.sub("xcodeproj", "xcworkspace")
-    workspace_resolved = File.join(workspace, "xcshareddata", "swiftpm", "Package.resolved")
+    checked = XcodeProjectPackageReader.package_resolved_candidate_paths(xcodeproj_path)
+    locations = checked.select { |path| File.exist?(path) }
 
-    # Then check the project for a resolved file
-    project_resolved = File.join(xcodeproj_path, "project.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved")
-    locations = [workspace_resolved, project_resolved].select { |path| File.exist?(path) }
-
-    Kernel.warn("Searching for resolved packages in: #{locations}")
+    Kernel.warn("Checked Package.resolved paths: #{checked}")
+    Kernel.warn("Found Package.resolved paths: #{locations}")
     locations
   end
 
-  def self.remote_swift_packages(project)
-    project.objects.select { |obj|
-      obj.kind_of?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference) &&
-        !obj.repositoryURL.to_s.strip.empty?
-    }
-  end
-
-  private_class_method :find_packages_resolved_file, :remote_swift_packages
+  private_class_method :find_packages_resolved_file
 
   # Raised when Danger plugin Xcode mode is invoked without a project path.
   class XcodeprojPathMustBeSet < StandardError

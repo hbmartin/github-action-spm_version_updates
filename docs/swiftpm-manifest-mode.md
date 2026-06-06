@@ -25,7 +25,8 @@ and the resolved pins live in the `Package.resolved` file next to each manifest.
 
 Pointing the action at `podcasts.xcodeproj` in this layout doesn't work well: the
 `.xcodeproj` owns no remote package references, so the action finds nothing to
-check (or reports a misleading "all up to date"), and `Package.resolved` is not in
+check. If an Xcode-adjacent `Package.resolved` exists, the action logs a warning
+that the project may need manifest mode; otherwise `Package.resolved` is not in
 any Xcode-adjacent workspace location.
 
 ## TL;DR — the workflow you want

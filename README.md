@@ -160,10 +160,12 @@ You must provide **exactly one** of `xcode-project-path` or `package-manifest-pa
 
 ### Xcode project mode (`xcode-project-path`)
 
-- Opens the `.xcodeproj` and extracts its `XCRemoteSwiftPackageReference` objects.
+- Parses the `.xcodeproj` directly and extracts its `XCRemoteSwiftPackageReference` objects.
+- Runs without Xcode, Swift, or a macOS runner; the project file is read by Ruby.
 - Locates `Package.resolved` in the Xcode-adjacent workspace locations:
   - `<Project>.xcworkspace/xcshareddata/swiftpm/Package.resolved`
   - `<Project>.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
+- Logs a warning if `Package.resolved` has pins but the `.xcodeproj` has no remote package references, which usually means the project should use Swift manifest mode instead.
 
 Use this when the `.xcodeproj` directly owns its remote package references.
 
@@ -208,6 +210,8 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `fail-on-updates` | Legacy fail behavior. Set `true` to fail on any update, or `major` / `minor` / `patch` to fail on semantic version updates at or above that severity. | No | `false` |
 | `fail-on` | Fail on semantic version updates at or above this severity: `major`, `minor`, or `patch`. Overrides `fail-on-updates` when set. | No | `''` |
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | No | `false` |
+| `cache-version-tags` | Persist successful git tag lookups between runs with `actions/cache`. | No | `true` |
+| `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Set `0` to disable persistent cache reads and writes. | No | `21600` |
 | `github-token` | GitHub token for API access | No | `${{ github.token }}` |
 
 ## How dependency constraints are handled
@@ -291,14 +295,15 @@ The `Source:` line is only included in Swift manifest mode, where it tells you w
     report-above-maximum: true
     ignore-repos: 'https://github.com/pointfreeco/swift-snapshot-testing'
     allow-hosts: 'github.com,gitlab.com'
+    version-tags-cache-ttl: 21600
     fail-on-updates: false
 ```
 
 ## Limitations
 
-- **Posting the PR comment is GitHub-specific.** The comment is created through the GitHub API, so the action has to run inside GitHub Actions on a GitHub-hosted pull request for that sink to be available. Outputs, step summaries, and annotations are still emitted on non-PR runs.
+- **The built-in PR comment sink is GitHub-specific.** Comments now flow through a small reporter sink interface, but the only included sink posts through the GitHub API. The action has to run inside GitHub Actions on a GitHub-hosted pull request for that default sink to be available. Outputs, step summaries, and annotations are still emitted on non-PR runs.
 - **Version lookups work against any git host the runner can reach by default.** Tags and branches are read with `git ls-remote` over `https`, `ssh`, or `git` transports, so dependencies hosted on GitHub, GitLab, Bitbucket, or a self-hosted server all work when exposed through those protocols. Private dependencies are supported as long as the runner is already authenticated to fetch them (SSH key or credentials in the environment); the action does not manage those credentials for you. Set `allow-hosts` for untrusted PRs or locked-down runners; host matching is exact, case-insensitive, and ignores URL schemes, credentials, paths, and ports. When set, `allow-hosts` is enforced before enabled lookups only; an off-list dependency that would be contacted fails the action and writes `blocked=true` plus `error-message`.
-- **Updates are detected from semver tags.** A dependency that doesn't publish semver-style version tags won't produce version updates. Branch- and revision-pinned dependencies are handled separately via `check-branches` / `check-revisions`.
+- **Updates are detected from semver tags.** A dependency that doesn't publish semver-style version tags won't produce version updates. Successful tag lookups are cached briefly across runs by default; branch- and revision-pinned dependencies are handled separately via `check-branches` / `check-revisions`.
 - **Local packages are skipped.** `.package(path: ...)` dependencies and commented-out declarations are ignored.
 
 ## Versioning

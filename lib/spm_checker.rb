@@ -5,59 +5,15 @@ require_relative "credential_redactor"
 require_relative "git_operations"
 require_relative "manifest_parser"
 require_relative "package_resolved"
+require_relative "spm_package_context"
 require_relative "spm_version_updates/semver"
 require_relative "version_tag_fetcher"
+require_relative "version_tags_persistent_cache"
 require_relative "xcode_parser"
 
 # Core SPM version checking logic (migrated from Danger plugin)
 class SpmChecker
   VERSION_TAG_WORKER_COUNT = 8
-
-  # Carries normalized package facts through version, branch, and revision checks.
-  PackageContext = Struct.new(
-    :cache_key,
-    :kind,
-    :name,
-    :normalized_url,
-    :repository_url,
-    :requirement,
-    :resolved_version,
-    :source,
-    keyword_init: true
-  ) {
-    def add_version_tag_lookup(lookups, cache)
-      key = cache_key
-      lookups[key] ||= repository_url unless cache.key?(key)
-    end
-
-    def branch
-      requirement["branch"]
-    end
-
-    def branch_update?(last_commit)
-      last_commit && last_commit != resolved_version
-    end
-
-    def branch_warning_message(last_commit)
-      "Newer commit available for #{name} (#{branch}): #{last_commit}"
-    end
-
-    def branch_update_warning
-      last_commit = GitOperations.branch_last_commit(repository_url, branch)
-      return unless branch_update?(last_commit)
-
-      [branch_warning_message(last_commit), last_commit, "branch: #{branch}"]
-    end
-
-    def source_line
-      "Source: #{source}" if source
-    end
-
-    def source_suffix
-      source ? " (#{source})" : ""
-    end
-  }
-  private_constant :PackageContext
 
   # Raised when allow-hosts blocks a repository before git is contacted.
   class DisallowedRepositoryHost < StandardError; end
@@ -67,26 +23,7 @@ class SpmChecker
   # string warnings for compatibility with existing plugin-style callers.
   attr_reader :warning_details
 
-  # Whether to check when dependencies are exact versions or commits, default false
-  attr_accessor :check_when_exact
-
-  # Whether to check for newer commits on branch-pinned dependencies, default true
-  attr_accessor :check_branches
-
-  # Whether to report the latest tagged version for revision-pinned dependencies, default false
-  attr_accessor :check_revisions
-
-  # Whether to report versions above the maximum version range, default false
-  attr_accessor :report_above_maximum
-
-  # Whether to report pre-release versions, default false
-  attr_accessor :report_pre_releases
-
-  # A list of repository URLs for packages to ignore entirely
-  attr_accessor :ignore_repos
-
-  # A list of git remote hostnames allowed for dependency version lookups
-  attr_accessor :allow_hosts
+  attr_accessor :allow_hosts, :check_branches, :check_revisions, :check_when_exact, :ignore_repos, :report_above_maximum, :report_pre_releases, :version_tags_cache_dir, :version_tags_cache_ttl_seconds
 
   def self.redact_credentials(value)
     CredentialRedactor.redact(value)
@@ -103,6 +40,8 @@ class SpmChecker
     @warnings = []
     @warning_details = []
     @version_tags_cache = {}
+    @version_tags_cache_dir = nil
+    @version_tags_cache_ttl_seconds = VersionTagsPersistentCache::DEFAULT_TTL_SECONDS
   end
 
   # Check for SPM updates using an Xcode project as the source of dependencies.
@@ -118,6 +57,7 @@ class SpmChecker
     remote_packages = XcodeParser.get_packages(xcodeproj_path)
     resolved_versions = XcodeParser.get_resolved_versions(xcodeproj_path)
     puts("Found resolved versions for #{resolved_versions.size} packages")
+    warn_for_empty_xcode_project(remote_packages, resolved_versions, xcodeproj_path)
 
     check_packages(remote_packages, resolved_versions)
     @warnings
@@ -180,9 +120,17 @@ class SpmChecker
     @warning_details.clear
   end
 
-  def reset_version_tags_cache
-    @version_tags_cache = {}
+  def warn_for_empty_xcode_project(remote_packages, resolved_versions, xcodeproj_path)
+    return unless remote_packages.empty? && !resolved_versions.empty?
+
+    puts(
+      "WARNING: No XCRemoteSwiftPackageReference entries were found in #{xcodeproj_path}, " \
+      "but Package.resolved contains resolved packages. If dependencies are declared in " \
+      "Package.swift files, use package-manifest-paths instead."
+    )
   end
+
+  def reset_version_tags_cache = @version_tags_cache = {}
 
   # Merge the resolved pins of every relevant `Package.resolved` file.
   #
@@ -239,12 +187,13 @@ class SpmChecker
       kind = requirement["kind"]
       validate_repository_host(name, repository_url, source) if git_lookup_required?(kind)
 
-      PackageContext.new(
+      SpmPackageContext.new(
         cache_key: version_tags_cache_key(normalized_url, repository_url),
         kind:,
         name:,
         normalized_url:,
         repository_url:,
+        persistent_cache_key: VersionTagsPersistentCache.cache_key(normalized_url, repository_url),
         requirement:,
         resolved_version:,
         source:
@@ -274,7 +223,14 @@ class SpmChecker
     pending = pending_version_tag_lookups(packages)
     return if pending.empty?
 
-    @version_tags_cache.merge!(VersionTagFetcher.call(pending, worker_limit: VERSION_TAG_WORKER_COUNT))
+    persistent_cache = VersionTagsPersistentCache.new(directory: @version_tags_cache_dir, ttl_seconds: @version_tags_cache_ttl_seconds)
+    @version_tags_cache.merge!(
+      VersionTagFetcher.call(
+        pending,
+        worker_limit: VERSION_TAG_WORKER_COUNT,
+        persistent_cache:
+      )
+    )
   end
 
   def pending_version_tag_lookups(packages)
@@ -282,7 +238,7 @@ class SpmChecker
       next unless version_tag_lookup_required?(package.kind)
 
       package.add_version_tag_lookup(lookups, @version_tags_cache)
-    }.to_a
+    }.values
   end
 
   def version_tag_lookup_required?(kind)

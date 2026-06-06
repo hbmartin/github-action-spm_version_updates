@@ -39,6 +39,7 @@ module Danger
       remote_packages = Xcode.get_packages(xcodeproj_path)
       resolved_versions = Xcode.get_resolved_versions(xcodeproj_path)
       Kernel.warn("Found resolved versions for #{resolved_versions.size} packages")
+      warn_for_empty_xcode_project(remote_packages, resolved_versions, xcodeproj_path)
 
       self.ignore_repos = ignore_repos&.map! { |repo| Git.trim_repo_url(repo) }
 
@@ -77,6 +78,16 @@ module Danger
     end
 
     private
+
+    def warn_for_empty_xcode_project(remote_packages, resolved_versions, xcodeproj_path)
+      return unless remote_packages.empty? && !resolved_versions.empty?
+
+      Kernel.warn(
+        "WARNING: No XCRemoteSwiftPackageReference entries were found in #{xcodeproj_path}, " \
+        "but Package.resolved contains resolved packages. If dependencies are declared in " \
+        "Package.swift files, use package-manifest-paths instead."
+      )
+    end
 
     # Warns if the branch has a newer commit than the resolved version.
     # @param branch [String] the branch name
