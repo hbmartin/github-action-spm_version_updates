@@ -46,10 +46,22 @@ module XcodeProjectPackageReader
     [
       SystemCallError,
       IOError,
-      defined?(Xcodeproj::Informative) ? Xcodeproj::Informative : nil,
-      defined?(Nanaimo::Error) ? Nanaimo::Error : nil,
-      defined?(CFPropertyList::CFPlistError) ? CFPropertyList::CFPlistError : nil,
+      loaded_nested_constant(:Xcodeproj, :Informative),
+      loaded_nested_constant(:Nanaimo, :Error),
+      loaded_nested_constant(:CFPropertyList, :CFPlistError),
     ].compact
+  end
+
+  def self.loaded_nested_constant(parent_name, child_name)
+    parent = loaded_constant(Object, parent_name)
+    loaded_constant(parent, child_name) if parent
+  end
+
+  def self.loaded_constant(namespace, name)
+    return if namespace.autoload?(name)
+    return unless namespace.const_defined?(name, false)
+
+    namespace.const_get(name, false)
   end
 
   def self.pbxproj_path_for(xcodeproj_path)
@@ -109,6 +121,8 @@ module XcodeProjectPackageReader
                        :existing_pbxproj_path,
                        :pbxproj_fallback_message,
                        :pbxproj_fallback_errors,
+                       :loaded_nested_constant,
+                       :loaded_constant,
                        :pbxproj_path_for,
                        :pbxproj_objects,
                        :package_references_from_pbxproj_objects,

@@ -58,9 +58,8 @@ class RepositoryUpdateRules
     raise(ArgumentError, "repo-rules YAML is invalid in #{path}: #{error.message}")
   end
 
-  def self.from_hash(config = :default_config, source: "repo rules", **keyword_config)
-    config = config_from(config, keyword_config)
-    config ||= {}
+  def self.from_hash(config = nil, source: "repo rules", **keyword_config)
+    config = keyword_config.empty? ? {} : keyword_config if config.nil?
     raise(ArgumentError, "#{source} must contain a YAML mapping") unless config.kind_of?(Hash)
 
     new(parse_repositories(repositories_from(config, source), source))
@@ -89,12 +88,6 @@ class RepositoryUpdateRules
     Rule.new(**rule)
   end
 
-  def self.config_from(config, keyword_config)
-    return keyword_config if config == :default_config && !keyword_config.empty?
-
-    config
-  end
-
   def self.validated_file_path(path)
     path = path.to_s.strip
     raise(ArgumentError, "repo-rules-path was set but no file path was provided") if path.empty?
@@ -106,9 +99,7 @@ class RepositoryUpdateRules
   def self.repositories_from(config, source)
     string_keys = config.transform_keys(&:to_s)
     validate_keys!(string_keys, ROOT_KEYS, "#{source} root")
-
-    repositories = string_keys.key?("repositories") ? string_keys["repositories"] : []
-    repositories = [] if repositories.nil?
+    repositories = string_keys.compact.fetch("repositories", [])
     raise(ArgumentError, "#{source} repositories must be a list") unless repositories.kind_of?(Array)
 
     repositories
@@ -176,7 +167,6 @@ class RepositoryUpdateRules
   private_class_method(
     :parse_repositories,
     :parse_entry,
-    :config_from,
     :validated_file_path,
     :repositories_from,
     :rule_entry_from,

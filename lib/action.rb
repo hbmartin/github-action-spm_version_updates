@@ -35,9 +35,9 @@ class Action
     private
 
     def print_source_inputs
-      print_optional_value(["Xcode project", :xcode_project_path])
-      print_list(["Package manifests", :manifest_paths])
-      print_list(["Package resolved", :resolved_paths])
+      print_optional_value("Xcode project", :xcode_project_path)
+      print_list("Package manifests", :manifest_paths)
+      print_list("Package resolved", :resolved_paths)
     end
 
     def print_check_inputs
@@ -46,42 +46,39 @@ class Action
     end
 
     def print_version_check_inputs
-      print_value(["Check when exact", :check_when_exact])
-      print_value(["Check branches", :check_branches])
-      print_value(["Check revisions", :check_revisions])
-      print_value(["Report above maximum", :report_above_maximum])
-      print_value(["Report pre-releases", :report_pre_releases])
+      print_value("Check when exact", :check_when_exact)
+      print_value("Check branches", :check_branches)
+      print_value("Check revisions", :check_revisions)
+      print_value("Report above maximum", :report_above_maximum)
+      print_value("Report pre-releases", :report_pre_releases)
     end
 
     def print_filter_inputs
-      print_list(["Ignore repos", :ignore_repos])
-      print_optional_value(["Repo rules", :repo_rules_path])
-      print_list(["Allow hosts", :allow_hosts])
+      print_list("Ignore repos", :ignore_repos)
+      print_optional_value("Repo rules", :repo_rules_path)
+      print_list("Allow hosts", :allow_hosts)
     end
 
     def print_report_inputs
       puts("Fail on: #{@inputs[:fail_on] || 'none'}")
-      print_value(["Comment on success", :comment_on_success])
+      print_value("Comment on success", :comment_on_success)
     end
 
     def print_cache_inputs
-      print_value(["Cache version tags", :cache_version_tags])
-      print_value(["Version tags cache TTL", :version_tags_cache_ttl])
+      print_value("Cache version tags", :cache_version_tags)
+      print_value("Version tags cache TTL", :version_tags_cache_ttl)
     end
 
-    def print_value(input)
-      label, key = input
+    def print_value(label, key)
       puts("#{label}: #{@inputs[key]}")
     end
 
-    def print_optional_value(input)
-      label, key = input
+    def print_optional_value(label, key)
       value = @inputs[key]
       puts("#{label}: #{value}") if value
     end
 
-    def print_list(input)
-      label, key = input
+    def print_list(label, key)
       values = @inputs[key]
       puts("#{label}: #{values.join(', ')}") unless values.empty?
     end
