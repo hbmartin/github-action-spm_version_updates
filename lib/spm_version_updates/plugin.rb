@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require_relative "git"
 require_relative "../repository_update_rules"
+require_relative "git"
 require_relative "semver"
 require_relative "xcode"
 
@@ -178,7 +178,7 @@ module Danger
       newest_meeting_reqs = available_versions.find { |version|
         version.major == resolved_version.major &&
           (major_or_minor == :major || version.minor == resolved_version.minor) &&
-        reportable_version?(version)
+          reportable_version?(version)
       }
 
       if newest_meeting_reqs && newest_meeting_reqs != resolved_version

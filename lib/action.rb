@@ -74,6 +74,7 @@ class Action
       report_above_maximum: env_flag("INPUT_REPORT_ABOVE_MAXIMUM"),
       report_pre_releases: env_flag("INPUT_REPORT_PRE_RELEASES"),
       ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
+      repo_rules_path: env_value("INPUT_REPO_RULES_PATH"),
       allow_hosts: env_csv("INPUT_ALLOW_HOSTS"),
       fail_on: FailOnThreshold.from_inputs(env_value("INPUT_FAIL_ON"), env_value("INPUT_FAIL_ON_UPDATES")),
       comment_on_success: env_flag("INPUT_COMMENT_ON_SUCCESS"),
@@ -88,6 +89,7 @@ class Action
     manifest_paths = inputs[:manifest_paths]
     resolved_paths = inputs[:resolved_paths]
     ignore_repos = inputs[:ignore_repos]
+    repo_rules_path = inputs[:repo_rules_path]
     allow_hosts = inputs[:allow_hosts]
 
     puts("SPM Version Updates GitHub Action")
@@ -100,6 +102,7 @@ class Action
     puts("Report above maximum: #{inputs[:report_above_maximum]}")
     puts("Report pre-releases: #{inputs[:report_pre_releases]}")
     puts("Ignore repos: #{ignore_repos.join(', ')}") unless ignore_repos.empty?
+    puts("Repo rules: #{repo_rules_path}") if repo_rules_path
     puts("Allow hosts: #{allow_hosts.join(', ')}") unless allow_hosts.empty?
     puts("Fail on: #{inputs[:fail_on] || 'none'}")
     puts("Comment on success: #{inputs[:comment_on_success]}")
@@ -115,6 +118,7 @@ class Action
     checker.report_above_maximum = inputs[:report_above_maximum]
     checker.report_pre_releases = inputs[:report_pre_releases]
     checker.ignore_repos = inputs[:ignore_repos]
+    checker.repository_update_rules = RepositoryUpdateRules.load_file(inputs[:repo_rules_path]) if inputs[:repo_rules_path]
     checker.allow_hosts = inputs[:allow_hosts]
     checker.version_tags_cache_dir = inputs[:cache_version_tags] ? inputs[:version_tags_cache_dir] : nil
     checker.version_tags_cache_ttl_seconds = inputs[:version_tags_cache_ttl]

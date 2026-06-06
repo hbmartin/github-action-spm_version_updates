@@ -34,6 +34,7 @@ RSpec.describe Action do
       INPUT_REPORT_ABOVE_MAXIMUM
       INPUT_REPORT_PRE_RELEASES
       INPUT_IGNORE_REPOS
+      INPUT_REPO_RULES_PATH
       INPUT_ALLOW_HOSTS
       INPUT_FAIL_ON_UPDATES
       INPUT_FAIL_ON
@@ -99,6 +100,7 @@ RSpec.describe Action do
           "INPUT_REPORT_ABOVE_MAXIMUM" => "true",
           "INPUT_REPORT_PRE_RELEASES" => "true",
           "INPUT_IGNORE_REPOS" => " https://github.com/a/b, https://github.com/c/d ",
+          "INPUT_REPO_RULES_PATH" => " .spm-version-updates.yml ",
           "INPUT_ALLOW_HOSTS" => " github.com, gitlab.com ",
           "INPUT_FAIL_ON_UPDATES" => "true",
           "INPUT_FAIL_ON" => "minor",
@@ -116,6 +118,7 @@ RSpec.describe Action do
             report_above_maximum: true,
             report_pre_releases: true,
             ignore_repos: ["https://github.com/a/b", "https://github.com/c/d"],
+            repo_rules_path: ".spm-version-updates.yml",
             allow_hosts: ["github.com", "gitlab.com"],
             fail_on: "minor",
             comment_on_success: true,
@@ -377,6 +380,35 @@ RSpec.describe Action do
       expect(configured_checker).not_to have_received(:check_manifests)
       expect(reporter_sink).to have_received(:clear)
       expect(reporter_sink).not_to have_received(:publish_success)
+    end
+
+    it "loads repo rules from the configured path", :aggregate_failures do
+      allow(configured_checker).to receive(:check_for_updates).and_return([])
+      allow(configured_checker).to receive(:check_manifests)
+
+      Dir.mktmpdir do |dir|
+        rules_path = File.join(dir, "repo-rules.yml")
+        File.write(
+          rules_path,
+          <<~YAML
+            repositories:
+              - url: "https://github.com/acme/pkg"
+                ignore-until: "2.0.0"
+          YAML
+        )
+
+        with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_REPO_RULES_PATH" => rules_path)) do
+          action.run
+        end
+      end
+
+      expect(configured_checker.repository_update_rules).to be_suppressed(
+        type: "version",
+        normalized_url: "github.com/acme/pkg",
+        current_version: "1.0.0",
+        available_version: "1.9.0"
+      )
+      expect(reporter_sink).to have_received(:clear)
     end
 
     it "posts a clean-run comment when comment-on-success is enabled", :aggregate_failures do

@@ -79,6 +79,7 @@ spm_version_updates.report_pre_releases = true
 spm_version_updates.ignore_repos = [
   "https://github.com/pointfreeco/swift-snapshot-testing",
 ]
+spm_version_updates.repo_rules_path = ".github/spm-version-rules.yml"
 ```
 
 Important limitations if you stay on the Danger plugin:
@@ -216,6 +217,7 @@ the real `Package.swift` and `Package.resolved` files.
 | `report_above_maximum = true` | `report-above-maximum: true` | Reports releases above the configured range, such as a new major version. |
 | `report_pre_releases = true` | `report-pre-releases: true` | Pre-release tags are ignored by default. |
 | `ignore_repos = ["url"]` | `ignore-repos: "url"` | Use a comma-separated list for multiple repositories. |
+| `repo_rules_path = "path"` | `repo-rules-path: "path"` | YAML rules can suppress semantic reports per repository without skipping lookups. |
 | No equivalent | `xcode-project-path` | Required for Xcode project mode. |
 | No equivalent | `package-manifest-paths` | Required for Swift manifest mode. |
 | No equivalent | `package-resolved-paths` | Optional override for manifest mode. |
@@ -242,6 +244,7 @@ Example with most options enabled:
     report-above-maximum: true
     report-pre-releases: false
     ignore-repos: "https://github.com/pointfreeco/swift-snapshot-testing"
+    repo-rules-path: ".github/spm-version-rules.yml"
     allow-hosts: "github.com,gitlab.com"
     fail-on: major
 ```

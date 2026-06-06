@@ -206,6 +206,7 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `report-above-maximum` | Report versions above the maximum constraint range | No | `false` |
 | `report-pre-releases` | Include pre-release versions in update reports | No | `false` |
 | `ignore-repos` | Comma-separated list of repository URLs to ignore | No | `''` |
+| `repo-rules-path` | Path to a YAML file with per-repository semantic update suppression rules | No | `''` |
 | `allow-hosts` | Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. | No | `''` |
 | `fail-on-updates` | Legacy fail behavior. Set `true` to fail on any update, or `major` / `minor` / `patch` to fail on semantic version updates at or above that severity. | No | `false` |
 | `fail-on` | Fail on semantic version updates at or above this severity: `major`, `minor`, or `patch`. Overrides `fail-on-updates` when set. | No | `''` |
@@ -272,6 +273,29 @@ Use `fail-on: major` when only major semantic-version updates should fail the jo
   run: echo '${{ steps.spm-updates.outputs.updates-json }}'
 ```
 
+### Per-repository rules
+
+Use `ignore-repos` when a dependency should be skipped entirely before any git lookup. Use `repo-rules-path` when the dependency should still be checked, but selected semantic-version reports should be hidden from comments, annotations, outputs, and `fail-on` counts.
+
+```yaml
+- uses: hbmartin/github-action-spm_version_updates@v1
+  with:
+    package-manifest-paths: Modules/Package.swift
+    report-above-maximum: true
+    repo-rules-path: .github/spm-version-rules.yml
+```
+
+```yaml
+repositories:
+  - url: "https://github.com/example/noise"
+    ignore-until: "2.0.0"
+
+  - url: "https://github.com/example/no-major"
+    allowed-updates: "minor"
+```
+
+`ignore-until` suppresses semantic reports whose available version is below the configured version; version X itself still reports. `allowed-updates` accepts `patch`, `minor`, or `major`, where `minor` allows patch and minor reports but suppresses major reports. These rules apply only to semantic `version` and `above_maximum` reports; branch and revision reports keep using `check-branches`, `check-revisions`, and `ignore-repos`.
+
 ## Example output
 
 When the action finds available updates, it posts (and keeps updating) a single comment on your pull request:
@@ -307,6 +331,7 @@ The `Source:` line is only included in Swift manifest mode, where it tells you w
     check-revisions: false
     report-above-maximum: true
     ignore-repos: 'https://github.com/pointfreeco/swift-snapshot-testing'
+    repo-rules-path: '.github/spm-version-rules.yml'
     allow-hosts: 'github.com,gitlab.com'
     version-tags-cache-ttl: 21600
     fail-on-updates: false
