@@ -5,10 +5,12 @@ source "https://rubygems.org"
 # Core dependencies for GitHub Action
 # Octokit/Danger configure Faraday retry middleware at runtime under Faraday v2.
 gem "faraday-retry", "~> 2.4"
-gem "json", "~> 2.0"
 gem "octokit", "~> 8.0"
 gem "semverify", "~> 0.3"
-gem "xcodeproj", "~> 1.24"
+
+group(:xcode) {
+  gem "xcodeproj", "~> 1.24"
+}
 
 # Development and test dependencies
 group(:development, :test) {

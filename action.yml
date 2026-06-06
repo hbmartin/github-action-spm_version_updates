@@ -58,6 +58,18 @@ inputs:
     description: 'Post a pull request comment when all dependencies are up to date'
     required: false
     default: 'false'
+  cache-version-tags:
+    description: 'Persist successful git tag lookups between runs with actions/cache'
+    required: false
+    default: 'true'
+  version-tags-cache-ttl:
+    description: 'Freshness window, in seconds, for persisted git tag lookup results. Set to 0 to disable persistent cache reads and writes.'
+    required: false
+    default: '21600'
+  setup-ruby:
+    description: 'Set up Ruby and install this action bundle. Set false only after an earlier invocation in the same job has already done this.'
+    required: false
+    default: 'true'
   github-token:
     description: 'GitHub token for API access (automatic)'
     required: false
@@ -90,20 +102,53 @@ runs:
   using: 'composite'
   steps:
     - name: Set up Ruby
+      if: ${{ inputs.setup-ruby == 'true' }}
       uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f
       env:
-        BUNDLE_WITHOUT: development:test
+        BUNDLE_WITHOUT: development:test${{ inputs.package-manifest-paths != '' && ':xcode' || '' }}
       with:
         ruby-version: '3.3'
         bundler-cache: true
         working-directory: ${{ github.action_path }}
+
+    - name: Prepare version tags cache
+      id: version-tags-cache
+      if: ${{ inputs.cache-version-tags == 'true' && inputs.version-tags-cache-ttl != '0' }}
+      shell: bash
+      env:
+        CACHE_REPOSITORY_ID: ${{ github.repository_id }}
+      run: |
+        set -euo pipefail
+        cache_day="$(date -u +%Y%m%d)"
+        cache_repo="${CACHE_REPOSITORY_ID:-${GITHUB_REPOSITORY:-repository}}"
+        cache_dir="${RUNNER_TEMP}/spm-version-updates-tags"
+        cache_key="spm-version-updates-tags-${RUNNER_OS}-${cache_repo}-${cache_day}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+        today_restore_key="spm-version-updates-tags-${RUNNER_OS}-${cache_repo}-${cache_day}-"
+        restore_key="spm-version-updates-tags-${RUNNER_OS}-${cache_repo}-"
+
+        mkdir -p "$cache_dir"
+        echo "SPM_VERSION_UPDATES_TAG_CACHE_DIR=$cache_dir" >> "$GITHUB_ENV"
+        echo "path=$cache_dir" >> "$GITHUB_OUTPUT"
+        echo "key=$cache_key" >> "$GITHUB_OUTPUT"
+        echo "today-restore-key=$today_restore_key" >> "$GITHUB_OUTPUT"
+        echo "restore-key=$restore_key" >> "$GITHUB_OUTPUT"
+
+    - name: Restore version tags cache
+      if: ${{ inputs.cache-version-tags == 'true' && inputs.version-tags-cache-ttl != '0' }}
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.version-tags-cache.outputs.path }}
+        key: ${{ steps.version-tags-cache.outputs.key }}
+        restore-keys: |
+          ${{ steps.version-tags-cache.outputs.today-restore-key }}
+          ${{ steps.version-tags-cache.outputs.restore-key }}
 
     - name: Check SPM dependencies
       id: check
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
-        BUNDLE_WITHOUT: development:test
+        BUNDLE_WITHOUT: development:test${{ inputs.package-manifest-paths != '' && ':xcode' || '' }}
         INPUT_XCODE_PROJECT_PATH: ${{ inputs.xcode-project-path }}
         INPUT_PACKAGE_MANIFEST_PATHS: ${{ inputs.package-manifest-paths }}
         INPUT_PACKAGE_RESOLVED_PATHS: ${{ inputs.package-resolved-paths }}
@@ -117,7 +162,19 @@ runs:
         INPUT_FAIL_ON_UPDATES: ${{ inputs.fail-on-updates }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
         INPUT_COMMENT_ON_SUCCESS: ${{ inputs.comment-on-success }}
+        INPUT_CACHE_VERSION_TAGS: ${{ inputs.cache-version-tags }}
+        INPUT_VERSION_TAGS_CACHE_TTL: ${{ inputs.version-tags-cache-ttl }}
+        INPUT_SETUP_RUBY: ${{ inputs.setup-ruby }}
+        SPM_VERSION_UPDATES_TAG_CACHE_DIR: ${{ steps.version-tags-cache.outputs.path }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         cd "$ACTION_PATH"
+        bash "$ACTION_PATH/lib/action_runtime_preflight.sh"
         bundle exec ruby "$ACTION_PATH/lib/action.rb"
+
+    - name: Save version tags cache
+      if: ${{ always() && inputs.cache-version-tags == 'true' && inputs.version-tags-cache-ttl != '0' }}
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.version-tags-cache.outputs.path }}
+        key: ${{ steps.version-tags-cache.outputs.key }}

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "xcodeproj"
 require_relative "git_operations"
 require_relative "package_resolved"
 require_relative "xcode_project_package_reader"

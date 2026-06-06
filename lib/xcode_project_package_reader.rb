@@ -1,10 +1,9 @@
 # frozen_string_literal: true
 
-require "xcodeproj"
-
 # Reads Swift package references and adjacent Package.resolved locations for an
 # Xcode project without requiring Xcode to be installed.
 module XcodeProjectPackageReader
+  # Lightweight package reference read from either project objects or pbxproj data.
   PackageReference = Struct.new(:repository_url, :requirement, keyword_init: true)
   private_constant :PackageReference
 
@@ -20,13 +19,25 @@ module XcodeProjectPackageReader
   end
 
   def self.package_references_from_pbxproj(xcodeproj_path)
-    pbxproj_path = File.join(xcodeproj_path, "project.pbxproj")
+    pbxproj_path = pbxproj_path_for(xcodeproj_path)
     return nil unless File.file?(pbxproj_path)
 
-    objects = Xcodeproj::Plist.read_from_path(pbxproj_path).fetch("objects", {})
-    objects.values.filter_map { |object| package_reference_from_plist_object(object) }
+    package_references_from_pbxproj_objects(pbxproj_objects(pbxproj_path))
   rescue StandardError
     nil
+  end
+
+  def self.pbxproj_path_for(xcodeproj_path)
+    File.join(xcodeproj_path, "project.pbxproj")
+  end
+
+  def self.pbxproj_objects(pbxproj_path)
+    load_xcodeproj
+    Xcodeproj::Plist.read_from_path(pbxproj_path).fetch("objects", {}).values
+  end
+
+  def self.package_references_from_pbxproj_objects(objects)
+    objects.filter_map { |object| package_reference_from_plist_object(object) }
   end
 
   def self.package_reference_from_plist_object(object)
@@ -39,12 +50,21 @@ module XcodeProjectPackageReader
   end
 
   def self.package_references_from_project(xcodeproj_path)
-    Xcodeproj::Project.open(xcodeproj_path).objects.filter_map { |object|
-      next unless object.kind_of?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
-      next if object.repositoryURL.to_s.strip.empty?
+    load_xcodeproj
+    package_references_from_project_objects(Xcodeproj::Project.open(xcodeproj_path).objects)
+  end
 
-      PackageReference.new(repository_url: object.repositoryURL, requirement: object.requirement)
-    }
+  def self.package_references_from_project_objects(objects)
+    objects.filter_map { |object| package_reference_from_project_object(object) }
+  end
+
+  def self.package_reference_from_project_object(object)
+    return unless object.kind_of?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+
+    repository_url = object.repositoryURL
+    return if repository_url.to_s.strip.empty?
+
+    PackageReference.new(repository_url:, requirement: object.requirement)
   end
 
   def self.workspace_resolved_path(xcodeproj_path)
@@ -54,8 +74,18 @@ module XcodeProjectPackageReader
     File.join(workspace, "xcshareddata", "swiftpm", "Package.resolved")
   end
 
+  def self.load_xcodeproj
+    require("xcodeproj")
+  end
+
   private_class_method :package_references_from_pbxproj,
+                       :pbxproj_path_for,
+                       :pbxproj_objects,
+                       :package_references_from_pbxproj_objects,
                        :package_reference_from_plist_object,
                        :package_references_from_project,
-                       :workspace_resolved_path
+                       :package_references_from_project_objects,
+                       :package_reference_from_project_object,
+                       :workspace_resolved_path,
+                       :load_xcodeproj
 end

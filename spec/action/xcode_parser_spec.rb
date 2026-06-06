@@ -3,9 +3,27 @@
 require "fileutils"
 require "json"
 require "tmpdir"
+require "xcodeproj"
 require_relative "../../lib/xcode_parser"
 
 RSpec.describe XcodeParser do
+  let(:resolved_writer) {
+    lambda { |path, url:, version:|
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(
+        path,
+        JSON.pretty_generate(
+          "pins" => [
+            {
+              "location" => url,
+              "state" => { "version" => version }
+            },
+          ]
+        )
+      )
+    }
+  }
+
   describe ".get_packages" do
     it "extracts remote Swift packages through the lightweight pbxproj reader", :aggregate_failures do
       project_path = File.expand_path("../support/fixtures/UpToNextMajor.xcodeproj", __dir__)
@@ -44,7 +62,7 @@ RSpec.describe XcodeParser do
         container = File.join(dir, "directory-with-xcodeproj-in-name")
         project_path = File.join(container, "Sample App.xcodeproj")
         workspace_resolved = File.join(container, "Sample App.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved")
-        write_resolved(workspace_resolved, url: "https://github.com/acme/Package", version: "1.2.3")
+        resolved_writer.call(workspace_resolved, url: "https://github.com/acme/Package", version: "1.2.3")
 
         stdout = capture_stdout do
           expect(described_class.get_resolved_versions(project_path)).to eq(
@@ -76,8 +94,8 @@ RSpec.describe XcodeParser do
         project_path = File.join(dir, "Sample App.xcodeproj")
         workspace_resolved = File.join(dir, "Sample App.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved")
         project_resolved = File.join(project_path, "project.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved")
-        write_resolved(workspace_resolved, url: "https://github.com/acme/One", version: "1.0.0")
-        write_resolved(project_resolved, url: "https://github.com/acme/Two", version: "2.0.0")
+        resolved_writer.call(workspace_resolved, url: "https://github.com/acme/One", version: "1.0.0")
+        resolved_writer.call(project_resolved, url: "https://github.com/acme/Two", version: "2.0.0")
 
         capture_stdout do
           expect(described_class.get_resolved_versions(project_path)).to eq(
@@ -87,21 +105,6 @@ RSpec.describe XcodeParser do
         end
       end
     end
-  end
-
-  def write_resolved(path, url:, version:)
-    FileUtils.mkdir_p(File.dirname(path))
-    File.write(
-      path,
-      JSON.pretty_generate(
-        "pins" => [
-          {
-            "location" => url,
-            "state" => { "version" => version }
-          },
-        ]
-      )
-    )
   end
 
   def capture_stdout

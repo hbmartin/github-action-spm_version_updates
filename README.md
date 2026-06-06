@@ -212,7 +212,20 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | No | `false` |
 | `cache-version-tags` | Persist successful git tag lookups between runs with `actions/cache`. | No | `true` |
 | `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Set `0` to disable persistent cache reads and writes. | No | `21600` |
+| `setup-ruby` | Set up Ruby and install this action's bundle. Set to `false` only for later invocations in the same job after an earlier invocation has already run setup. | No | `true` |
 | `github-token` | GitHub token for API access | No | `${{ github.token }}` |
+
+### Runtime setup
+
+By default, each invocation sets up Ruby and installs the action bundle from this
+action's directory. In Swift manifest mode, the bundle skips the Xcode project
+parser dependency, so manifest-only runs avoid installing `xcodeproj`.
+
+If a job invokes this action multiple times, leave `setup-ruby` enabled on the
+first invocation and set `setup-ruby: false` on later invocations that use the
+same source mode or a subset of the first invocation's runtime dependencies. The
+action checks for Ruby, Bundler, and installed gems before running so a skipped
+setup fails with a clear error instead of a Bundler backtrace.
 
 ## How dependency constraints are handled
 
