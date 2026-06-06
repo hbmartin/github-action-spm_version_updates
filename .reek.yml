@@ -70,8 +70,6 @@ detectors:
   NilCheck:
     enabled: true
     exclude:
-    - GitOperations#self.branch_last_commit
-    - GitOperations#self.version_tags
     - ManifestParser#self.get_packages
     - ManifestParser#self.increment_patch_version
     - ManifestParser#self.package_calls

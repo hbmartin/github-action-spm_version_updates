@@ -43,6 +43,7 @@ jobs:
         ruby-version:
           - "3.2"
           - "3.3"
+          - "3.4"
     runs-on: ubuntu-latest
     steps:
       # actions/checkout v4.3.1

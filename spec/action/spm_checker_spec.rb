@@ -18,6 +18,24 @@ RSpec.describe SpmChecker do
   let(:manifests_dir) { File.expand_path("../support/manifests", __dir__) }
   let(:modules_manifest) { File.join(manifests_dir, "Modules", "Package.swift") }
   let(:build_tools_manifest) { File.join(manifests_dir, "BuildTools", "Package.swift") }
+  let(:persistent_cache_key) {
+    VersionTagsPersistentCache.cache_key("github.com/acme/shared", "https://github.com/acme/shared")
+  }
+  let(:cache_record_writer) {
+    lambda { |dir, tags:, repository_url: "https://github.com/acme/shared", fetched_at: Time.now.utc.iso8601|
+      cache_key = VersionTagsPersistentCache.cache_key("github.com/acme/shared", repository_url)
+      File.write(
+        File.join(dir, "#{cache_key}.json"),
+        JSON.pretty_generate(
+          {
+            "schema_version" => VersionTagsPersistentCache::SCHEMA_VERSION,
+            "fetched_at" => fetched_at,
+            "tags" => tags
+          }
+        )
+      )
+    }
+  }
 
   before do
     allow(GitOperations).to receive(:version_tags) do |url|
@@ -377,6 +395,123 @@ RSpec.describe SpmChecker do
       warnings = checker.check_manifests([modules_manifest])
 
       expect(warnings).not_to include(a_string_matching(/Kingfisher/))
+      expect(GitOperations).not_to have_received(:version_tags).with("https://github.com/onevcat/Kingfisher")
+    end
+
+    it "suppresses manifest semantic warnings below an ignore-until version", :aggregate_failures do
+      checker.repository_update_rules = RepositoryUpdateRules.from_hash(
+        "repositories" => [
+          { "url" => "ssh://github.com/onevcat/Kingfisher.git", "ignore-until" => "8.0.0" },
+        ]
+      )
+
+      warnings = checker.check_manifests([modules_manifest])
+
+      expect(warnings).not_to include(a_string_matching(/Kingfisher/))
+      expect(GitOperations).to have_received(:version_tags).with("https://github.com/onevcat/Kingfisher")
+    end
+
+    it "reports semantic warnings when the available version reaches ignore-until" do
+      checker.repository_update_rules = RepositoryUpdateRules.from_hash(
+        "repositories" => [
+          { "url" => "https://github.com/onevcat/Kingfisher", "ignore-until" => "7.10.2" },
+        ]
+      )
+
+      warnings = checker.check_manifests([modules_manifest])
+
+      expect(warnings).to include("Newer version of onevcat/Kingfisher: 7.10.2\nSource: #{modules_manifest}")
+    end
+
+    it "applies ignore-until to above-maximum semantic reports" do
+      Dir.mktmpdir do |dir|
+        manifest = File.join(dir, "Package.swift")
+        File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
+        File.write(
+          File.join(dir, "Package.resolved"),
+          {
+            "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
+            "version" => 2
+          }.to_json
+        )
+        allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b").and_return(versions("2.0.0", "1.1.0", "1.0.0"))
+        checker.report_above_maximum = true
+        checker.repository_update_rules = RepositoryUpdateRules.from_hash(
+          "repositories" => [
+            { "url" => "https://github.com/a/b", "ignore-until" => "2.0.0" },
+          ]
+        )
+
+        warnings = checker.check_manifests([manifest])
+
+        expect(warnings).to eq(
+          ["Newest version of a/b: 2.0.0 (but this package is configured up to the next major version)\nSource: #{manifest}"]
+        )
+      end
+    end
+
+    it "allows only patch and minor reports when allowed-updates is minor" do
+      Dir.mktmpdir do |dir|
+        manifest = File.join(dir, "Package.swift")
+        File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
+        File.write(
+          File.join(dir, "Package.resolved"),
+          {
+            "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
+            "version" => 2
+          }.to_json
+        )
+        allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b").and_return(versions("2.0.0", "1.1.0", "1.0.0"))
+        checker.report_above_maximum = true
+        checker.repository_update_rules = RepositoryUpdateRules.from_hash(
+          "repositories" => [
+            { "url" => "https://github.com/a/b", "allowed-updates" => "minor" },
+          ]
+        )
+
+        warnings = checker.check_manifests([manifest])
+
+        expect(warnings).to eq(["Newer version of a/b: 1.1.0\nSource: #{manifest}"])
+      end
+    end
+
+    it "combines ignore-until and allowed-updates suppression" do
+      Dir.mktmpdir do |dir|
+        manifest = File.join(dir, "Package.swift")
+        File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
+        File.write(
+          File.join(dir, "Package.resolved"),
+          {
+            "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
+            "version" => 2
+          }.to_json
+        )
+        allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b").and_return(versions("2.0.0", "1.1.0", "1.0.0"))
+        checker.report_above_maximum = true
+        checker.repository_update_rules = RepositoryUpdateRules.from_hash(
+          "repositories" => [
+            { "url" => "https://github.com/a/b", "ignore-until" => "2.0.0", "allowed-updates" => "minor" },
+          ]
+        )
+
+        warnings = checker.check_manifests([manifest])
+
+        expect(warnings).to eq([])
+      end
+    end
+
+    it "does not apply repo rules to branch warnings" do
+      checker.repository_update_rules = RepositoryUpdateRules.from_hash(
+        "repositories" => [
+          { "url" => "https://github.com/hbmartin/analytics-swift", "allowed-updates" => "patch" },
+        ]
+      )
+
+      warnings = checker.check_manifests([modules_manifest])
+
+      expect(warnings).to include(
+        "Newer commit available for hbmartin/analytics-swift (main): 1111111111111111111111111111111111111111\nSource: #{modules_manifest}"
+      )
     end
 
     it "uses explicit resolved paths when provided" do
@@ -506,7 +641,7 @@ RSpec.describe SpmChecker do
         repository_url = "https://user:token@github.com/acme/shared"
         checker.version_tags_cache_dir = dir
         checker.version_tags_cache_ttl_seconds = 60
-        write_cache_record(dir, repository_url:, fetched_at: "1970-01-01T00:00:00Z", tags: ["1.1.0", "1.0.0"])
+        cache_record_writer.call(dir, repository_url:, fetched_at: "1970-01-01T00:00:00Z", tags: ["1.1.0", "1.0.0"])
         allow(GitOperations).to receive(:version_tags).with(repository_url).and_return(versions("1.2.0", "1.0.0"))
 
         checker.send(:check_packages, cache_remote_packages(repository_url), cache_resolved_versions)
@@ -525,7 +660,7 @@ RSpec.describe SpmChecker do
       Dir.mktmpdir do |dir|
         checker.version_tags_cache_dir = dir
         checker.version_tags_cache_ttl_seconds = 0
-        write_cache_record(dir, tags: ["1.1.0", "1.0.0"])
+        cache_record_writer.call(dir, tags: ["1.1.0", "1.0.0"])
         allow(GitOperations).to receive(:version_tags).with("https://github.com/acme/shared").and_return(versions("1.2.0", "1.0.0"))
 
         checker.send(:check_packages, cache_remote_packages, cache_resolved_versions)
@@ -590,22 +725,5 @@ RSpec.describe SpmChecker do
 
   def cache_resolved_versions
     { "github.com/acme/shared" => "1.0.0" }
-  end
-
-  def persistent_cache_key(repository_url = "https://github.com/acme/shared")
-    VersionTagsPersistentCache.cache_key("github.com/acme/shared", repository_url)
-  end
-
-  def write_cache_record(dir, tags:, repository_url: "https://github.com/acme/shared", fetched_at: Time.now.utc.iso8601)
-    File.write(
-      File.join(dir, "#{persistent_cache_key(repository_url)}.json"),
-      JSON.pretty_generate(
-        {
-          "schema_version" => VersionTagsPersistentCache::SCHEMA_VERSION,
-          "fetched_at" => fetched_at,
-          "tags" => tags
-        }
-      )
-    )
   end
 end
