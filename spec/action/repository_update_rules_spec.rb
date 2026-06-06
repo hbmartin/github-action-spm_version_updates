@@ -42,6 +42,7 @@ RSpec.describe RepositoryUpdateRules do
   it "treats empty or nil repository rules as an empty configuration", :aggregate_failures do
     expect(load_yaml("")).to be_empty
     expect(described_class.from_hash({})).to be_empty
+    expect(described_class.from_hash(nil)).to be_empty
     expect(described_class.from_hash("repositories" => nil)).to be_empty
   end
 
