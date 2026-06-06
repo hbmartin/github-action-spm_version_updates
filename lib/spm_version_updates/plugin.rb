@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require "semantic"
 require_relative "git"
+require_relative "semver"
 require_relative "xcode"
 
 module Danger
@@ -90,6 +90,7 @@ module Danger
 
     def warn_for_new_versions_exact(available_versions, name, resolved_version)
       newest_version = newest_reportable_version(available_versions)
+      return if newest_version.nil?
       return if newest_version.to_s == resolved_version
 
       warn(
@@ -101,19 +102,21 @@ module Danger
 
     def warn_for_new_versions_range(available_versions, name, requirement, resolved_version)
       begin
-        max_version = Semantic::Version.new(requirement["maximumVersion"])
+        max_version = SpmVersionUpdates::Semver.new(requirement["maximumVersion"])
       rescue ArgumentError => error
         Kernel.warn("Unable to extract semver from #{requirement} for #{name} (#{error})")
         return
       end
-      newest_version = available_versions.first
+      newest_version = newest_reportable_version(available_versions)
+      return if newest_version.nil?
+
       if newest_version < max_version
-        warn("Newer version of #{name}: #{newest_version}")
+        warn("Newer version of #{name}: #{newest_version}") unless newest_version.to_s == resolved_version
       else
         newest_meeting_reqs = available_versions.find { |version|
           version < max_version && reportable_version?(version)
         }
-        warn("Newer version of #{name}: #{newest_meeting_reqs}") unless newest_meeting_reqs.to_s == resolved_version
+        warn("Newer version of #{name}: #{newest_meeting_reqs}") unless newest_meeting_reqs.nil? || newest_meeting_reqs.to_s == resolved_version
         if report_above_maximum
           warn(
             <<~TEXT
@@ -126,24 +129,26 @@ module Danger
 
     def warn_for_new_versions(major_or_minor, available_versions, name, resolved_version_string)
       begin
-        resolved_version = Semantic::Version.new(resolved_version_string)
+        resolved_version = SpmVersionUpdates::Semver.new(resolved_version_string)
       rescue ArgumentError => error
         Kernel.warn("Unable to extract semver from #{resolved_version_string} for #{name} (#{error})")
         return
       end
       newest_meeting_reqs = available_versions.find { |version|
-        (version.send(major_or_minor) == resolved_version.send(major_or_minor)) && reportable_version?(version)
+        version.major == resolved_version.major &&
+          (major_or_minor == :major || version.minor == resolved_version.minor) &&
+          reportable_version?(version)
       }
 
-      warn("Newer version of #{name}: #{newest_meeting_reqs}") unless newest_meeting_reqs == resolved_version
+      warn("Newer version of #{name}: #{newest_meeting_reqs}") unless newest_meeting_reqs.nil? || newest_meeting_reqs == resolved_version
       return unless report_above_maximum
 
       newest_above_reqs = newest_reportable_version(available_versions)
-      return if newest_above_reqs == newest_meeting_reqs || newest_meeting_reqs.to_s == resolved_version
+      return if newest_above_reqs == newest_meeting_reqs
 
       warn(
         <<~TEXT
-          Newest version of #{name}: #{available_versions.first} (but this package is configured up to the next #{major_or_minor} version)
+          Newest version of #{name}: #{newest_above_reqs} (but this package is configured up to the next #{major_or_minor} version)
         TEXT
       )
     end

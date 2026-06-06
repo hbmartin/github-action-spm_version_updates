@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
 require "open3"
+require_relative "semver"
 
 # Legacy git helper used by the Danger plugin API.
 module Git
+  ALLOWED_PROTOCOLS = "https:ssh:git"
+
   # Removes protocol and trailing .git from a repo URL
   # @param   [String] repo_url
   #          The URL of the repository
@@ -26,14 +29,14 @@ module Git
   # Call git to list tags
   # @param   [String] repo_url
   #          The URL of the dependency's repository
-  # @return [Array<Semantic::Version>]
+  # @return [Array<SpmVersionUpdates::Semver>]
   def self.version_tags(repo_url)
     versions = ls_remote("-t", repo_url)
       .split("\n")
       .map { |line| line.split("/tags/").last }
       .filter_map { |line|
         begin
-          Semantic::Version.new(line)
+          SpmVersionUpdates::Semver.new(line)
         rescue ArgumentError
           nil
         end
@@ -56,11 +59,18 @@ module Git
   end
 
   def self.ls_remote(flag, repo_url)
-    stdout, _stderr, status = Open3.capture3("git", "ls-remote", flag, repo_url)
+    stdout, _stderr, status = Open3.capture3(
+      { "GIT_ALLOW_PROTOCOL" => ALLOWED_PROTOCOLS },
+      "git",
+      "ls-remote",
+      flag,
+      "--",
+      repo_url
+    )
     return stdout if status.success?
 
     ""
-  rescue Errno::ENOENT
+  rescue SystemCallError
     ""
   end
 
