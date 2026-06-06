@@ -9,7 +9,7 @@ rules:
       form instead.
     paths:
       include:
-        - /lib/credential_redactor.rb
+        - lib/credential_redactor.rb
     patterns:
       - pattern-either:
           - pattern-inside: |
