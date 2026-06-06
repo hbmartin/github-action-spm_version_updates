@@ -2,17 +2,6 @@
 detectors:
   Attribute:
     enabled: false
-    exclude:
-    - SpmChecker#check_branches
-    - SpmChecker#check_revisions
-    - SpmChecker#check_when_exact
-    - SpmChecker#ignore_repos
-    - SpmChecker#report_above_maximum
-    - SpmChecker#report_pre_releases
-    - Danger::DangerSpmVersionUpdates#check_when_exact
-    - Danger::DangerSpmVersionUpdates#ignore_repos
-    - Danger::DangerSpmVersionUpdates#report_above_maximum
-    - Danger::DangerSpmVersionUpdates#report_pre_releases
   BooleanParameter:
     enabled: true
     exclude:
@@ -39,33 +28,11 @@ detectors:
   DuplicateMethodCall:
     enabled: true
     exclude:
-    - Action#env_flag
-    - Action#env_value
-    - Action#print_config
     - Action#run
-    - Action#run_checks
-    - ActionReporter#detail_records
-    - ActionReporter#emit_warning_annotations
-    - ActionReporter#env_value
-    - ActionReporter#write_update_summary
-    - GithubIntegration#build_legacy_warnings_message
-    - GithubIntegration#source_cell
     - ManifestParser#self.copy_string_literal
     - ManifestParser#self.matching_paren
     - ManifestParser#self.skip_block_comment
     - ManifestParser#self.strip_comments
-    - SpmChecker#check_packages
-    - SpmChecker#check_versioned_package
-    - SpmChecker#prefetch_version_tags
-    - SpmChecker#warn_for_new_versions
-    - SpmChecker#warn_for_new_versions_range
-    - Danger::DangerSpmVersionUpdates#check_for_updates
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions_range
-    - Xcode#self.find_packages_resolved_file
-    - Xcode#self.get_resolved_versions
-    - XcodeParser#self.find_packages_resolved_file
-    - XcodeParser#self.get_packages
     - with_env
     max_calls: 1
     allow_calls: []
@@ -73,11 +40,6 @@ detectors:
     enabled: true
     exclude:
     - Action#configure_checker
-    - Action#print_config
-    - ActionReporter#write_update_summary
-    - GithubIntegration#build_legacy_warnings_message
-    - GithubIntegration#source_cell
-    - SpmChecker#check_packages
     - SpmChecker#version_tag_lookup_required?
     - parse
   InstanceVariableAssumption:
@@ -85,17 +47,8 @@ detectors:
     exclude:
     - Danger::DangerSpmVersionUpdates
   IrresponsibleModule:
-    enabled: false
-    exclude:
-    - ManifestParser::CouldNotFindManifest
-    - ManifestParser::CouldNotFindResolvedFile
-    - ManifestParser::ManifestPathMustBeSet
-    - Git
-    - Xcode
-    - Xcode::CouldNotFindResolvedFile
-    - Xcode::XcodeprojPathMustBeSet
-    - XcodeParser::CouldNotFindResolvedFile
-    - XcodeParser::XcodeprojPathMustBeSet
+    enabled: true
+    exclude: []
   LongParameterList:
     enabled: true
     exclude:
@@ -131,7 +84,6 @@ detectors:
     enabled: true
     exclude:
     - ActionReporter#detail_records
-    - ActionReporter#emit_warning_annotations
     - Xcode#self.get_resolved_versions
     max_allowed_nesting: 1
     ignore_iterators:
@@ -142,11 +94,9 @@ detectors:
     - Action#env_flag
     - Action#env_value
     - ActionReporter#detail_records
-    - ActionReporter#env_value
     - ActionReporter#parsed_warning_record
     - GitOperations#self.branch_last_commit
     - GitOperations#self.version_tags
-    - GithubIntegration#initialize
     - ManifestParser#self.get_packages
     - ManifestParser#self.increment_patch_version
     - ManifestParser#self.package_calls
@@ -159,9 +109,6 @@ detectors:
     - SpmChecker#warn_for_new_versions_range
     - SpmChecker#warn_for_revision
     - Danger::DangerSpmVersionUpdates#check_for_updates
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions_exact
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions_range
     - Xcode#self.get_packages
     - XcodeParser#self.get_packages
     - with_env
@@ -169,7 +116,6 @@ detectors:
     enabled: true
     exclude:
     - SpmChecker
-    - Danger::DangerSpmVersionUpdates
     max_ifs: 2
   SubclassedFromCoreClass:
     enabled: true
@@ -194,18 +140,14 @@ detectors:
     enabled: true
     exclude:
     - Action#report
-    - initialize
     - Action#configure_checker
     - Action#print_config
     - Action#run
     - Action#run_checks
     - ActionReporter#detail_records
-    - ActionReporter#emit_warning_annotations
-    - ActionReporter#write_action_outputs
-    - ActionReporter#write_step_summary
-    - ActionReporter#write_update_summary
     - GitOperations#self.ls_remote
     - GitOperations#self.version_tags
+    - GithubIntegration#initialize
     - GithubIntegration#build_warnings_message
     - GithubIntegration#extract_pr_number
     - GithubIntegration#find_existing_comment
@@ -222,6 +164,7 @@ detectors:
     - SpmChecker#check_manifests
     - SpmChecker#check_packages
     - SpmChecker#check_versioned_package
+    - SpmChecker#initialize
     - SpmChecker#merged_resolved_versions
     - SpmChecker#package_contexts
     - SpmChecker#prefetch_version_tags
@@ -273,20 +216,15 @@ detectors:
     enabled: true
     exclude: []
   UnusedPrivateMethod:
-    enabled: false
+    enabled: true
     exclude: []
   UtilityFunction:
     enabled: true
     exclude:
-    - Action#configure_checker
     - Action#env_csv
-    - Action#env_flag
     - Action#env_lines
     - Action#env_value
-    - ActionReporter#env_value
-    - ActionReporter#escape_workflow_data
     - ActionReporter#parsed_warning_record
-    - ActionReporter#write_multiline_output
     - GithubIntegration#detail_value
     - GithubIntegration#display_version
     - GithubIntegration#how_to_update_details

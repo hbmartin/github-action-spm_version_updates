@@ -244,12 +244,15 @@ module ManifestParser
                        :copy_string_literal,
                        :skip_block_comment
 
+  # Raised when manifest mode is invoked without a manifest path.
   class ManifestPathMustBeSet < StandardError
   end
 
+  # Raised when a configured Package.swift manifest is missing.
   class CouldNotFindManifest < StandardError
   end
 
+  # Raised when manifest mode cannot find an expected Package.resolved file.
   class CouldNotFindResolvedFile < StandardError
   end
 end

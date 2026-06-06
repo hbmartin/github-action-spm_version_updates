@@ -102,12 +102,75 @@ class GithubIntegration
     end
   end
 
+  # Renders the legacy numbered warning list used when structured details are absent.
+  class LegacyWarningsMessage
+    def initialize(warnings, update_details)
+      @warnings = warnings
+      @update_details = update_details
+    end
+
+    def markdown
+      <<~MARKDOWN
+        #{header}#{warning_list}
+
+        #{@update_details}
+      MARKDOWN
+    end
+
+    private
+
+    attr_reader :warnings
+
+    def header
+      "⚠️ **Found #{warning_count} potential dependency update#{warning_count > 1 ? 's' : ''}:**\n\n"
+    end
+
+    def warning_count
+      @warning_count ||= warnings.size
+    end
+
+    def warning_list
+      # Continuation lines (e.g. "Source: ...") are indented so they stay part
+      # of the numbered list item when rendered as Markdown.
+      warnings.map.with_index(1) { |warning, index|
+        "#{index}. #{warning.gsub("\n", "\n   ")}"
+      }.join("\n")
+    end
+  end
+
+  # Renders the source column for grouped structured warning details.
+  class SourceCell
+    def initialize(sources, formatter)
+      @sources = sources
+      @formatter = formatter
+    end
+
+    def markdown
+      return "Xcode project" if source_count.zero?
+      return formatted_sources.first if source_count == 1
+
+      "#{source_count} manifests<br>#{formatted_sources.join('<br>')}"
+    end
+
+    private
+
+    attr_reader :sources, :formatter
+
+    def source_count
+      @source_count ||= sources.size
+    end
+
+    def formatted_sources
+      @formatted_sources ||= sources.map { |source| formatter.call(source) }
+    end
+  end
+
   def initialize
     @github_token = ENV.fetch("GITHUB_TOKEN", nil)
     @github_repository = ENV.fetch("GITHUB_REPOSITORY", nil)
     @github_event_path = ENV.fetch("GITHUB_EVENT_PATH", nil)
 
-    if @github_token.nil? || @github_token.empty?
+    if github_token_missing?
       puts("Warning: GITHUB_TOKEN not set, comments will not be posted")
       @client = nil
       return
@@ -143,6 +206,10 @@ class GithubIntegration
     return unless @client && @pr_number
 
     yield
+  end
+
+  def github_token_missing?
+    @github_token.to_s.empty?
   end
 
   def post_comment_body(full_message)
@@ -199,19 +266,7 @@ class GithubIntegration
   end
 
   def build_legacy_warnings_message(warnings)
-    header = "⚠️ **Found #{warnings.size} potential dependency update#{warnings.size > 1 ? 's' : ''}:**\n\n"
-
-    # Continuation lines (e.g. "Source: ...") are indented so they stay part
-    # of the numbered list item when rendered as Markdown.
-    warning_list = warnings.map.with_index(1) { |warning, index|
-      "#{index}. #{warning.gsub("\n", "\n   ")}"
-    }.join("\n")
-
-    <<~MARKDOWN
-      #{header}#{warning_list}
-
-      #{how_to_update_details}
-    MARKDOWN
+    LegacyWarningsMessage.new(warnings, how_to_update_details).markdown
   end
 
   def how_to_update_details
@@ -282,13 +337,7 @@ class GithubIntegration
   end
 
   def source_cell(sources)
-    return "Xcode project" if sources.empty?
-    return inline_code(sources.first) if sources.size == 1
-
-    source_list = sources
-      .map { |source| inline_code(source) }
-      .join("<br>")
-    "#{sources.size} manifests<br>#{source_list}"
+    SourceCell.new(sources, method(:inline_code)).markdown
   end
 
   def detail_value(detail, key)

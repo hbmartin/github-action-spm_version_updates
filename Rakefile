@@ -13,6 +13,7 @@ desc "Run all test and lint tasks"
 task :spec do
   Rake::Task["specs"].invoke
   Rake::Task["rubocop"].invoke
+  Rake::Task["reek"].invoke
   Rake::Task["spec_docs"].invoke
 end
 

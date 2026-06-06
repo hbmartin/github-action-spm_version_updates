@@ -2,6 +2,7 @@
 
 require "xcodeproj"
 
+# Legacy Xcode project parser used by the Danger plugin API.
 module Xcode
   # Find the configured SPM dependencies in the xcodeproj
   # @param   [String] xcodeproj_path
@@ -10,14 +11,10 @@ module Xcode
   def self.get_packages(xcodeproj_path)
     raise(XcodeprojPathMustBeSet) if xcodeproj_path.nil? || xcodeproj_path.empty?
 
-    project = Xcodeproj::Project.open(xcodeproj_path)
-    project.objects
-      .select { |obj|
-        obj.kind_of?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
-      }
-      .to_h { |package|
-        [Git.trim_repo_url(package.repositoryURL), package.requirement]
-      }
+    remote_swift_packages(Xcodeproj::Project.open(xcodeproj_path)).to_h { |package|
+      repository_url = package.repositoryURL
+      [Git.trim_repo_url(repository_url), package.requirement]
+    }
   end
 
   # Extracts resolved versions from Package.resolved relative to an Xcode project
@@ -33,9 +30,10 @@ module Xcode
       contents = JSON.load_file!(resolved_path)
       pins = contents["pins"] || contents["object"]["pins"]
       pins.to_h { |pin|
+        state = pin["state"]
         [
           Git.trim_repo_url(pin["location"] || pin["repositoryURL"]),
-          pin["state"]["version"] || pin["state"]["revision"],
+          state["version"] || state["revision"],
         ]
       }
     }
@@ -45,27 +43,31 @@ module Xcode
   # Find the Packages.resolved file
   # @return [Array<String>]
   def self.find_packages_resolved_file(xcodeproj_path)
-    locations = []
     # First check the workspace for a resolved file
     workspace = xcodeproj_path.sub("xcodeproj", "xcworkspace")
-    if Dir.exist?(workspace)
-      path = File.join(workspace, "xcshareddata", "swiftpm", "Package.resolved")
-      locations << path if File.exist?(path)
-    end
+    workspace_resolved = File.join(workspace, "xcshareddata", "swiftpm", "Package.resolved")
 
     # Then check the project for a resolved file
-    path = File.join(xcodeproj_path, "project.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved")
-    locations << path if File.exist?(path)
+    project_resolved = File.join(xcodeproj_path, "project.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved")
+    locations = [workspace_resolved, project_resolved].select { |path| File.exist?(path) }
 
-    $stderr.puts("Searching for resolved packages in: #{locations}")
+    Kernel.warn("Searching for resolved packages in: #{locations}")
     locations
   end
 
-  private_class_method :find_packages_resolved_file
+  def self.remote_swift_packages(project)
+    project.objects.select { |obj|
+      obj.kind_of?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+    }
+  end
 
+  private_class_method :find_packages_resolved_file, :remote_swift_packages
+
+  # Raised when Danger plugin Xcode mode is invoked without a project path.
   class XcodeprojPathMustBeSet < StandardError
   end
 
+  # Raised when a Danger plugin Xcode project has no Package.resolved file.
   class CouldNotFindResolvedFile < StandardError
   end
 end

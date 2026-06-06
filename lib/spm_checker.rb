@@ -10,6 +10,7 @@ require_relative "xcode_parser"
 class SpmChecker
   VERSION_TAG_WORKER_COUNT = 8
 
+  # Raised when allow-hosts blocks a repository before git is contacted.
   class DisallowedRepositoryHost < StandardError; end
 
   # Normalizes user-provided allow-host entries into hostnames.
@@ -199,39 +200,52 @@ class SpmChecker
     prefetch_version_tags(packages)
 
     packages.each { |package|
-      if package[:kind] == "branch"
-        warn_for_branch(
-          package[:requirement]["branch"],
-          package[:name],
-          package[:normalized_url],
-          package[:repository_url],
-          package[:resolved_version],
-          package[:source]
-        ) if @check_branches
+      kind = package[:kind]
+      name = package[:name]
+      normalized_url = package[:normalized_url]
+      repository_url = package[:repository_url]
+      requirement = package[:requirement]
+      resolved_version = package[:resolved_version]
+      package_source = package[:source]
+
+      if kind == "branch"
+        if @check_branches
+          warn_for_branch(
+            requirement["branch"],
+            name,
+            normalized_url,
+            repository_url,
+            resolved_version,
+            package_source
+          )
+        end
         next
       end
 
-      if package[:kind] == "revision"
-        warn_for_revision(
-          package[:name],
-          package[:normalized_url],
-          package[:repository_url],
-          package[:resolved_version],
-          version_tags_for(package),
-          package[:source]
-        ) if @check_revisions
+      available_versions = version_tags_for(package)
+      if kind == "revision"
+        if @check_revisions
+          warn_for_revision(
+            name,
+            normalized_url,
+            repository_url,
+            resolved_version,
+            available_versions,
+            package_source
+          )
+        end
         next
       end
 
       check_versioned_package(
-        package[:kind],
-        package[:name],
-        package[:normalized_url],
-        package[:repository_url],
-        package[:requirement],
-        package[:resolved_version],
-        package[:source],
-        version_tags_for(package)
+        kind,
+        name,
+        normalized_url,
+        repository_url,
+        requirement,
+        resolved_version,
+        package_source,
+        available_versions
       )
     }
   end
@@ -290,9 +304,11 @@ class SpmChecker
   def prefetch_version_tags(packages)
     pending = packages.each_with_object({}) { |package, lookups|
       next unless version_tag_lookup_required?(package[:kind])
-      next if @version_tags_cache.key?(package[:cache_key])
 
-      lookups[package[:cache_key]] ||= package[:repository_url]
+      cache_key = package[:cache_key]
+      next if @version_tags_cache.key?(cache_key)
+
+      lookups[cache_key] ||= package[:repository_url]
     }.to_a
     return if pending.empty?
 
@@ -336,6 +352,14 @@ class SpmChecker
 
   def version_tags_for(package)
     @version_tags_cache.fetch(package[:cache_key], [])
+  end
+
+  def newest_reportable_version(available_versions)
+    available_versions.find { |version| reportable_version?(version) }
+  end
+
+  def reportable_version?(version)
+    @report_pre_releases || !version.pre
   end
 
   def check_versioned_package(kind, name, normalized_url, repository_url, requirement, resolved_version, source, available_versions = nil)
@@ -392,19 +416,20 @@ class SpmChecker
   def warn_for_branch(branch, name, normalized_url, repository_url, resolved_version, source = nil)
     last_commit = GitOperations.branch_last_commit(repository_url, branch)
     return if last_commit.nil?
+    return if last_commit == resolved_version
 
     add_warning(
       "Newer commit available for #{name} (#{branch}): #{last_commit}",
       source,
       warning_detail(:branch, name, normalized_url, repository_url, resolved_version, last_commit, "branch: #{branch}")
-    ) unless last_commit == resolved_version
+    )
   end
 
   # Reports the latest tagged version for a dependency pinned to a raw revision.
   # There is no general way to know whether an arbitrary commit is behind, so
   # this is purely informational and only runs when +check_revisions+ is enabled.
   def warn_for_revision(name, normalized_url, repository_url, resolved_version, available_versions, source = nil)
-    newest_version = available_versions.find { |version| @report_pre_releases ? true : version.pre.nil? }
+    newest_version = newest_reportable_version(available_versions)
     return if newest_version.nil?
 
     add_warning(
@@ -415,16 +440,15 @@ class SpmChecker
   end
 
   def warn_for_new_versions_exact(available_versions, name, normalized_url, repository_url, resolved_version, source = nil)
-    newest_version = available_versions.find { |version|
-      @report_pre_releases ? true : version.pre.nil?
-    }
+    newest_version = newest_reportable_version(available_versions)
     return if newest_version.nil?
+    return if newest_version.to_s == resolved_version
 
     add_warning(
       "Newer version of #{name}: #{newest_version} (but this package is set to exact version #{resolved_version})",
       source,
       warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest_version, "exact version")
-    ) unless newest_version.to_s == resolved_version
+    )
   end
 
   def warn_for_new_versions_range(available_versions, name, normalized_url, repository_url, requirement, resolved_version, source = nil)
@@ -436,29 +460,35 @@ class SpmChecker
     end
     # Honor the pre-release policy: never report a pre-release as the newest
     # version when report_pre_releases is false.
-    newest = available_versions.find { |version| @report_pre_releases ? true : version.pre.nil? }
+    newest = newest_reportable_version(available_versions)
     return if newest.nil?
 
     if newest < max_version
-      add_warning(
-        "Newer version of #{name}: #{newest}",
-        source,
-        warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest, "version range")
-      ) unless newest.to_s == resolved_version
+      unless newest.to_s == resolved_version
+        add_warning(
+          "Newer version of #{name}: #{newest}",
+          source,
+          warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest, "version range")
+        )
+      end
     else
       newest_meeting_reqs = available_versions.find { |version|
-        version < max_version && (@report_pre_releases ? true : version.pre.nil?)
+        version < max_version && reportable_version?(version)
       }
-      add_warning(
-        "Newer version of #{name}: #{newest_meeting_reqs}",
-        source,
-        warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest_meeting_reqs, "version range")
-      ) unless newest_meeting_reqs.nil? || newest_meeting_reqs.to_s == resolved_version
-      add_warning(
-        "Newest version of #{name}: #{newest} (but this package is configured up to the next #{max_version} version)",
-        source,
-        warning_detail(:above_maximum, name, normalized_url, repository_url, resolved_version, newest, "above configured maximum")
-      ) if @report_above_maximum
+      unless newest_meeting_reqs.nil? || newest_meeting_reqs.to_s == resolved_version
+        add_warning(
+          "Newer version of #{name}: #{newest_meeting_reqs}",
+          source,
+          warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest_meeting_reqs, "version range")
+        )
+      end
+      if @report_above_maximum
+        add_warning(
+          "Newest version of #{name}: #{newest} (but this package is configured up to the next #{max_version} version)",
+          source,
+          warning_detail(:above_maximum, name, normalized_url, repository_url, resolved_version, newest, "above configured maximum")
+        )
+      end
     end
   end
 
@@ -475,27 +505,29 @@ class SpmChecker
     newest_meeting_reqs = available_versions.find { |version|
       version.major == resolved_version.major &&
         (major_or_minor == :major || version.minor == resolved_version.minor) &&
-        (@report_pre_releases ? true : version.pre.nil?)
+        reportable_version?(version)
     }
 
-    add_warning(
-      "Newer version of #{name}: #{newest_meeting_reqs}",
-      source,
-      warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest_meeting_reqs, "up to next #{major_or_minor}")
-    ) unless newest_meeting_reqs.nil? || newest_meeting_reqs == resolved_version
+    unless newest_meeting_reqs.nil? || newest_meeting_reqs == resolved_version
+      add_warning(
+        "Newer version of #{name}: #{newest_meeting_reqs}",
+        source,
+        warning_detail(:version, name, normalized_url, repository_url, resolved_version, newest_meeting_reqs, "up to next #{major_or_minor}")
+      )
+    end
     return unless @report_above_maximum
 
-    newest_above_reqs = available_versions.find { |version|
-      @report_pre_releases ? true : version.pre.nil?
-    }
+    newest_above_reqs = newest_reportable_version(available_versions)
     # Suppressed only when nothing exists above the constraint (the newest overall
     # is the newest in-constraint version). Being at the newest in-constraint
     # version is intentionally still reported here, since report_above_maximum
     # exists precisely to surface the out-of-range (e.g. next major) version.
+    return if newest_above_reqs == newest_meeting_reqs
+
     add_warning(
       "Newest version of #{name}: #{newest_above_reqs} (but this package is configured up to the next #{major_or_minor} version)",
       source,
       warning_detail(:above_maximum, name, normalized_url, repository_url, resolved_version, newest_above_reqs, "above configured maximum")
-    ) unless newest_above_reqs == newest_meeting_reqs
+    )
   end
 end

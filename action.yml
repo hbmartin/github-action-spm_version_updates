@@ -43,7 +43,7 @@ inputs:
     required: false
     default: ''
   allow-hosts:
-    description: 'Comma-separated list of git remote hostnames allowed for version lookups. Empty allows any host.'
+    description: 'Comma-separated list of git remote hostnames allowed for version lookups. Empty allows any host for allowed git protocols.'
     required: false
     default: ''
   fail-on-updates:
@@ -79,6 +79,12 @@ outputs:
   updates-json:
     description: 'JSON array of dependency update objects with message plus available package, version, severity, repository, and source fields'
     value: ${{ steps.check.outputs.updates-json }}
+  blocked:
+    description: 'Whether the run was blocked before version lookup by a security gate such as allow-hosts'
+    value: ${{ steps.check.outputs.blocked }}
+  error-message:
+    description: 'Failure message when blocked is true'
+    value: ${{ steps.check.outputs.error-message }}
 
 runs:
   using: 'composite'
