@@ -90,7 +90,7 @@ module Danger
 
     def warn_for_new_versions_exact(available_versions, name, resolved_version)
       newest_version = newest_reportable_version(available_versions)
-      return if newest_version.nil?
+      return unless newest_version
       return if newest_version.to_s == resolved_version
 
       warn(
@@ -108,7 +108,7 @@ module Danger
         return
       end
       newest_version = newest_reportable_version(available_versions)
-      return if newest_version.nil?
+      return unless newest_version
 
       if newest_version < max_version
         warn("Newer version of #{name}: #{newest_version}") unless newest_version.to_s == resolved_version
@@ -116,7 +116,7 @@ module Danger
         newest_meeting_reqs = available_versions.find { |version|
           version < max_version && reportable_version?(version)
         }
-        warn("Newer version of #{name}: #{newest_meeting_reqs}") unless newest_meeting_reqs.nil? || newest_meeting_reqs.to_s == resolved_version
+        warn("Newer version of #{name}: #{newest_meeting_reqs}") if newest_meeting_reqs && newest_meeting_reqs.to_s != resolved_version
         if report_above_maximum
           warn(
             <<~TEXT
@@ -140,7 +140,7 @@ module Danger
           reportable_version?(version)
       }
 
-      warn("Newer version of #{name}: #{newest_meeting_reqs}") unless newest_meeting_reqs.nil? || newest_meeting_reqs == resolved_version
+      warn("Newer version of #{name}: #{newest_meeting_reqs}") if newest_meeting_reqs && newest_meeting_reqs != resolved_version
       return unless report_above_maximum
 
       newest_above_reqs = newest_reportable_version(available_versions)

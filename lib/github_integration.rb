@@ -313,10 +313,25 @@ class GithubIntegration
 
     {
       package: detail_value(first, :package),
-      repository_url: detail_value(first, :repository_url),
+      repository_url: first_present_repository_url(entries),
       sources:,
       updates:
     }
+  end
+
+  def first_present_repository_url(entries)
+    first_present_detail_value(entries, :repository_url) || first_present_detail_value(entries, :normalized_url)
+  end
+
+  def first_present_detail_value(entries, key)
+    entries
+      .filter_map { |detail| present_detail_value(detail, key) }
+      .first
+  end
+
+  def present_detail_value(detail, key)
+    value = detail_value(detail, key).to_s.strip
+    value unless value.empty?
   end
 
   def warning_group_row(group)

@@ -42,6 +42,13 @@ class SpmChecker
       "Newer commit available for #{name} (#{branch}): #{last_commit}"
     end
 
+    def branch_update_warning
+      last_commit = GitOperations.branch_last_commit(repository_url, branch)
+      return unless branch_update?(last_commit)
+
+      [branch_warning_message(last_commit), last_commit, "branch: #{branch}"]
+    end
+
     def source_line
       "Source: #{source}" if source
     end
@@ -365,13 +372,15 @@ class SpmChecker
 
   # Warns if the branch has a newer commit than the resolved version.
   def warn_for_branch(package)
-    last_commit = GitOperations.branch_last_commit(package.repository_url, package.branch)
-    return unless package.branch_update?(last_commit)
+    warning = package.branch_update_warning
+    return unless warning
+
+    message, last_commit, note = warning
 
     add_warning(
-      package.branch_warning_message(last_commit),
+      message,
       package,
-      warning_detail(:branch, package, last_commit, "branch: #{package.branch}")
+      warning_detail(:branch, package, last_commit, note)
     )
   end
 

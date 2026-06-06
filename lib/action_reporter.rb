@@ -106,6 +106,50 @@ class ActionReporter
     end
   end
 
+  # Normalizes one legacy warning string plus optional structured detail.
+  class WarningRecord
+    def self.build(warnings, details)
+      Array(warnings).map.with_index { |warning, index| new(warning, details[index]).to_h }
+    end
+
+    def self.parse(warning)
+      message, source = warning.to_s.split("\nSource: ", 2)
+      record = { "message" => message }
+      record["source"] = source unless source.to_s.empty?
+      record
+    end
+    private_class_method :parse
+
+    def initialize(warning, detail)
+      @warning = warning
+      @detail = detail
+      @record = {}
+    end
+
+    def to_h
+      @record = parsed_warning.merge(string_keyed_detail)
+      normalize_message
+    end
+
+    private
+
+    def normalize_message
+      parsed_message = self.class.parse(@record["message"])
+      @record.merge(
+        "message" => parsed_message["message"],
+        "source" => @record["source"] || parsed_message["source"]
+      ).compact
+    end
+
+    def parsed_warning
+      self.class.parse(@warning)
+    end
+
+    def string_keyed_detail
+      @detail.to_h.transform_keys(&:to_s).compact
+    end
+  end
+
   def initialize(warnings, warning_details = nil)
     @warnings = Array(warnings)
     @warning_details = Array(warning_details)
@@ -118,7 +162,7 @@ class ActionReporter
   end
 
   def records
-    @records ||= detail_records.map { |record| UpdateSeverity.apply(record) }
+    @records ||= warning_records.map { |record| UpdateSeverity.apply(record) }
   end
 
   def severity_counts
@@ -128,30 +172,7 @@ class ActionReporter
   private
 
   def warning_records
-    @warnings.map { |warning| parsed_warning_record(warning) }
-  end
-
-  def detail_records
-    warning_records.map.with_index { |fallback, index| detail_record(fallback, @warning_details[index]) }
-  end
-
-  def detail_record(fallback, detail)
-    record = fallback.merge(string_keyed_detail(detail))
-    parsed_message = parsed_warning_record(record["message"])
-    record["message"] = parsed_message["message"]
-    record["source"] ||= parsed_message["source"] if parsed_message.key?("source")
-    record
-  end
-
-  def string_keyed_detail(detail)
-    detail.to_h.transform_keys(&:to_s).compact
-  end
-
-  def parsed_warning_record(warning)
-    message, source = warning.to_s.split("\nSource: ", 2)
-    record = { "message" => message }
-    record["source"] = source unless source.to_s.empty?
-    record
+    WarningRecord.build(@warnings, @warning_details)
   end
 
   def write_action_outputs
