@@ -11,7 +11,6 @@ detectors:
     exclude:
     - ManifestParser#self.version_range_requirement
     - Danger::DangerSpmVersionUpdates#warn_for_branch
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions_range
   DataClump:
     enabled: true
     exclude:
@@ -103,7 +102,6 @@ detectors:
     exclude:
     - Action#report
     - Action#configure_checker
-    - Action#print_config
     - Action#run
     - GitOperations#self.ls_remote
     - GitOperations#self.version_tags

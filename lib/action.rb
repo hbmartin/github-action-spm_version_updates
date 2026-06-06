@@ -18,6 +18,76 @@ class Action
   # Raised when the configured combination of source inputs is invalid.
   class ModeError < StandardError; end
 
+  # Prints the resolved action configuration in the same order as the action log.
+  class ConfigPrinter
+    def initialize(inputs)
+      @inputs = inputs
+    end
+
+    def print
+      puts("SPM Version Updates GitHub Action")
+      print_source_inputs
+      print_check_inputs
+      print_report_inputs
+      print_cache_inputs
+    end
+
+    private
+
+    def print_source_inputs
+      print_optional_value(["Xcode project", :xcode_project_path])
+      print_list(["Package manifests", :manifest_paths])
+      print_list(["Package resolved", :resolved_paths])
+    end
+
+    def print_check_inputs
+      print_version_check_inputs
+      print_filter_inputs
+    end
+
+    def print_version_check_inputs
+      print_value(["Check when exact", :check_when_exact])
+      print_value(["Check branches", :check_branches])
+      print_value(["Check revisions", :check_revisions])
+      print_value(["Report above maximum", :report_above_maximum])
+      print_value(["Report pre-releases", :report_pre_releases])
+    end
+
+    def print_filter_inputs
+      print_list(["Ignore repos", :ignore_repos])
+      print_optional_value(["Repo rules", :repo_rules_path])
+      print_list(["Allow hosts", :allow_hosts])
+    end
+
+    def print_report_inputs
+      puts("Fail on: #{@inputs[:fail_on] || 'none'}")
+      print_value(["Comment on success", :comment_on_success])
+    end
+
+    def print_cache_inputs
+      print_value(["Cache version tags", :cache_version_tags])
+      print_value(["Version tags cache TTL", :version_tags_cache_ttl])
+    end
+
+    def print_value(input)
+      label, key = input
+      puts("#{label}: #{@inputs[key]}")
+    end
+
+    def print_optional_value(input)
+      label, key = input
+      value = @inputs[key]
+      puts("#{label}: #{value}") if value
+    end
+
+    def print_list(input)
+      label, key = input
+      values = @inputs[key]
+      puts("#{label}: #{values.join(', ')}") unless values.empty?
+    end
+  end
+  private_constant :ConfigPrinter
+
   def initialize(reporter_sink: nil, checker_factory: SpmChecker, github_integration: nil)
     @reporter_sink = [reporter_sink, github_integration].find { |sink| sink } || GithubIntegration.new
     @checker_factory = checker_factory
@@ -25,7 +95,7 @@ class Action
 
   def run
     inputs = read_inputs
-    print_config(inputs)
+    ConfigPrinter.new(inputs).print
     move_to_workspace
 
     checker = configure_checker(inputs)
@@ -84,41 +154,16 @@ class Action
     }
   end
 
-  def print_config(inputs)
-    xcode_project_path = inputs[:xcode_project_path]
-    manifest_paths = inputs[:manifest_paths]
-    resolved_paths = inputs[:resolved_paths]
-    ignore_repos = inputs[:ignore_repos]
-    repo_rules_path = inputs[:repo_rules_path]
-    allow_hosts = inputs[:allow_hosts]
-
-    puts("SPM Version Updates GitHub Action")
-    puts("Xcode project: #{xcode_project_path}") if xcode_project_path
-    puts("Package manifests: #{manifest_paths.join(', ')}") unless manifest_paths.empty?
-    puts("Package resolved: #{resolved_paths.join(', ')}") unless resolved_paths.empty?
-    puts("Check when exact: #{inputs[:check_when_exact]}")
-    puts("Check branches: #{inputs[:check_branches]}")
-    puts("Check revisions: #{inputs[:check_revisions]}")
-    puts("Report above maximum: #{inputs[:report_above_maximum]}")
-    puts("Report pre-releases: #{inputs[:report_pre_releases]}")
-    puts("Ignore repos: #{ignore_repos.join(', ')}") unless ignore_repos.empty?
-    puts("Repo rules: #{repo_rules_path}") if repo_rules_path
-    puts("Allow hosts: #{allow_hosts.join(', ')}") unless allow_hosts.empty?
-    puts("Fail on: #{inputs[:fail_on] || 'none'}")
-    puts("Comment on success: #{inputs[:comment_on_success]}")
-    puts("Cache version tags: #{inputs[:cache_version_tags]}")
-    puts("Version tags cache TTL: #{inputs[:version_tags_cache_ttl]}")
-  end
-
   def configure_checker(inputs)
     checker = @checker_factory.new
+    repo_rules_path = inputs[:repo_rules_path]
     checker.check_when_exact = inputs[:check_when_exact]
     checker.check_branches = inputs[:check_branches]
     checker.check_revisions = inputs[:check_revisions]
     checker.report_above_maximum = inputs[:report_above_maximum]
     checker.report_pre_releases = inputs[:report_pre_releases]
     checker.ignore_repos = inputs[:ignore_repos]
-    checker.repository_update_rules = RepositoryUpdateRules.load_file(inputs[:repo_rules_path]) if inputs[:repo_rules_path]
+    checker.repository_update_rules = RepositoryUpdateRules.load_file(repo_rules_path) if repo_rules_path
     checker.allow_hosts = inputs[:allow_hosts]
     checker.version_tags_cache_dir = inputs[:cache_version_tags] ? inputs[:version_tags_cache_dir] : nil
     checker.version_tags_cache_ttl_seconds = inputs[:version_tags_cache_ttl]

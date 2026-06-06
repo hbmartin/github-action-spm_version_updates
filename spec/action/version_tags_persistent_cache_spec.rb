@@ -32,16 +32,21 @@ RSpec.describe VersionTagsPersistentCache do
     Dir.mktmpdir("version-tags-cache") do |dir|
       cache = described_class.new(directory: dir, ttl_seconds: 21_600)
       written_paths = Queue.new
-      allow(File).to receive(:write).and_wrap_original { |original, path, contents|
-        written_paths << path
-        original.call(path, contents)
-      }
+      allow(File).to(
+        receive(:write).and_wrap_original do |original, path, contents|
+          written_paths << path
+          original.call(path, contents)
+        end
+      )
 
-      Array.new(2) { Thread.new { cache.write("cache-key", versions("1.1.0", "1.0.0")) } }.each(&:join)
+      threads = Array.new(2) do
+        Thread.new { cache.write("cache-key", versions("1.1.0", "1.0.0")) }
+      end
+      threads.each(&:join)
 
-      paths = 2.times.map { written_paths.pop }
+      paths = Array.new(2) { written_paths.pop }
       expect(paths.uniq.size).to eq(2)
-      expect(paths).to all(match(%r{cache-key\.json\.\d+-\d+\.tmp\z}))
+      expect(paths).to all(match(/cache-key\.json\.\d+-\d+\.tmp\z/))
       expect(File.file?(File.join(dir, "cache-key.json"))).to be(true)
       expect(Dir.children(dir).grep(/\.tmp\z/)).to be_empty
     end

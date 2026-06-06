@@ -56,6 +56,25 @@ RSpec.describe XcodeParser do
       end
     end
 
+    it "warns and falls back when CFPropertyList rejects the pbxproj file", :aggregate_failures do
+      stub_const("CFPropertyList", Module.new) unless defined?(CFPropertyList)
+      stub_const("CFPropertyList::CFPlistError", Class.new(StandardError))
+
+      Dir.mktmpdir("xcode-parser") do |dir|
+        project_path = File.join(dir, "App.xcodeproj")
+        FileUtils.mkdir_p(project_path)
+        File.write(File.join(project_path, "project.pbxproj"), "broken")
+        allow(XcodeProjectPackageReader).to receive(:pbxproj_objects)
+          .and_raise(CFPropertyList::CFPlistError, "invalid plist")
+
+        result = nil
+        expect {
+          result = XcodeProjectPackageReader.send(:package_references_from_pbxproj, project_path)
+        }.to output(/falling back to full Xcode project parsing/).to_stderr
+        expect(result).to be_nil
+      end
+    end
+
     it "does not swallow unexpected bugs in the lightweight pbxproj reader" do
       Dir.mktmpdir("xcode-parser") do |dir|
         project_path = File.join(dir, "App.xcodeproj")

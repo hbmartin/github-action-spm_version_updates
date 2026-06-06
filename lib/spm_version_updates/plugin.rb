@@ -35,6 +35,20 @@ module Danger
     # @return   [String]
     attr_accessor :repo_rules_path
 
+    # Repo-rules lookup fields for one pending Danger warning.
+    SuppressionDetail = Struct.new(:repository_url, :current_version, :available_version, :type, keyword_init: true) {
+      def record
+        {
+          type: type.to_s,
+          normalized_url: Git.trim_repo_url(repository_url),
+          repository_url:,
+          current_version: current_version.to_s,
+          available_version: available_version.to_s
+        }
+      end
+    }
+    private_constant :SuppressionDetail
+
     # A method that you can call from your Dangerfile
     # @param   [String] xcodeproj_path
     #          The path to your Xcode project
@@ -53,7 +67,7 @@ module Danger
       end
 
       self.ignore_repos = ignore_repos&.map! { |repo| Git.trim_repo_url(repo) }
-      rules = repository_update_rules
+      @repository_update_rules = repository_update_rules
 
       remote_packages.each { |repository_url, requirement|
         next if ignore_repos&.include?(repository_url)
@@ -76,13 +90,13 @@ module Danger
         next if available_versions.first.to_s == resolved_version
 
         if kind == "exactVersion" && @check_when_exact
-          warn_for_new_versions_exact(available_versions, name, repository_url, resolved_version, rules)
+          warn_for_new_versions_exact(available_versions, name, repository_url, resolved_version)
         elsif kind == "upToNextMajorVersion"
-          warn_for_new_versions(:major, available_versions, name, repository_url, resolved_version, rules)
+          warn_for_new_versions(:major, available_versions, name, repository_url, resolved_version)
         elsif kind == "upToNextMinorVersion"
-          warn_for_new_versions(:minor, available_versions, name, repository_url, resolved_version, rules)
+          warn_for_new_versions(:minor, available_versions, name, repository_url, resolved_version)
         elsif kind == "versionRange"
-          warn_for_new_versions_range(available_versions, name, repository_url, requirement, resolved_version, rules)
+          warn_for_new_versions_range(available_versions, name, repository_url, requirement, resolved_version)
         else
           Kernel.warn("Not processing dependency rule '#{kind}' for #{name} (#{repository_url})")
         end
@@ -101,7 +115,7 @@ module Danger
       warn("Newer commit available for #{name} (#{branch}): #{last_commit}") unless last_commit == resolved_version
     end
 
-    def warn_for_new_versions_exact(available_versions, name, repository_url, resolved_version, rules)
+    def warn_for_new_versions_exact(available_versions, name, repository_url, resolved_version)
       newest_version = newest_reportable_version(available_versions)
       return unless newest_version
       return if newest_version.to_s == resolved_version
@@ -113,12 +127,11 @@ module Danger
         repository_url:,
         current_version: resolved_version,
         available_version: newest_version,
-        type: :version,
-        rules:
+        type: :version
       )
     end
 
-    def warn_for_new_versions_range(available_versions, name, repository_url, requirement, resolved_version, rules)
+    def warn_for_new_versions_range(available_versions, name, repository_url, requirement, resolved_version)
       begin
         max_version = SpmVersionUpdates::Semver.new(requirement["maximumVersion"])
       rescue ArgumentError => error
@@ -135,8 +148,7 @@ module Danger
             repository_url:,
             current_version: resolved_version,
             available_version: newest_version,
-            type: :version,
-            rules:
+            type: :version
           )
         end
       else
@@ -149,8 +161,7 @@ module Danger
             repository_url:,
             current_version: resolved_version,
             available_version: newest_meeting_reqs,
-            type: :version,
-            rules:
+            type: :version
           )
         end
         if report_above_maximum
@@ -161,14 +172,13 @@ module Danger
             repository_url:,
             current_version: resolved_version,
             available_version: newest_version,
-            type: :above_maximum,
-            rules:
+            type: :above_maximum
           )
         end
       end
     end
 
-    def warn_for_new_versions(major_or_minor, available_versions, name, repository_url, resolved_version_string, rules = repository_update_rules)
+    def warn_for_new_versions(major_or_minor, available_versions, name, repository_url, resolved_version_string)
       begin
         resolved_version = SpmVersionUpdates::Semver.new(resolved_version_string)
       rescue ArgumentError => error
@@ -187,8 +197,7 @@ module Danger
           repository_url:,
           current_version: resolved_version_string,
           available_version: newest_meeting_reqs,
-          type: :version,
-          rules:
+          type: :version
         )
       end
       return unless report_above_maximum
@@ -203,19 +212,12 @@ module Danger
         repository_url:,
         current_version: resolved_version_string,
         available_version: newest_above_reqs,
-        type: :above_maximum,
-        rules:
+        type: :above_maximum
       )
     end
 
-    def warn_unless_suppressed(message, repository_url:, current_version:, available_version:, type:, rules:)
-      return if rules.suppressed?(
-        type: type.to_s,
-        normalized_url: Git.trim_repo_url(repository_url),
-        repository_url:,
-        current_version: current_version.to_s,
-        available_version: available_version.to_s
-      )
+    def warn_unless_suppressed(message, **detail)
+      return if @repository_update_rules.suppressed?(SuppressionDetail.new(**detail).record)
 
       warn(message)
     end

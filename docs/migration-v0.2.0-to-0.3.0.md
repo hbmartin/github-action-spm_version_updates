@@ -398,7 +398,7 @@ Behavioral fixes and additions since `v0.2.0`:
   reports the latest tagged version for reference rather than claiming an
   arbitrary commit is definitely behind.
 - Malformed package entries, nil requirements, nil repository URLs, and
-  unparseable semver values are skipped or logged instead of crashing common
+  unparsable semver values are skipped or logged instead of crashing common
   runs.
 
 ## PR comment changes

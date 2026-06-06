@@ -17,6 +17,7 @@ class RepositoryUpdateRules
   ROOT_KEYS = ["repositories"].freeze
   ENTRY_KEYS = ["url", "ignore-until", "allowed-updates"].freeze
 
+  # One normalized repository rule from repo-rules YAML.
   Rule = Struct.new(:normalized_url, :ignore_until, :allowed_updates, keyword_init: true) {
     def suppressed?(record)
       return true if suppress_until_version?(record)
@@ -30,7 +31,7 @@ class RepositoryUpdateRules
     def suppress_until_version?(record)
       return false unless ignore_until
 
-      available = RepositoryUpdateRules.semver(record_value(record, "available_version"))
+      available = RepositoryUpdateRules.semver(RepositoryUpdateRules.record_value(record, "available_version"))
       available && available < ignore_until
     end
 
@@ -38,14 +39,10 @@ class RepositoryUpdateRules
       return false unless allowed_updates
 
       severity = UpdateSeverity.for_versions(
-        record_value(record, "current_version"),
-        record_value(record, "available_version")
+        RepositoryUpdateRules.record_value(record, "current_version"),
+        RepositoryUpdateRules.record_value(record, "available_version")
       )
       severity && SEVERITY_RANK.fetch(severity) > SEVERITY_RANK.fetch(allowed_updates)
-    end
-
-    def record_value(record, key)
-      record[key] || record[key.to_sym]
     end
   }
   private_constant :Rule
@@ -55,25 +52,18 @@ class RepositoryUpdateRules
   end
 
   def self.load_file(path)
-    path = path.to_s.strip
-    raise(ArgumentError, "repo-rules-path was set but no file path was provided") if path.empty?
-    raise(ArgumentError, "repo-rules-path file does not exist: #{path}") unless File.file?(path)
-
+    path = validated_file_path(path)
     from_hash(YAML.safe_load_file(path, permitted_classes: [], permitted_symbols: [], aliases: false), source: path)
   rescue Psych::Exception => error
     raise(ArgumentError, "repo-rules YAML is invalid in #{path}: #{error.message}")
   end
 
-  def self.from_hash(config = nil, source: "repo rules", **keyword_config)
-    config = keyword_config if config.nil? && !keyword_config.empty?
+  def self.from_hash(config = :default_config, source: "repo rules", **keyword_config)
+    config = config_from(config, keyword_config)
+    config ||= {}
     raise(ArgumentError, "#{source} must contain a YAML mapping") unless config.kind_of?(Hash)
 
-    string_keys = config.transform_keys(&:to_s)
-    validate_keys!(string_keys, ROOT_KEYS, "#{source} root")
-    repositories = string_keys["repositories"]
-    raise(ArgumentError, "#{source} repositories must be a list") unless repositories.kind_of?(Array)
-
-    new(parse_repositories(repositories, source))
+    new(parse_repositories(repositories_from(config, source), source))
   end
 
   def self.semver(value)
@@ -85,24 +75,58 @@ class RepositoryUpdateRules
   def self.parse_repositories(repositories, source)
     repositories.each_with_object({}).with_index(1) { |(entry, rules), index|
       rule = parse_entry(entry, "#{source} repositories[#{index}]")
-      raise(ArgumentError, "duplicate repo-rules entry for #{rule.normalized_url}") if rules.key?(rule.normalized_url)
+      normalized_url = rule.normalized_url
+      raise(ArgumentError, "duplicate repo-rules entry for #{normalized_url}") if rules.key?(normalized_url)
 
-      rules[rule.normalized_url] = rule
+      rules[normalized_url] = rule
     }
   end
 
   def self.parse_entry(entry, source)
+    string_keys = rule_entry_from(entry, source)
+    rule = rule_attributes(string_keys, source)
+
+    Rule.new(**rule)
+  end
+
+  def self.config_from(config, keyword_config)
+    return keyword_config if config == :default_config && !keyword_config.empty?
+
+    config
+  end
+
+  def self.validated_file_path(path)
+    path = path.to_s.strip
+    raise(ArgumentError, "repo-rules-path was set but no file path was provided") if path.empty?
+    raise(ArgumentError, "repo-rules-path file does not exist: #{path}") unless File.file?(path)
+
+    path
+  end
+
+  def self.repositories_from(config, source)
+    string_keys = config.transform_keys(&:to_s)
+    validate_keys!(string_keys, ROOT_KEYS, "#{source} root")
+
+    repositories = string_keys.key?("repositories") ? string_keys["repositories"] : []
+    repositories = [] if repositories.nil?
+    raise(ArgumentError, "#{source} repositories must be a list") unless repositories.kind_of?(Array)
+
+    repositories
+  end
+
+  def self.rule_entry_from(entry, source)
     raise(ArgumentError, "#{source} must be a mapping") unless entry.kind_of?(Hash)
 
-    string_keys = entry.transform_keys(&:to_s)
-    validate_keys!(string_keys, ENTRY_KEYS, source)
+    entry.transform_keys(&:to_s).tap { |string_keys| validate_keys!(string_keys, ENTRY_KEYS, source) }
+  end
 
+  def self.rule_attributes(string_keys, source)
     normalized_url = normalized_url_for(required_value(string_keys, "url", source))
     ignore_until = parse_ignore_until(string_keys, source)
     allowed_updates = parse_allowed_updates(string_keys, source)
     raise(ArgumentError, "#{source} must set ignore-until or allowed-updates") unless ignore_until || allowed_updates
 
-    Rule.new(normalized_url:, ignore_until:, allowed_updates:)
+    { normalized_url:, ignore_until:, allowed_updates: }
   end
 
   def self.validate_keys!(values, allowed, source)
@@ -145,9 +169,18 @@ class RepositoryUpdateRules
     raise(ArgumentError, "#{source} allowed-updates must be patch, minor, or major")
   end
 
+  def self.record_value(record, key)
+    record[key] || record[key.to_sym]
+  end
+
   private_class_method(
     :parse_repositories,
     :parse_entry,
+    :config_from,
+    :validated_file_path,
+    :repositories_from,
+    :rule_entry_from,
+    :rule_attributes,
     :validate_keys!,
     :required_value,
     :normalized_url_for,
@@ -173,14 +206,13 @@ class RepositoryUpdateRules
   private
 
   def semantic_record?(record)
-    SEMANTIC_TYPES.include?(record_value(record, "type").to_s)
+    SEMANTIC_TYPES.include?(self.class.record_value(record, "type").to_s)
   end
 
   def normalized_record_url(record)
-    GitOperations.trim_repo_url(record_value(record, "normalized_url") || record_value(record, "repository_url"))
-  end
-
-  def record_value(record, key)
-    record[key] || record[key.to_sym]
+    rules = self.class
+    GitOperations.trim_repo_url(
+      rules.record_value(record, "normalized_url") || rules.record_value(record, "repository_url")
+    )
   end
 end

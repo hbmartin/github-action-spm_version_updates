@@ -38,17 +38,21 @@ class VersionTagsPersistentCache
   def write(cache_key, versions)
     return unless enabled?
 
+    write_record(cache_key, versions)
+  rescue StandardError => error
+    warn("Failed to write to persistent cache: #{error.message}")
+  end
+
+  private
+
+  def write_record(cache_key, versions)
     temp = temp_path(cache_key)
     FileUtils.mkdir_p(@directory)
     File.write(temp, JSON.pretty_generate(record_for(versions)))
     File.rename(temp, path_for(cache_key))
-  rescue StandardError => error
-    warn("Failed to write to persistent cache: #{error.message}")
   ensure
     FileUtils.rm_f(temp) if temp
   end
-
-  private
 
   def read_record(cache_key)
     JSON.parse(File.read(path_for(cache_key)))
