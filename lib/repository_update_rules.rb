@@ -59,7 +59,7 @@ class RepositoryUpdateRules
   end
 
   def self.from_hash(config = nil, source: "repo rules", **keyword_config)
-    config = keyword_config.empty? ? {} : keyword_config if config.nil?
+    config = keyword_config if config.nil?
     raise(ArgumentError, "#{source} must contain a YAML mapping") unless config.kind_of?(Hash)
 
     new(parse_repositories(repositories_from(config, source), source))
