@@ -20,6 +20,24 @@ class Action
 
   # Prints the resolved action configuration in the same order as the action log.
   class ConfigPrinter
+    LABELS = {
+      xcode_project_path: "Xcode project",
+      manifest_paths: "Package manifests",
+      resolved_paths: "Package resolved",
+      check_when_exact: "Check when exact",
+      check_branches: "Check branches",
+      check_revisions: "Check revisions",
+      report_above_maximum: "Report above maximum",
+      report_pre_releases: "Report pre-releases",
+      ignore_repos: "Ignore repos",
+      repo_rules_path: "Repo rules",
+      allow_hosts: "Allow hosts",
+      comment_on_success: "Comment on success",
+      cache_version_tags: "Cache version tags",
+      version_tags_cache_ttl: "Version tags cache TTL"
+    }.freeze
+    private_constant :LABELS
+
     def initialize(inputs)
       @inputs = inputs
     end
@@ -35,9 +53,9 @@ class Action
     private
 
     def print_source_inputs
-      print_optional_value("Xcode project", :xcode_project_path)
-      print_list("Package manifests", :manifest_paths)
-      print_list("Package resolved", :resolved_paths)
+      print_optional_value(:xcode_project_path)
+      print_list(:manifest_paths)
+      print_list(:resolved_paths)
     end
 
     def print_check_inputs
@@ -46,41 +64,41 @@ class Action
     end
 
     def print_version_check_inputs
-      print_value("Check when exact", :check_when_exact)
-      print_value("Check branches", :check_branches)
-      print_value("Check revisions", :check_revisions)
-      print_value("Report above maximum", :report_above_maximum)
-      print_value("Report pre-releases", :report_pre_releases)
+      print_value(:check_when_exact)
+      print_value(:check_branches)
+      print_value(:check_revisions)
+      print_value(:report_above_maximum)
+      print_value(:report_pre_releases)
     end
 
     def print_filter_inputs
-      print_list("Ignore repos", :ignore_repos)
-      print_optional_value("Repo rules", :repo_rules_path)
-      print_list("Allow hosts", :allow_hosts)
+      print_list(:ignore_repos)
+      print_optional_value(:repo_rules_path)
+      print_list(:allow_hosts)
     end
 
     def print_report_inputs
       puts("Fail on: #{@inputs[:fail_on] || 'none'}")
-      print_value("Comment on success", :comment_on_success)
+      print_value(:comment_on_success)
     end
 
     def print_cache_inputs
-      print_value("Cache version tags", :cache_version_tags)
-      print_value("Version tags cache TTL", :version_tags_cache_ttl)
+      print_value(:cache_version_tags)
+      print_value(:version_tags_cache_ttl)
     end
 
-    def print_value(label, key)
-      puts("#{label}: #{@inputs[key]}")
+    def print_value(key)
+      puts("#{LABELS.fetch(key)}: #{@inputs[key]}")
     end
 
-    def print_optional_value(label, key)
+    def print_optional_value(key)
       value = @inputs[key]
-      puts("#{label}: #{value}") if value
+      puts("#{LABELS.fetch(key)}: #{value}") if value
     end
 
-    def print_list(label, key)
+    def print_list(key)
       values = @inputs[key]
-      puts("#{label}: #{values.join(', ')}") unless values.empty?
+      puts("#{LABELS.fetch(key)}: #{values.join(', ')}") unless values.empty?
     end
   end
   private_constant :ConfigPrinter

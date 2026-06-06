@@ -53,13 +53,14 @@ class RepositoryUpdateRules
 
   def self.load_file(path)
     path = validated_file_path(path)
-    from_hash(YAML.safe_load_file(path, permitted_classes: [], permitted_symbols: [], aliases: false), source: path)
+    yaml_config = YAML.safe_load_file(path, permitted_classes: [], permitted_symbols: [], aliases: false) || {}
+    from_hash(yaml_config, source: path)
   rescue Psych::Exception => error
     raise(ArgumentError, "repo-rules YAML is invalid in #{path}: #{error.message}")
   end
 
-  def self.from_hash(config = nil, source: "repo rules", **keyword_config)
-    config = keyword_config if config.nil?
+  def self.from_hash(config = {}, source: "repo rules", **keyword_config)
+    config = keyword_config unless keyword_config.empty?
     raise(ArgumentError, "#{source} must contain a YAML mapping") unless config.kind_of?(Hash)
 
     new(parse_repositories(repositories_from(config, source), source))

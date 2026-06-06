@@ -24,6 +24,7 @@ module XcodeProjectPackageReader
     end
 
     def self.loaded_constant(namespace, name)
+      return unless namespace.kind_of?(Module)
       return if namespace.autoload?(name)
       return unless namespace.const_defined?(name, false)
 

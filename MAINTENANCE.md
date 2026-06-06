@@ -15,8 +15,8 @@ This document provides instructions for maintaining, developing, and releasing t
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/hbmartin/spm-version-updates-action.git
-   cd spm-version-updates-action
+   git clone https://github.com/hbmartin/github-action-spm_version_updates.git
+   cd github-action-spm_version_updates
    ```
 
 2. **Install dependencies**:
@@ -161,7 +161,6 @@ This action follows semantic versioning:
    - Test in actual GitHub Actions environment
 
 3. **Update documentation**:
-   - Update CHANGELOG.md with new features/fixes
    - Update README.md if needed
    - Update any version-specific documentation
 
@@ -178,19 +177,7 @@ This action follows semantic versioning:
    git checkout -b release/v1.2.0
    ```
 
-2. **Update CHANGELOG.md**:
-
-   ```markdown
-   ## [1.2.0] - 2024-XX-XX
-   ### Added
-   - New feature description
-   ### Fixed
-   - Bug fix description
-   ### Changed
-   - Breaking change description
-   ```
-
-3. **Commit changes**:
+2. **Commit changes**:
 
    ```bash
    git add .
@@ -198,9 +185,9 @@ This action follows semantic versioning:
    git push origin release/v1.2.0
    ```
 
-4. **Create Pull Request** for review
+3. **Create Pull Request** for review
 
-5. **After PR approval and merge**, create the release:
+4. **After PR approval and merge**, create the release:
 
    ```bash
    git checkout main
@@ -209,12 +196,12 @@ This action follows semantic versioning:
    git push origin v1.2.0
    ```
 
-6. **Create GitHub Release**:
+5. **Create GitHub Release**:
 
    ```bash
    gh release create v1.2.0 \
      --title "v1.2.0 - Release Title" \
-     --notes-file CHANGELOG.md \
+     --generate-notes \
      --draft=false \
      --prerelease=false
    ```
@@ -224,11 +211,9 @@ This action follows semantic versioning:
 1. **Update major version tag** (for major/minor releases):
 
    ```bash
-   # For v1.2.0, update v1 tag
-   git tag -d v1
-   git push origin :refs/tags/v1
-   git tag v1
-   git push origin v1
+   # For v1.2.0, update the moving v1 major tag.
+   git tag -f v1 v1.2.0
+   git push -f origin v1
    ```
 
 2. **Verify marketplace listing**:
@@ -238,7 +223,7 @@ This action follows semantic versioning:
 3. **Test the released version**:
 
    ```yaml
-   - uses: hbmartin/spm-version-updates-action@v1.2.0
+   - uses: hbmartin/github-action-spm_version_updates@v1
    ```
 
 ## GitHub Marketplace
@@ -344,7 +329,7 @@ Monitor action usage through:
 
 - **Keep README.md current** with latest features
 - **Update examples** to reflect best practices
-- **Maintain CHANGELOG.md** with all changes
+- **Keep GitHub Release notes accurate** for all user-facing changes
 - **Provide migration guides** for breaking changes
 
 This maintenance guide should be updated as the project evolves and new processes are established.

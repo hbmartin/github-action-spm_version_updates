@@ -79,6 +79,12 @@ RSpec.describe XcodeParser do
       end
     end
 
+    it "ignores fallback error namespaces that are not modules" do
+      fallback_errors = XcodeProjectPackageReader.const_get(:PbxprojFallbackErrors, false)
+
+      expect(fallback_errors.loaded_constant("not a module", :CFPlistError)).to be_nil
+    end
+
     it "does not swallow unexpected bugs in the lightweight pbxproj reader" do
       Dir.mktmpdir("xcode-parser") do |dir|
         project_path = File.join(dir, "App.xcodeproj")

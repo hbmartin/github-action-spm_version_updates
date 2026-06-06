@@ -1,9 +1,9 @@
-# Migration guide: `v0.2.0` to `0.3.0`
+# Migration guide: `v0.2.0` to `v1`
 
 This guide covers the user-facing and maintainer-facing changes between the
-`v0.2.0` and `0.3.0` git tags.
+`v0.2.0` release and the `v1` action tag.
 
-The short version: `v0.2.0` was documented as a Danger plugin. `0.3.0` adds a
+The short version: `v0.2.0` was documented as a Danger plugin. `v1` adds a
 first-class GitHub Action, a new Swift manifest source mode, structured GitHub
 Actions outputs, stricter git lookup behavior, and a higher Ruby requirement.
 
@@ -12,13 +12,10 @@ Actions outputs, stricter git lookup behavior, and a higher Ruby requirement.
 | If you are... | What changed | What to do |
 | --- | --- | --- |
 | Running the old Danger plugin from a `Dangerfile` | The plugin API still exists, but the project is now centered on the GitHub Action. | You can keep `spm_version_updates.check_for_updates("App.xcodeproj")`, but update Ruby and dependencies. |
-| Moving from Danger to the GitHub Action | `action.yml` is new in `0.3.0`. | Replace the Danger invocation with a workflow step using `xcode-project-path` or `package-manifest-paths`. |
+| Moving from Danger to the GitHub Action | `action.yml` is new in `v1`. | Replace the Danger invocation with a workflow step using `xcode-project-path` or `package-manifest-paths`. |
 | Checking dependencies from `Package.swift` files | Swift manifest mode did not exist in `v0.2.0`. | Use `package-manifest-paths` and make sure each manifest has a matching `Package.resolved`, or set `package-resolved-paths`. |
 | Consuming GitHub Actions outputs | Outputs did not exist in `v0.2.0`. | Read `updates-found`, severity counts, `updates-json`, `blocked`, and `error-message` from the action step. |
 | Maintaining this repository locally | The runtime and quality toolchain changed. | Use Ruby 3.2 or newer, preferably Ruby 3.3, and run the expanded spec/lint suite. |
-
-Note the tag spelling: the old tag is `v0.2.0`, while the new tag is `0.3.0`
-without the leading `v`.
 
 ## Breaking and compatibility notes
 
@@ -50,16 +47,13 @@ If your own `Gemfile` pinned `semantic` only for this project, remove that direc
 pin. Add a direct `semverify` pin only if your own code needs to use it.
 
 Do not rely on internal `Semantic::Version` objects from this project. The
-version wrapper in `0.3.0` returns `SpmVersionUpdates::Semver` values internally.
-
-One packaging detail from the compared tags: `0.3.0` changes
-`SpmVersionUpdates::VERSION` to `0.2.1`, not `0.3.0`. If you consume the code
-directly from git, pin the git tag explicitly:
+version wrapper in `v1` returns `SpmVersionUpdates::Semver` values internally.
+If you consume the code directly from git, pin the git tag explicitly:
 
 ```ruby
 gem "danger-spm_version_updates",
     git: "https://github.com/hbmartin/github-action-spm_version_updates.git",
-    tag: "0.3.0"
+    tag: "v1"
 ```
 
 ## Path 1: keep using the Danger plugin
@@ -115,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: hbmartin/github-action-spm_version_updates@0.3.0
+      - uses: hbmartin/github-action-spm_version_updates@v1
         with:
           xcode-project-path: "MyApp.xcodeproj"
 ```
@@ -123,12 +117,12 @@ jobs:
 The action reads files from the checked-out workspace, posts or updates one pull
 request comment, writes a step summary, and exposes machine-readable outputs.
 
-If the project later publishes a major action tag, you can switch the `uses:` pin
-to that major tag. Until then, pin `@0.3.0` or a commit SHA for reproducibility.
+The `v1` major tag should point at the latest backward-compatible v1 release.
+Pin `@v1.0.0` or a commit SHA when you need fully reproducible installs.
 
 ## Source mode migration
 
-`0.3.0` has two source modes. You must provide exactly one of them:
+`v1` has two source modes. You must provide exactly one of them:
 
 | Mode | Input | Use it when |
 | --- | --- | --- |
@@ -142,12 +136,12 @@ Providing both inputs, or neither input, fails with a clear error.
 If `v0.2.0` worked for your Xcode project, use `xcode-project-path`:
 
 ```yaml
-- uses: hbmartin/github-action-spm_version_updates@0.3.0
+- uses: hbmartin/github-action-spm_version_updates@v1
   with:
     xcode-project-path: "MyApp.xcodeproj"
 ```
 
-`0.3.0` still searches the Xcode-adjacent `Package.resolved` locations:
+`v1` still searches the Xcode-adjacent `Package.resolved` locations:
 
 ```text
 MyApp.xcworkspace/xcshareddata/swiftpm/Package.resolved
@@ -161,7 +155,7 @@ When both files exist, pins are merged. Blank repository URLs are ignored.
 Use this mode when the source of truth is `Package.swift`:
 
 ```yaml
-- uses: hbmartin/github-action-spm_version_updates@0.3.0
+- uses: hbmartin/github-action-spm_version_updates@v1
   with:
     package-manifest-paths: |
       Modules/Package.swift
@@ -178,7 +172,7 @@ By default, each manifest must have a `Package.resolved` next to it:
 If your resolved files live somewhere else, list them explicitly:
 
 ```yaml
-- uses: hbmartin/github-action-spm_version_updates@0.3.0
+- uses: hbmartin/github-action-spm_version_updates@v1
   with:
     package-manifest-paths: |
       Modules/Package.swift
@@ -197,7 +191,7 @@ If you previously generated a temporary `.xcodeproj` only so `v0.2.0` could read
 SPM dependencies, delete that workaround:
 
 ```diff
- - uses: hbmartin/github-action-spm_version_updates@0.3.0
+ - uses: hbmartin/github-action-spm_version_updates@v1
    with:
 -    xcode-project-path: .spm-version-updates/PackageChecks.xcodeproj
 +    package-manifest-paths: |
@@ -211,7 +205,7 @@ the real `Package.swift` and `Package.resolved` files.
 
 ## Configuration mapping
 
-| `v0.2.0` Danger config | `0.3.0` action input | Notes |
+| `v0.2.0` Danger config | `v1` action input | Notes |
 | --- | --- | --- |
 | `check_when_exact = true` | `check-when-exact: true` | Exact pins are skipped by default. |
 | `report_above_maximum = true` | `report-above-maximum: true` | Reports releases above the configured range, such as a new major version. |
@@ -233,7 +227,7 @@ Example with most options enabled:
 
 ```yaml
 - id: spm-updates
-  uses: hbmartin/github-action-spm_version_updates@0.3.0
+  uses: hbmartin/github-action-spm_version_updates@v1
   with:
     package-manifest-paths: |
       Modules/Package.swift
@@ -251,7 +245,7 @@ Example with most options enabled:
 
 ## Reporting changes
 
-`0.3.0` writes results in several places:
+`v1` writes results in several places:
 
 | Destination | Behavior |
 | --- | --- |
@@ -283,7 +277,7 @@ the action can intentionally fail after reporting:
 
 ```yaml
 - id: spm-updates
-  uses: hbmartin/github-action-spm_version_updates@0.3.0
+  uses: hbmartin/github-action-spm_version_updates@v1
   with:
     xcode-project-path: "MyApp.xcodeproj"
     fail-on: major
@@ -311,7 +305,7 @@ before it exits with failure for a matching threshold.
 
 ## Security and git remote changes
 
-Version checks still use `git ls-remote`, but `0.3.0` hardens how git is called:
+Version checks still use `git ls-remote`, but `v1` hardens how git is called:
 
 - Git is invoked without a shell and with `--` before the repository URL.
 - `GIT_ALLOW_PROTOCOL` is set to `https:ssh:git`.
@@ -345,7 +339,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: hbmartin/github-action-spm_version_updates@0.3.0
+      - uses: hbmartin/github-action-spm_version_updates@v1
         with:
           package-manifest-paths: Modules/Package.swift
           allow-hosts: github.com
@@ -367,7 +361,7 @@ exact dependency does not block the run while `check-when-exact` is `false`.
 
 ## Dependency constraint behavior
 
-The defaults in `0.3.0` are:
+The defaults in `v1` are:
 
 | Constraint type | Default behavior |
 | --- | --- |
@@ -385,14 +379,14 @@ Behavioral fixes and additions since `v0.2.0`:
 - Swift manifest mode supports common `.package(...)` forms, including `from:`,
   `exact:`, `branch:`, `revision:`, `.upToNextMajor`, `.upToNextMinor`,
   `.exact`, `.branch`, `.revision`, and open or closed version ranges.
-- Closed manifest ranges such as `"1.0.0"..."2.0.0"` are normalized to preserve
+- Closed manifest ranges such as `"1"..."2"` are normalized to preserve
   the inclusive upper bound.
 - Local manifest packages declared with `.package(path: ...)` are ignored.
 - Declarations inside Swift line comments and nested block comments are ignored.
 - `Package.resolved` v1 and v2 formats are both supported.
 - Up-to-next-minor checks now require the same major and minor version, avoiding
   false matches such as `2.5.0` for a dependency resolved at `1.5.0`.
-- Two-component tags such as `1.0` are normalized to `1.0.0` before parsing.
+- Two-component tags such as `1.0` are normalized to `1` before parsing.
 - Range and above-maximum reporting respect the pre-release filter.
 - Revision pins are opt-in through `check-revisions`; when enabled, the action
   reports the latest tagged version for reference rather than claiming an
