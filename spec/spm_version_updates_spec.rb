@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "tmpdir"
 require File.expand_path("coverage_helper", __dir__)
 require File.expand_path("spec_helper", __dir__)
 
@@ -190,6 +191,7 @@ module Danger
             SpmVersionUpdates::Semver.new("2.5.0"),
           ].sort.reverse,
           "kean/Nuke",
+          "github.com/kean/Nuke",
           "1.5.0"
         )
 
@@ -368,6 +370,57 @@ module Danger
         @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
 
         expect(@dangerfile.status_report[:warnings]).to eq([])
+      end
+
+      it "Suppresses semantic warnings with repo rules from a YAML file" do
+        allow(Git).to receive(:version_tags)
+          .and_return [
+            SpmVersionUpdates::Semver.new("12.1.6"),
+            SpmVersionUpdates::Semver.new("12.1.7"),
+          ].sort.reverse
+
+        Dir.mktmpdir do |dir|
+          rules_path = File.join(dir, "repo-rules.yml")
+          File.write(
+            rules_path,
+            <<~YAML
+              repositories:
+                - url: "ssh://github.com/kean/Nuke.git"
+                  ignore-until: "13.0.0"
+            YAML
+          )
+
+          @my_plugin.repo_rules_path = rules_path
+          @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
+        end
+
+        expect(@dangerfile.status_report[:warnings]).to eq([])
+      end
+
+      it "Does not suppress branch warnings with repo rules" do
+        allow(Git).to receive(:branch_last_commit)
+          .and_return "d658f302f56abfd7a163e3b5f44de39b780a64c2"
+
+        Dir.mktmpdir do |dir|
+          rules_path = File.join(dir, "repo-rules.yml")
+          File.write(
+            rules_path,
+            <<~YAML
+              repositories:
+                - url: "ssh://github.com/kean/Nuke.git"
+                  allowed-updates: "patch"
+            YAML
+          )
+
+          @my_plugin.repo_rules_path = rules_path
+          @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/Branch.xcodeproj")
+        end
+
+        expect(@dangerfile.status_report[:warnings]).to eq(
+          [
+            "Newer commit available for kean/Nuke (main): d658f302f56abfd7a163e3b5f44de39b780a64c2",
+          ]
+        )
       end
 
       it "Transforms git tags into version list" do

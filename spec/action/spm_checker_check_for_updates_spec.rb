@@ -133,6 +133,17 @@ RSpec.describe SpmChecker, "#check_for_updates" do
     expect(checker.check_for_updates(fixture("UpToNextMajor"))).to eq([])
   end
 
+  it "suppresses Xcode semantic warnings below an ignore-until version" do
+    allow(GitOperations).to receive(:version_tags).and_return(versions("12.1.7", "12.1.6"))
+    checker.repository_update_rules = RepositoryUpdateRules.from_hash(
+      "repositories" => [
+        { "url" => "ssh://github.com/kean/Nuke.git", "ignore-until" => "13.0.0" },
+      ]
+    )
+
+    expect(checker.check_for_updates(fixture("UpToNextMajor"))).to eq([])
+  end
+
   it "raises when no Package.resolved is present" do
     expect {
       checker.check_for_updates(fixture("NoPackagesResolved"))

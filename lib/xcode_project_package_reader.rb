@@ -23,8 +23,21 @@ module XcodeProjectPackageReader
     return nil unless File.file?(pbxproj_path)
 
     package_references_from_pbxproj_objects(pbxproj_objects(pbxproj_path))
-  rescue StandardError
+  rescue *pbxproj_fallback_errors => error
+    warn(
+      "WARNING: Could not read #{pbxproj_path} with the lightweight pbxproj parser " \
+      "(#{error.class}: #{error.message}); falling back to full Xcode project parsing."
+    )
     nil
+  end
+
+  def self.pbxproj_fallback_errors
+    [
+      SystemCallError,
+      IOError,
+      defined?(Xcodeproj::Informative) ? Xcodeproj::Informative : nil,
+      defined?(Nanaimo::Error) ? Nanaimo::Error : nil,
+    ].compact
   end
 
   def self.pbxproj_path_for(xcodeproj_path)
@@ -68,9 +81,10 @@ module XcodeProjectPackageReader
   end
 
   def self.workspace_resolved_path(xcodeproj_path)
-    return unless xcodeproj_path.end_with?(".xcodeproj")
+    path = xcodeproj_path.to_s.sub(%r{/+\z}, "")
+    return unless path.end_with?(".xcodeproj")
 
-    workspace = xcodeproj_path.sub(/\.xcodeproj\z/, ".xcworkspace")
+    workspace = path.sub(/\.xcodeproj\z/, ".xcworkspace")
     File.join(workspace, "xcshareddata", "swiftpm", "Package.resolved")
   end
 
@@ -79,6 +93,7 @@ module XcodeProjectPackageReader
   end
 
   private_class_method :package_references_from_pbxproj,
+                       :pbxproj_fallback_errors,
                        :pbxproj_path_for,
                        :pbxproj_objects,
                        :package_references_from_pbxproj_objects,

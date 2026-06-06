@@ -75,7 +75,15 @@ class VersionTagFetcher
   end
 
   def raise_lookup_error
+    first_error = @state.errors.first
     message = @state.errors.map(&:message).uniq.join("\n")
-    raise(GitOperations::LsRemoteError, message)
+
+    begin
+      raise first_error
+    rescue GitOperations::LsRemoteError
+      error = GitOperations::LsRemoteError.new(message)
+      error.set_backtrace(first_error.backtrace)
+      raise error
+    end
   end
 end

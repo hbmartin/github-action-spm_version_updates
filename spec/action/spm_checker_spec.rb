@@ -389,7 +389,7 @@ RSpec.describe SpmChecker do
       expect(warnings).to include(a_string_matching(%r{getsentry/sentry-cocoa is pinned to a revision .* latest tagged version is 8.20.0}))
     end
 
-    it "honors ignore_repos" do
+    it "honors ignore_repos", :aggregate_failures do
       checker.ignore_repos = ["https://github.com/onevcat/Kingfisher"]
 
       warnings = checker.check_manifests([modules_manifest])

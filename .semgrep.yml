@@ -9,7 +9,7 @@ rules:
       form instead.
     paths:
       include:
-        - /lib/credential_redactor.rb
+        - "**/lib/credential_redactor.rb"
     patterns:
       - pattern-either:
           - pattern-inside: |
@@ -26,3 +26,21 @@ rules:
               if $VALUE.nil?
                 return nil
               end
+  - id: semgrep.paths-include.no-leading-slash
+    languages:
+      - yaml
+    severity: ERROR
+    message: Semgrep paths.include entries are relative to the scan root and must not start with /.
+    paths:
+      include:
+        - .semgrep.yml
+    patterns:
+      - pattern-inside: |
+          paths:
+            include:
+              ...
+      - pattern: |
+          - $PATH
+      - metavariable-regex:
+          metavariable: $PATH
+          regex: ^/.+

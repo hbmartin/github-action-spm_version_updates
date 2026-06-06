@@ -5,6 +5,7 @@ require_relative "credential_redactor"
 require_relative "git_operations"
 require_relative "manifest_parser"
 require_relative "package_resolved"
+require_relative "repository_update_rules"
 require_relative "spm_package_context"
 require_relative "spm_version_updates/semver"
 require_relative "version_tag_fetcher"
@@ -23,7 +24,7 @@ class SpmChecker
   # string warnings for compatibility with existing plugin-style callers.
   attr_reader :warning_details
 
-  attr_accessor :allow_hosts, :check_branches, :check_revisions, :check_when_exact, :ignore_repos, :report_above_maximum, :report_pre_releases, :version_tags_cache_dir, :version_tags_cache_ttl_seconds
+  attr_accessor :allow_hosts, :check_branches, :check_revisions, :check_when_exact, :ignore_repos, :repository_update_rules, :report_above_maximum, :report_pre_releases, :version_tags_cache_dir, :version_tags_cache_ttl_seconds
 
   def self.redact_credentials(value)
     CredentialRedactor.redact(value)
@@ -36,6 +37,7 @@ class SpmChecker
     @report_above_maximum = false
     @report_pre_releases = false
     @ignore_repos = []
+    @repository_update_rules = RepositoryUpdateRules.empty
     @allow_hosts = []
     @warnings = []
     @warning_details = []
@@ -304,9 +306,12 @@ class SpmChecker
   end
 
   def add_warning(message, package, detail)
+    record = warning_detail_record(message, package, detail)
+    return if @repository_update_rules.suppressed?(record)
+
     full_message = [message, package.source_line].compact.join("\n")
     @warnings << full_message
-    @warning_details << warning_detail_record(message, package, detail)
+    @warning_details << record
     puts("WARNING: #{message}#{package.source_suffix}")
   end
 

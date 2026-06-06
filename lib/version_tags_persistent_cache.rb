@@ -42,6 +42,10 @@ class VersionTagsPersistentCache
     FileUtils.mkdir_p(@directory)
     File.write(temp, JSON.pretty_generate(record_for(versions)))
     File.rename(temp, path_for(cache_key))
+  rescue StandardError => error
+    warn("Failed to write to persistent cache: #{error.message}")
+  ensure
+    FileUtils.rm_f(temp) if temp
   end
 
   private
@@ -57,7 +61,7 @@ class VersionTagsPersistentCache
 
     fetched_at = Time.iso8601(record.fetch("fetched_at"))
     (@clock.call - fetched_at) <= @ttl_seconds
-  rescue ArgumentError, KeyError
+  rescue StandardError
     false
   end
 
@@ -86,6 +90,6 @@ class VersionTagsPersistentCache
   end
 
   def temp_path(cache_key)
-    "#{path_for(cache_key)}.tmp"
+    "#{path_for(cache_key)}.#{Process.pid}-#{Thread.current.object_id.abs}.tmp"
   end
 end
