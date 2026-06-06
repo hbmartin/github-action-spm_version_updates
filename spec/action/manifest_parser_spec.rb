@@ -28,11 +28,23 @@ RSpec.describe ManifestParser do
       packages = described_class.get_packages(File.join(manifest_dir, "Modules", "Package.swift"))
 
       expect(packages).to eq(
-        "github.com/onevcat/Kingfisher" => declared("https://github.com/onevcat/Kingfisher", { "kind" => "upToNextMajorVersion", "minimumVersion" => "7.0.0" }),
-        "github.com/apple/swift-argument-parser" => declared("https://github.com/apple/swift-argument-parser.git", { "kind" => "exactVersion", "version" => "1.2.3" }),
-        "github.com/kean/Nuke" => declared("https://github.com/kean/Nuke", { "kind" => "versionRange", "minimumVersion" => "12.0.0", "maximumVersion" => "13.0.0" }),
+        "github.com/onevcat/Kingfisher" => declared(
+          "https://github.com/onevcat/Kingfisher",
+          { "kind" => "upToNextMajorVersion", "minimumVersion" => "7.0.0" }
+        ),
+        "github.com/apple/swift-argument-parser" => declared(
+          "https://github.com/apple/swift-argument-parser.git",
+          { "kind" => "exactVersion", "version" => "1.2.3" }
+        ),
+        "github.com/kean/Nuke" => declared(
+          "https://github.com/kean/Nuke",
+          { "kind" => "versionRange", "minimumVersion" => "12.0.0", "maximumVersion" => "13.0.0" }
+        ),
         "github.com/hbmartin/analytics-swift" => declared("https://github.com/hbmartin/analytics-swift.git", { "kind" => "branch", "branch" => "main" }),
-        "github.com/getsentry/sentry-cocoa" => declared("https://github.com/getsentry/sentry-cocoa.git", { "kind" => "revision", "revision" => "14aa6e47b03b820fd2b338728637570b9e969994" })
+        "github.com/getsentry/sentry-cocoa" => declared(
+          "https://github.com/getsentry/sentry-cocoa.git",
+          { "kind" => "revision", "revision" => "14aa6e47b03b820fd2b338728637570b9e969994" }
+        )
       )
     end
 

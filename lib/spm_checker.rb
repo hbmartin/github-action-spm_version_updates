@@ -24,18 +24,24 @@ class SpmChecker
   # string warnings for compatibility with existing plugin-style callers.
   attr_reader :warning_details
 
-  attr_accessor :allow_hosts, :check_branches, :check_revisions, :check_when_exact, :ignore_repos, :repository_update_rules, :report_above_maximum, :report_pre_releases, :version_tags_cache_dir, :version_tags_cache_ttl_seconds
+  attr_accessor :allow_hosts,
+                :check_branches,
+                :check_revisions,
+                :check_when_exact,
+                :ignore_repos,
+                :repository_update_rules,
+                :report_above_maximum,
+                :report_pre_releases,
+                :version_tags_cache_dir,
+                :version_tags_cache_ttl_seconds
 
   def self.redact_credentials(value)
     CredentialRedactor.redact(value)
   end
 
   def initialize
-    @check_when_exact = false
+    @check_when_exact = @check_revisions = @report_above_maximum = @report_pre_releases = false
     @check_branches = true
-    @check_revisions = false
-    @report_above_maximum = false
-    @report_pre_releases = false
     @ignore_repos = []
     @repository_update_rules = RepositoryUpdateRules.empty
     @allow_hosts = []
@@ -309,8 +315,11 @@ class SpmChecker
     record = warning_detail_record(message, package, detail)
     return if @repository_update_rules.suppressed?(record)
 
-    full_message = [message, package.source_line].compact.join("\n")
-    @warnings << full_message
+    record_warning(message, package, record)
+  end
+
+  def record_warning(message, package, record)
+    @warnings << [message, package.source_line].compact.join("\n")
     @warning_details << record
     puts("WARNING: #{message}#{package.source_suffix}")
   end

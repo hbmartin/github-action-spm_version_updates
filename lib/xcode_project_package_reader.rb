@@ -19,16 +19,27 @@ module XcodeProjectPackageReader
   end
 
   def self.package_references_from_pbxproj(xcodeproj_path)
-    pbxproj_path = pbxproj_path_for(xcodeproj_path)
-    return nil unless File.file?(pbxproj_path)
+    read_existing_pbxproj(xcodeproj_path)
+  rescue *pbxproj_fallback_errors => error
+    warn(pbxproj_fallback_message(pbxproj_path_for(xcodeproj_path), error))
+    nil
+  end
+
+  def self.read_existing_pbxproj(xcodeproj_path)
+    pbxproj_path = existing_pbxproj_path(xcodeproj_path)
+    return unless pbxproj_path
 
     package_references_from_pbxproj_objects(pbxproj_objects(pbxproj_path))
-  rescue *pbxproj_fallback_errors => error
-    warn(
-      "WARNING: Could not read #{pbxproj_path} with the lightweight pbxproj parser " \
+  end
+
+  def self.existing_pbxproj_path(xcodeproj_path)
+    pbxproj_path = pbxproj_path_for(xcodeproj_path)
+    pbxproj_path if File.file?(pbxproj_path)
+  end
+
+  def self.pbxproj_fallback_message(pbxproj_path, error)
+    "WARNING: Could not read #{pbxproj_path} with the lightweight pbxproj parser " \
       "(#{error.class}: #{error.message}); falling back to full Xcode project parsing."
-    )
-    nil
   end
 
   def self.pbxproj_fallback_errors
@@ -93,6 +104,9 @@ module XcodeProjectPackageReader
   end
 
   private_class_method :package_references_from_pbxproj,
+                       :read_existing_pbxproj,
+                       :existing_pbxproj_path,
+                       :pbxproj_fallback_message,
                        :pbxproj_fallback_errors,
                        :pbxproj_path_for,
                        :pbxproj_objects,

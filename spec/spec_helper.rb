@@ -23,24 +23,28 @@ require "danger_plugin"
 # These functions are a subset of https://github.com/danger/danger/blob/master/spec/spec_helper.rb
 # If you are expanding these files, see if it's already been done ^.
 
+# Test output stream with the terminal dimensions Danger expects.
+class TestingOutput < StringIO
+  def winsize
+    [20, 9999]
+  end
+end
+
+# Cork board that exposes plain, uncoloured output for assertions.
+class TestingBoard < Cork::Board
+  def string
+    out.string.gsub(/\e\[([;\d]+)?m/, "")
+  end
+end
+
 # A silent version of the user interface,
 # it comes with an extra function `.string` which will
 # strip all ANSI colours from the string.
 
-# rubocop:disable Lint/NestedMethodDefinition
 def testing_ui
-  @output = StringIO.new
-  def @output.winsize
-    [20, 9999]
-  end
-
-  cork = Cork::Board.new(out: @output)
-  def cork.string
-    out.string.gsub(/\e\[([;\d]+)?m/, "")
-  end
-  cork
+  @output = TestingOutput.new
+  TestingBoard.new(out: @output)
 end
-# rubocop:enable Lint/NestedMethodDefinition
 
 # Example environment (ENV) that would come from
 # running a PR on TravisCI

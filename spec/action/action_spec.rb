@@ -173,6 +173,39 @@ RSpec.describe Action do
   end
 
   describe "#report" do
+    let(:kingfisher_update_record) {
+      {
+        "type" => "version",
+        "package" => "onevcat/Kingfisher",
+        "repository_url" => "https://[REDACTED]@github.com/onevcat/Kingfisher",
+        "current_version" => "7.0.0",
+        "available_version" => "8.0.0",
+        "severity" => "major",
+        "message" => "Newer version of onevcat/Kingfisher: 8.0.0",
+        "source" => "Modules/Package.swift"
+      }
+    }
+
+    let(:partial_warning_details) {
+      [
+        {
+          type: "version",
+          package: "onevcat/Kingfisher",
+          current_version: "7.0.0",
+          available_version: "8.0.0",
+          message: "Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift",
+          source: "Modules/Package.swift"
+        },
+        nil,
+        {
+          type: "version",
+          package: "orphaned/detail",
+          current_version: "1.0.0",
+          available_version: "2.0.0"
+        },
+      ]
+    }
+
     it "writes outputs, a step summary, annotations, and a PR comment for updates", :aggregate_failures do
       warnings = ["Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift"]
       warning_details = [
@@ -196,24 +229,8 @@ RSpec.describe Action do
         end
 
         output = File.read(output_path)
-        expect(output).to include("updates-found=1")
-        expect(output).to include("major-updates-found=1")
-        expect(output).to include("minor-updates-found=0")
-        expect(output).to include("patch-updates-found=0")
-        expect(output_json_from(output_path)).to eq(
-          [
-            {
-              "type" => "version",
-              "package" => "onevcat/Kingfisher",
-              "repository_url" => "https://[REDACTED]@github.com/onevcat/Kingfisher",
-              "current_version" => "7.0.0",
-              "available_version" => "8.0.0",
-              "severity" => "major",
-              "message" => "Newer version of onevcat/Kingfisher: 8.0.0",
-              "source" => "Modules/Package.swift"
-            },
-          ]
-        )
+        expect(output).to include("updates-found=1", "major-updates-found=1", "minor-updates-found=0", "patch-updates-found=0")
+        expect(output_json_from(output_path)).to eq([kingfisher_update_record])
         expect(output).not_to include("token@")
         expect(File.read(summary_path)).to include("Found **1** potential dependency update.")
         expect(stdout).to include(
@@ -229,23 +246,7 @@ RSpec.describe Action do
         "Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift",
         "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0\nSource: BuildTools/Package.swift",
       ]
-      warning_details = [
-        {
-          type: "version",
-          package: "onevcat/Kingfisher",
-          current_version: "7.0.0",
-          available_version: "8.0.0",
-          message: warnings.first,
-          source: "Modules/Package.swift"
-        },
-        nil,
-        {
-          type: "version",
-          package: "orphaned/detail",
-          current_version: "1.0.0",
-          available_version: "2.0.0"
-        },
-      ]
+      warning_details = partial_warning_details
 
       Dir.mktmpdir do |dir|
         output_path = File.join(dir, "github_output")
@@ -256,26 +257,18 @@ RSpec.describe Action do
         end
 
         output = File.read(output_path)
-        expect(output).to include("updates-found=2")
-        expect(output).to include("major-updates-found=1")
-        expect(output).to include("minor-updates-found=0")
-        expect(output).to include("patch-updates-found=0")
-        expect(output_json_from(output_path)).to eq(
-          [
-            {
-              "type" => "version",
-              "package" => "onevcat/Kingfisher",
-              "current_version" => "7.0.0",
-              "available_version" => "8.0.0",
-              "severity" => "major",
-              "message" => "Newer version of onevcat/Kingfisher: 8.0.0",
-              "source" => "Modules/Package.swift"
-            },
-            {
-              "message" => "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0",
-              "source" => "BuildTools/Package.swift"
-            },
-          ]
+        expect(output).to include("updates-found=2", "major-updates-found=1", "minor-updates-found=0", "patch-updates-found=0")
+        expect(output_json_from(output_path)).to contain_exactly(
+          a_hash_including(
+            "type" => "version",
+            "package" => "onevcat/Kingfisher",
+            "severity" => "major",
+            "source" => "Modules/Package.swift"
+          ),
+          {
+            "message" => "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0",
+            "source" => "BuildTools/Package.swift"
+          }
         )
         expect(File.read(summary_path)).to include("Found **2** potential dependency updates.")
       end

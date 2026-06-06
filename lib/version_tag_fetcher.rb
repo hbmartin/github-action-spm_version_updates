@@ -20,6 +20,30 @@ class VersionTagFetcher
   }
   private_constant :FetchState
 
+  # Re-raises worker lookup failures as one combined git lookup error.
+  LookupErrors = Struct.new(:errors) {
+    def raise_error
+      first_error = errors.first
+
+      begin
+        raise(first_error)
+      rescue GitOperations::LsRemoteError
+        raise(combined_error(first_error))
+      end
+    end
+
+    private
+
+    def combined_error(first_error)
+      GitOperations::LsRemoteError.new(message).tap { |error| error.set_backtrace(first_error.backtrace) }
+    end
+
+    def message
+      errors.map(&:message).uniq.join("\n")
+    end
+  }
+  private_constant :LookupErrors
+
   def self.call(lookups, worker_limit:, persistent_cache: nil)
     new(lookups, worker_limit, persistent_cache:).call
   end
@@ -75,15 +99,6 @@ class VersionTagFetcher
   end
 
   def raise_lookup_error
-    first_error = @state.errors.first
-    message = @state.errors.map(&:message).uniq.join("\n")
-
-    begin
-      raise first_error
-    rescue GitOperations::LsRemoteError
-      error = GitOperations::LsRemoteError.new(message)
-      error.set_backtrace(first_error.backtrace)
-      raise error
-    end
+    LookupErrors.new(@state.errors).raise_error
   end
 end

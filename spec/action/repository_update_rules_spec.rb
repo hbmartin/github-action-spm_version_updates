@@ -4,15 +4,18 @@ require "tmpdir"
 require_relative "../../lib/repository_update_rules"
 
 RSpec.describe RepositoryUpdateRules do
-  def record(repository_url: "https://github.com/acme/pkg", current_version: "1.0.0", available_version: "1.1.0", type: "version")
-    {
-      type:,
-      normalized_url: GitOperations.trim_repo_url(repository_url),
-      repository_url:,
-      current_version:,
-      available_version:
+  let(:record_for) {
+    lambda { |overrides = {}|
+      repository_url = overrides.fetch(:repository_url, "https://github.com/acme/pkg")
+      {
+        type: overrides.fetch(:type, "version"),
+        normalized_url: GitOperations.trim_repo_url(repository_url),
+        repository_url:,
+        current_version: overrides.fetch(:current_version, "1.0.0"),
+        available_version: overrides.fetch(:available_version, "1.1.0")
+      }
     }
-  end
+  }
 
   def load_yaml(contents)
     Dir.mktmpdir do |dir|
@@ -32,8 +35,8 @@ RSpec.describe RepositoryUpdateRules do
     )
 
     expect(rules).not_to be_empty
-    expect(rules).to be_suppressed(record(available_version: "1.9.9"))
-    expect(rules).not_to be_suppressed(record(available_version: "2.0.0"))
+    expect(rules).to be_suppressed(record_for.call(available_version: "1.9.9"))
+    expect(rules).not_to be_suppressed(record_for.call(available_version: "2.0.0"))
   end
 
   it "allows semantic updates at or below the configured allowed-updates level", :aggregate_failures do
@@ -43,9 +46,9 @@ RSpec.describe RepositoryUpdateRules do
       ]
     )
 
-    expect(rules).not_to be_suppressed(record(available_version: "1.0.1"))
-    expect(rules).not_to be_suppressed(record(available_version: "1.1.0"))
-    expect(rules).to be_suppressed(record(available_version: "2.0.0"))
+    expect(rules).not_to be_suppressed(record_for.call(available_version: "1.0.1"))
+    expect(rules).not_to be_suppressed(record_for.call(available_version: "1.1.0"))
+    expect(rules).to be_suppressed(record_for.call(available_version: "2.0.0"))
   end
 
   it "does not suppress branch or revision records", :aggregate_failures do
@@ -55,8 +58,8 @@ RSpec.describe RepositoryUpdateRules do
       ]
     )
 
-    expect(rules).not_to be_suppressed(record(type: "branch", available_version: "abcdef"))
-    expect(rules).not_to be_suppressed(record(type: "revision", available_version: "3.0.0"))
+    expect(rules).not_to be_suppressed(record_for.call(type: "branch", available_version: "abcdef"))
+    expect(rules).not_to be_suppressed(record_for.call(type: "revision", available_version: "3.0.0"))
   end
 
   it "rejects missing files" do
