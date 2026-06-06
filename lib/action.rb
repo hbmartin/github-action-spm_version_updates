@@ -3,6 +3,7 @@
 require_relative "action_reporter"
 require_relative "fail_on_threshold"
 require_relative "github_integration"
+require_relative "reporter_sink"
 require_relative "spm_checker"
 
 # Main GitHub Action entry point.
@@ -17,8 +18,8 @@ class Action
   # Raised when the configured combination of source inputs is invalid.
   class ModeError < StandardError; end
 
-  def initialize(github_integration: GithubIntegration.new, checker_factory: SpmChecker)
-    @github_integration = github_integration
+  def initialize(reporter_sink: nil, checker_factory: SpmChecker, github_integration: nil)
+    @reporter_sink = [reporter_sink, github_integration].find { |sink| sink } || GithubIntegration.new
     @checker_factory = checker_factory
   end
 
@@ -59,6 +60,10 @@ class Action
   private
 
   def read_inputs
+    cache_ttl_value = env_value("INPUT_VERSION_TAGS_CACHE_TTL")
+    cache_ttl = Integer(cache_ttl_value || VersionTagsPersistentCache::DEFAULT_TTL_SECONDS.to_s, exception: false)
+    raise(ArgumentError, "INPUT_VERSION_TAGS_CACHE_TTL must be an integer") unless cache_ttl
+
     {
       xcode_project_path: env_value("INPUT_XCODE_PROJECT_PATH"),
       manifest_paths: env_lines("INPUT_PACKAGE_MANIFEST_PATHS"),
@@ -71,7 +76,10 @@ class Action
       ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
       allow_hosts: env_csv("INPUT_ALLOW_HOSTS"),
       fail_on: FailOnThreshold.from_inputs(env_value("INPUT_FAIL_ON"), env_value("INPUT_FAIL_ON_UPDATES")),
-      comment_on_success: env_flag("INPUT_COMMENT_ON_SUCCESS")
+      comment_on_success: env_flag("INPUT_COMMENT_ON_SUCCESS"),
+      cache_version_tags: env_flag_default_true("INPUT_CACHE_VERSION_TAGS"),
+      version_tags_cache_ttl: cache_ttl,
+      version_tags_cache_dir: env_value("SPM_VERSION_UPDATES_TAG_CACHE_DIR")
     }
   end
 
@@ -95,6 +103,8 @@ class Action
     puts("Allow hosts: #{allow_hosts.join(', ')}") unless allow_hosts.empty?
     puts("Fail on: #{inputs[:fail_on] || 'none'}")
     puts("Comment on success: #{inputs[:comment_on_success]}")
+    puts("Cache version tags: #{inputs[:cache_version_tags]}")
+    puts("Version tags cache TTL: #{inputs[:version_tags_cache_ttl]}")
   end
 
   def configure_checker(inputs)
@@ -106,6 +116,8 @@ class Action
     checker.report_pre_releases = inputs[:report_pre_releases]
     checker.ignore_repos = inputs[:ignore_repos]
     checker.allow_hosts = inputs[:allow_hosts]
+    checker.version_tags_cache_dir = inputs[:cache_version_tags] ? inputs[:version_tags_cache_dir] : nil
+    checker.version_tags_cache_ttl_seconds = inputs[:version_tags_cache_ttl]
     checker
   end
 
@@ -134,13 +146,13 @@ class Action
     if warnings.empty?
       puts("✅ All SPM dependencies are up to date!")
       if options.fetch(:comment_on_success, false)
-        @github_integration.post_comment("✅ **SPM Dependencies**: All dependencies are up to date!")
+        @reporter_sink.publish_success
       else
-        @github_integration.delete_existing_comment
+        @reporter_sink.clear
       end
     else
       puts("⚠️  Found #{warnings.size} potential updates")
-      @github_integration.post_comment_with_warnings(warnings, warning_details)
+      @reporter_sink.publish_updates(warnings, warning_details)
     end
 
     reporter

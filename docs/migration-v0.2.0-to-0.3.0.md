@@ -399,8 +399,10 @@ Behavioral fixes and additions since `v0.2.0`:
 
 ## PR comment changes
 
-The new action comment is generated through the GitHub API. It updates an
-existing generated comment instead of creating duplicates.
+The built-in action comment is generated through the GitHub-backed reporter
+sink. It updates an existing generated comment instead of creating duplicates.
+Additional sinks can implement `publish_updates`, `publish_success`, and
+`clear` without changing the checker or action reporting flow.
 
 When structured details are available, the comment groups duplicate package
 updates and includes current and available versions, source manifests, and links
