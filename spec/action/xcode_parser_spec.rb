@@ -57,22 +57,30 @@ RSpec.describe XcodeParser do
     end
 
     it "warns and falls back when CFPropertyList rejects the pbxproj file", :aggregate_failures do
-      stub_const("CFPropertyList", Module.new) unless defined?(CFPropertyList)
-      stub_const("CFPropertyList::CFPlistError", Class.new(StandardError))
+      cfplist_error = Class.new(StandardError)
+      cfpropertylist = Module.new.tap { |mod| mod.const_set(:CFPlistError, cfplist_error) }
+      original_cfpropertylist_autoload = Object.autoload?(:CFPropertyList)
+      Object.send(:remove_const, :CFPropertyList) if original_cfpropertylist_autoload
 
-      Dir.mktmpdir("xcode-parser") do |dir|
-        project_path = File.join(dir, "App.xcodeproj")
-        FileUtils.mkdir_p(project_path)
-        File.write(File.join(project_path, "project.pbxproj"), "broken")
-        allow(XcodeProjectPackageReader).to receive(:pbxproj_objects)
-          .and_raise(CFPropertyList::CFPlistError, "invalid plist")
+      RSpec::Mocks.with_temporary_scope do
+        stub_const("CFPropertyList", cfpropertylist)
 
-        result = nil
-        expect {
-          result = XcodeProjectPackageReader.send(:package_references_from_pbxproj, project_path)
-        }.to output(/falling back to full Xcode project parsing/).to_stderr
-        expect(result).to be_nil
+        Dir.mktmpdir("xcode-parser") do |dir|
+          project_path = File.join(dir, "App.xcodeproj")
+          FileUtils.mkdir_p(project_path)
+          File.write(File.join(project_path, "project.pbxproj"), "broken")
+          allow(XcodeProjectPackageReader).to receive(:pbxproj_objects)
+            .and_raise(cfplist_error, "invalid plist")
+
+          result = nil
+          expect {
+            result = XcodeProjectPackageReader.send(:package_references_from_pbxproj, project_path)
+          }.to output(/falling back to full Xcode project parsing/).to_stderr
+          expect(result).to be_nil
+        end
       end
+    ensure
+      Object.autoload(:CFPropertyList, original_cfpropertylist_autoload) if original_cfpropertylist_autoload
     end
 
     it "does not swallow unexpected bugs in the lightweight pbxproj reader" do
