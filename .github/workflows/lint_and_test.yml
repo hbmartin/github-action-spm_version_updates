@@ -53,7 +53,7 @@ jobs:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
       - name: Run specs
-        run: bundle exec rspec
+        run: bundle exec rspec --require ./spec/coverage_helper
       - name: Upload coverage report
         if: always()
         # actions/upload-artifact v4.6.2

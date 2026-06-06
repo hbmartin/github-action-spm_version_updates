@@ -1,13 +1,14 @@
 # frozen_string_literal: true
 
 require "open3"
-require "semantic"
-require "uri"
+require_relative "credential_redactor"
+require_relative "git_host_normalizer"
+require_relative "spm_version_updates/semver"
 
 # Git operations for SPM version checking (migrated from git.rb)
 module GitOperations
   ALLOWED_PROTOCOLS = "https:ssh:git"
-  HOST_PATTERN = /\A[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\z/i
+  HOST_PATTERN = GitHostNormalizer::HOST_PATTERN
 
   # Removes protocol and trailing .git from a repo URL
   # @param   [String] repo_url The URL of the repository
@@ -33,15 +34,12 @@ module GitOperations
   # Extracts the hostname from common git remote URL forms.
   # @return [String, nil]
   def self.host(repo_url)
-    url = repo_url.to_s.strip
-    return nil if url.empty?
-
-    parsed_host(url) || scp_like_host(url) || bare_host(url)
+    GitHostNormalizer.host(repo_url)
   end
 
   # Call git to list tags
   # @param   [String] repo_url The URL of the dependency's repository
-  # @return [Array<Semantic::Version>]
+  # @return [Array<SpmVersionUpdates::Semver>]
   def self.version_tags(repo_url)
     output = ls_remote("-t", repo_url)
     return [] if output.nil?
@@ -51,13 +49,12 @@ module GitOperations
       .map { |line| line.split("/tags/").last }
       .filter_map { |line|
         begin
-          Semantic::Version.new(normalize_version_tag(line))
+          SpmVersionUpdates::Semver.new(line)
         rescue ArgumentError
           nil
         end
       }
-    versions.sort! { |left, right| compare_semver(left, right) }
-      .reverse!
+    versions.sort!.reverse!
     versions
   end
 
@@ -88,6 +85,7 @@ module GitOperations
       "git",
       "ls-remote",
       flag,
+      "--",
       repo_url
     )
     return stdout if status.success?
@@ -100,52 +98,8 @@ module GitOperations
   end
 
   def self.redact_credentials(value)
-    value.to_s.gsub(%r{([a-z][a-z0-9+\-.]*://)([^/\s@]+)@}i, '\1[REDACTED]@')
+    CredentialRedactor.redact(value)
   end
 
-  # Compare two Semantic::Version values, tolerating a bug in the `semantic` gem
-  # where comparing certain pre-release identifiers raises ArgumentError -- e.g.
-  # date components with a leading zero ("08"/"09"), as in swift-syntax's
-  # "600.0.0-prerelease-2024-09-04" tags, which it feeds to Integer() and rejects
-  # as invalid octal. Falls back to comparing the stable core, then the string
-  # form, so a single odd tag can't abort the whole sort.
-  # @return [Integer]
-  def self.compare_semver(left, right)
-    left <=> right
-  rescue ArgumentError
-    core = [left.major, left.minor, left.patch] <=> [right.major, right.minor, right.patch]
-    core.zero? ? (left.to_s <=> right.to_s) : core
-  end
-
-  def self.normalize_version_tag(tag)
-    tag.sub(/\A(\d+)\.(\d+)(?=\z|[-+])/, '\1.\2.0')
-  end
-
-  def self.parsed_host(url)
-    normalize_host(URI.parse(url).host)
-  rescue URI::InvalidURIError
-    nil
-  end
-
-  def self.scp_like_host(url)
-    match = url.match(%r{\A(?:[^@\s/]+@)?(?<host>[^:\s/]+):(?!/)[^:\s]+\z})
-    match && normalize_host(match[:host])
-  end
-
-  def self.bare_host(url)
-    return nil if url.start_with?("/", "./", "../")
-    return nil if url.include?("://")
-
-    host = url.split("/", 2).first
-    normalize_host(host)
-  end
-
-  def self.normalize_host(host)
-    normalized = host.to_s.sub(/:\d+\z/, "").downcase
-    return nil if normalized.empty? || !normalized.match?(HOST_PATTERN)
-
-    normalized
-  end
-
-  private_class_method :ls_remote, :redact_credentials, :compare_semver, :normalize_version_tag, :parsed_host, :scp_like_host, :bare_host, :normalize_host
+  private_class_method :ls_remote, :redact_credentials
 end

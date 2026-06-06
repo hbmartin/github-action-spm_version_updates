@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "credential_redactor"
 require_relative "update_severity"
 
 # Writes GitHub Actions-visible reports for the dependency update results.
@@ -131,25 +132,25 @@ class ActionReporter
   end
 
   def detail_records
-    warning_records.map.with_index { |fallback, index|
-      record = fallback.dup
-      detail = @warning_details[index]
-      detail&.each_with_object(record) { |(key, value), result|
-        result[key.to_s] = value unless value.nil?
-      }
+    warning_records.map.with_index { |fallback, index| detail_record(fallback, @warning_details[index]) }
+  end
 
-      parsed_message = parsed_warning_record(record["message"])
-      record["message"] = parsed_message["message"]
-      parsed_source = parsed_message["source"]
-      record["source"] ||= parsed_source if parsed_source
-      record
-    }
+  def detail_record(fallback, detail)
+    record = fallback.merge(string_keyed_detail(detail))
+    parsed_message = parsed_warning_record(record["message"])
+    record["message"] = parsed_message["message"]
+    record["source"] ||= parsed_message["source"] if parsed_message.key?("source")
+    record
+  end
+
+  def string_keyed_detail(detail)
+    detail.to_h.transform_keys(&:to_s).compact
   end
 
   def parsed_warning_record(warning)
     message, source = warning.to_s.split("\nSource: ", 2)
     record = { "message" => message }
-    record["source"] = source unless source.nil? || source.empty?
+    record["source"] = source unless source.to_s.empty?
     record
   end
 
@@ -159,8 +160,12 @@ class ActionReporter
 
     File.open(output_path, "a") { |file|
       file.puts(action_output_lines)
-      WorkflowCommand.write_multiline_output(file, "updates-json", JSON.generate(records))
+      WorkflowCommand.write_multiline_output(file, "updates-json", JSON.generate(sanitized_records))
     }
+  end
+
+  def sanitized_records
+    records.map { |record| CredentialRedactor.redact_hash_value(record, "repository_url") }
   end
 
   def write_step_summary

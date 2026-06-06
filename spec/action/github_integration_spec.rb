@@ -97,6 +97,38 @@ RSpec.describe(GithubIntegration) {
       expect(message).not_to(include("N/A"))
     end
 
+    it("uses a later credential-bearing repository URL for grouped links without leaking userinfo", :aggregate_failures) do
+      warnings = [
+        "Newer version of owner/repo: 1.1.0\nSource: App/Package.swift",
+        "Newer version of owner/repo: 2.0.0\nSource: Tools/Package.swift",
+      ]
+      details = [
+        {
+          package: "owner/repo",
+          normalized_url: "github.com/owner/repo",
+          current_version: "1.0.0",
+          available_version: "1.1.0",
+          source: "App/Package.swift"
+        },
+        {
+          package: "owner/repo",
+          normalized_url: "github.com/owner/repo",
+          repository_url: "https://token@github.com/owner/repo.git",
+          current_version: "1.1.0",
+          available_version: "2.0.0",
+          source: "Tools/Package.swift"
+        },
+      ]
+
+      message = integration.send(:build_warnings_message, warnings, details)
+
+      expect(message).to(include("[Compare 1](https://github.com/owner/repo/compare/1.0.0...1.1.0)"))
+      expect(message).to(include("[Compare 2](https://github.com/owner/repo/compare/1.1.0...2.0.0)"))
+      expect(message).to(include("[Releases](https://github.com/owner/repo/releases)"))
+      expect(message).not_to(include("token@"))
+      expect(message).not_to(include("N/A"))
+    end
+
     it("builds Bitbucket compare and tag links", :aggregate_failures) do
       details = [
         {
