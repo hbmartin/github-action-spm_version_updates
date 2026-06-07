@@ -14,8 +14,12 @@ class RepositoryUpdateRules
     "minor" => 1,
     "major" => 2
   }.freeze
-  ROOT_KEYS = ["repositories"].freeze
-  ENTRY_KEYS = ["url", "ignore-until", "allowed-updates"].freeze
+  REPOSITORIES_KEY = "repositories"
+  URL_KEY = "url"
+  IGNORE_UNTIL_KEY = "ignore-until"
+  ALLOWED_UPDATES_KEY = "allowed-updates"
+  ROOT_KEYS = [REPOSITORIES_KEY].freeze
+  ENTRY_KEYS = [URL_KEY, IGNORE_UNTIL_KEY, ALLOWED_UPDATES_KEY].freeze
 
   # One normalized repository rule from repo-rules YAML.
   Rule = Struct.new(:normalized_url, :ignore_until, :allowed_updates, keyword_init: true) {
@@ -101,7 +105,7 @@ class RepositoryUpdateRules
   def self.repositories_from(config, source)
     string_keys = config.transform_keys(&:to_s)
     validate_keys!(string_keys, ROOT_KEYS, "#{source} root")
-    repositories = string_keys.compact.fetch("repositories", [])
+    repositories = string_keys.compact.fetch(REPOSITORIES_KEY, [])
     raise(ArgumentError, "#{source} repositories must be a list") unless repositories.kind_of?(Array)
 
     repositories
@@ -114,10 +118,10 @@ class RepositoryUpdateRules
   end
 
   def self.rule_attributes(string_keys, source)
-    normalized_url = normalized_url_for(required_value(string_keys, "url", source))
+    normalized_url = normalized_url_for(required_value(string_keys, URL_KEY, source))
     ignore_until = parse_ignore_until(string_keys, source)
     allowed_updates = parse_allowed_updates(string_keys, source)
-    raise(ArgumentError, "#{source} must set ignore-until or allowed-updates") unless ignore_until || allowed_updates
+    raise(ArgumentError, "#{source} must set #{IGNORE_UNTIL_KEY} or #{ALLOWED_UPDATES_KEY}") unless ignore_until || allowed_updates
 
     { normalized_url:, ignore_until:, allowed_updates: }
   end
@@ -144,22 +148,22 @@ class RepositoryUpdateRules
   end
 
   def self.parse_ignore_until(values, source)
-    return unless values.key?("ignore-until")
+    return unless values.key?(IGNORE_UNTIL_KEY)
 
-    raw = values["ignore-until"].to_s.strip
+    raw = values[IGNORE_UNTIL_KEY].to_s.strip
     version = semver(raw)
-    raise(ArgumentError, "#{source} ignore-until must be a semantic version") unless version
+    raise(ArgumentError, "#{source} #{IGNORE_UNTIL_KEY} must be a semantic version") unless version
 
     version
   end
 
   def self.parse_allowed_updates(values, source)
-    return unless values.key?("allowed-updates")
+    return unless values.key?(ALLOWED_UPDATES_KEY)
 
-    value = values["allowed-updates"].to_s.strip.downcase
+    value = values[ALLOWED_UPDATES_KEY].to_s.strip.downcase
     return value if ALLOWED_UPDATES.include?(value)
 
-    raise(ArgumentError, "#{source} allowed-updates must be patch, minor, or major")
+    raise(ArgumentError, "#{source} #{ALLOWED_UPDATES_KEY} must be patch, minor, or major")
   end
 
   def self.record_value(record, key)

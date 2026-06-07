@@ -137,3 +137,4 @@ fabric.properties
 
 reviews_triage/
 triage_decisions.db
+.env

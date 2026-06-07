@@ -41,8 +41,8 @@ RSpec.describe ActionRuntimePreflight do
       stdout, stderr, status = Open3.capture3({ "INPUT_SETUP_RUBY" => "false", "PATH" => empty_path }, "/bin/bash", script)
 
       expect(status).not_to be_success
-      expect(stdout).to include("setup-ruby is false, but ruby is not available on PATH")
-      expect(stderr).to eq("")
+      expect(stdout).to eq("")
+      expect(stderr).to include("setup-ruby is false, but ruby is not available on PATH")
     end
   end
 
@@ -53,8 +53,8 @@ RSpec.describe ActionRuntimePreflight do
       stdout, stderr, status = Open3.capture3({ "INPUT_SETUP_RUBY" => "false", "PATH" => bin }, "/bin/bash", script)
 
       expect(status).not_to be_success
-      expect(stdout).to include("setup-ruby is false, but bundle is not available on PATH")
-      expect(stderr).to eq("")
+      expect(stdout).to eq("")
+      expect(stderr).to include("setup-ruby is false, but bundle is not available on PATH")
     end
   end
 
@@ -74,9 +74,8 @@ RSpec.describe ActionRuntimePreflight do
       )
 
       expect(status).not_to be_success
-      expect(stdout).to include("this action's bundle is not installed for BUNDLE_WITHOUT=development:test:xcode")
+      expect(stderr).to include("this action's bundle is not installed for BUNDLE_WITHOUT=development:test:xcode")
       expect(stdout).to include("The following gems are missing")
-      expect(stderr).to eq("")
     end
   end
 end

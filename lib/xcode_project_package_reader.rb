@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+autoload :Xcodeproj, "xcodeproj"
+
 # Reads Swift package references and adjacent Package.resolved locations for an
 # Xcode project without requiring Xcode to be installed.
 module XcodeProjectPackageReader
@@ -74,7 +76,6 @@ module XcodeProjectPackageReader
   end
 
   def self.pbxproj_objects(pbxproj_path)
-    load_xcodeproj
     Xcodeproj::Plist.read_from_path(pbxproj_path).fetch("objects", {}).values
   end
 
@@ -92,7 +93,6 @@ module XcodeProjectPackageReader
   end
 
   def self.package_references_from_project(xcodeproj_path)
-    load_xcodeproj
     package_references_from_project_objects(Xcodeproj::Project.open(xcodeproj_path).objects)
   end
 
@@ -117,10 +117,6 @@ module XcodeProjectPackageReader
     File.join(workspace, "xcshareddata", "swiftpm", "Package.resolved")
   end
 
-  def self.load_xcodeproj
-    require("xcodeproj")
-  end
-
   private_class_method :package_references_from_pbxproj,
                        :read_existing_pbxproj,
                        :existing_pbxproj_path,
@@ -132,6 +128,5 @@ module XcodeProjectPackageReader
                        :package_references_from_project,
                        :package_references_from_project_objects,
                        :package_reference_from_project_object,
-                       :workspace_resolved_path,
-                       :load_xcodeproj
+                       :workspace_resolved_path
 end

@@ -6,6 +6,9 @@ require_relative "update_severity"
 
 # Writes GitHub Actions-visible reports for the dependency update results.
 class ActionReporter
+  SUMMARY_HEADING = "## SPM Version Updates"
+  private_constant :SUMMARY_HEADING
+
   # Shared GitHub Actions output and annotation formatting.
   module WorkflowCommand
     module_function
@@ -93,7 +96,7 @@ class ActionReporter
 
     def summary_lines
       [
-        "## SPM Version Updates",
+        SUMMARY_HEADING,
         "",
         "Version lookup was blocked before contacting a disallowed repository host.",
         "",
@@ -207,9 +210,9 @@ class ActionReporter
   end
 
   def step_summary_lines
-    return ["## SPM Version Updates", "", "All SPM dependencies are up to date."] if records.empty?
+    return [SUMMARY_HEADING, "", "All SPM dependencies are up to date."] if records.empty?
 
-    ["## SPM Version Updates", "", update_count_line, "", *update_summary_lines]
+    [SUMMARY_HEADING, "", update_count_line, "", *update_summary_lines]
   end
 
   def update_count_line

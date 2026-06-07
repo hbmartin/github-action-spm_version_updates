@@ -139,7 +139,7 @@ runs:
 
     - name: Restore version tags cache
       if: ${{ inputs.cache-version-tags == 'true' && inputs.version-tags-cache-ttl != '0' }}
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ steps.version-tags-cache.outputs.path }}
         key: ${{ steps.version-tags-cache.outputs.key }}
@@ -179,7 +179,7 @@ runs:
 
     - name: Save version tags cache
       if: ${{ always() && inputs.cache-version-tags == 'true' && inputs.version-tags-cache-ttl != '0' }}
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ steps.version-tags-cache.outputs.path }}
         key: ${{ steps.version-tags-cache.outputs.key }}
