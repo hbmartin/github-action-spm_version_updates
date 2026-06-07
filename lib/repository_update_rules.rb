@@ -8,18 +8,21 @@ require_relative "update_severity"
 # Loads and evaluates per-repository semantic update suppression rules.
 class RepositoryUpdateRules
   SEMANTIC_TYPES = ["version", "above_maximum"].freeze
-  ALLOWED_UPDATES = ["patch", "minor", "major"].freeze
   SEVERITY_RANK = {
     "patch" => 0,
     "minor" => 1,
     "major" => 2
   }.freeze
-  REPOSITORIES_KEY = "repositories"
-  URL_KEY = "url"
-  IGNORE_UNTIL_KEY = "ignore-until"
-  ALLOWED_UPDATES_KEY = "allowed-updates"
-  ROOT_KEYS = [REPOSITORIES_KEY].freeze
-  ENTRY_KEYS = [URL_KEY, IGNORE_UNTIL_KEY, ALLOWED_UPDATES_KEY].freeze
+  YAML_KEYS = {
+    repositories: "repositories",
+    url: "url",
+    ignore_until: "ignore-until",
+    allowed_updates: "allowed-updates"
+  }.freeze
+  VALID_YAML_KEYS = {
+    root: [YAML_KEYS.fetch(:repositories)],
+    entry: YAML_KEYS.values_at(:url, :ignore_until, :allowed_updates)
+  }.freeze
 
   # One normalized repository rule from repo-rules YAML.
   Rule = Struct.new(:normalized_url, :ignore_until, :allowed_updates, keyword_init: true) {
@@ -104,8 +107,8 @@ class RepositoryUpdateRules
 
   def self.repositories_from(config, source)
     string_keys = config.transform_keys(&:to_s)
-    validate_keys!(string_keys, ROOT_KEYS, "#{source} root")
-    repositories = string_keys.compact.fetch(REPOSITORIES_KEY, [])
+    validate_keys!(string_keys, VALID_YAML_KEYS.fetch(:root), "#{source} root")
+    repositories = string_keys.compact.fetch(yaml_key(:repositories), [])
     raise(ArgumentError, "#{source} repositories must be a list") unless repositories.kind_of?(Array)
 
     repositories
@@ -114,14 +117,14 @@ class RepositoryUpdateRules
   def self.rule_entry_from(entry, source)
     raise(ArgumentError, "#{source} must be a mapping") unless entry.kind_of?(Hash)
 
-    entry.transform_keys(&:to_s).tap { |string_keys| validate_keys!(string_keys, ENTRY_KEYS, source) }
+    entry.transform_keys(&:to_s).tap { |string_keys| validate_keys!(string_keys, VALID_YAML_KEYS.fetch(:entry), source) }
   end
 
   def self.rule_attributes(string_keys, source)
-    normalized_url = normalized_url_for(required_value(string_keys, URL_KEY, source))
+    normalized_url = normalized_url_for(required_value(string_keys, yaml_key(:url), source))
     ignore_until = parse_ignore_until(string_keys, source)
     allowed_updates = parse_allowed_updates(string_keys, source)
-    raise(ArgumentError, "#{source} must set #{IGNORE_UNTIL_KEY} or #{ALLOWED_UPDATES_KEY}") unless ignore_until || allowed_updates
+    raise(ArgumentError, "#{source} must set #{yaml_key(:ignore_until)} or #{yaml_key(:allowed_updates)}") unless ignore_until || allowed_updates
 
     { normalized_url:, ignore_until:, allowed_updates: }
   end
@@ -148,26 +151,30 @@ class RepositoryUpdateRules
   end
 
   def self.parse_ignore_until(values, source)
-    return unless values.key?(IGNORE_UNTIL_KEY)
+    key = yaml_key(:ignore_until)
+    return unless values.key?(key)
 
-    raw = values[IGNORE_UNTIL_KEY].to_s.strip
-    version = semver(raw)
-    raise(ArgumentError, "#{source} #{IGNORE_UNTIL_KEY} must be a semantic version") unless version
-
-    version
+    semver(values[key].to_s.strip).tap { |version|
+      raise(ArgumentError, "#{source} #{key} must be a semantic version") unless version
+    }
   end
 
   def self.parse_allowed_updates(values, source)
-    return unless values.key?(ALLOWED_UPDATES_KEY)
+    key = yaml_key(:allowed_updates)
+    return unless values.key?(key)
 
-    value = values[ALLOWED_UPDATES_KEY].to_s.strip.downcase
-    return value if ALLOWED_UPDATES.include?(value)
+    value = values[key].to_s.strip.downcase
+    return value if SEVERITY_RANK.key?(value)
 
-    raise(ArgumentError, "#{source} #{ALLOWED_UPDATES_KEY} must be patch, minor, or major")
+    raise(ArgumentError, "#{source} #{key} must be patch, minor, or major")
   end
 
   def self.record_value(record, key)
     record[key] || record[key.to_sym]
+  end
+
+  def self.yaml_key(name)
+    YAML_KEYS.fetch(name)
   end
 
   private_class_method(
@@ -181,7 +188,8 @@ class RepositoryUpdateRules
     :required_value,
     :normalized_url_for,
     :parse_ignore_until,
-    :parse_allowed_updates
+    :parse_allowed_updates,
+    :yaml_key
   )
 
   def initialize(rules_by_repo)

@@ -11,38 +11,38 @@ class ActionReporter
 
   # Shared GitHub Actions output and annotation formatting.
   module WorkflowCommand
-    module_function
+    class << self
+      def env_value(key)
+        value = ENV.fetch(key, "").strip
+        value.empty? ? nil : value
+      end
 
-    def env_value(key)
-      value = ENV.fetch(key, "").strip
-      value.empty? ? nil : value
-    end
+      def write_multiline_output(file, name, value)
+        delimiter = "SPM_VERSION_UPDATES_JSON"
+        delimiter = "#{delimiter}_END" while value.include?(delimiter)
 
-    def write_multiline_output(file, name, value)
-      delimiter = "SPM_VERSION_UPDATES_JSON"
-      delimiter = "#{delimiter}_END" while value.include?(delimiter)
+        file.puts("#{name}<<#{delimiter}")
+        file.puts(value)
+        file.puts(delimiter)
+      end
 
-      file.puts("#{name}<<#{delimiter}")
-      file.puts(value)
-      file.puts(delimiter)
-    end
+      def property_string(properties)
+        properties
+          .map { |key, value| "#{key}=#{escape_property(value)}" }
+          .join(",")
+      end
 
-    def property_string(properties)
-      properties
-        .map { |key, value| "#{key}=#{escape_property(value)}" }
-        .join(",")
-    end
+      def escape_data(value)
+        value.to_s.gsub("%", "%25").gsub("\r", "%0D").gsub("\n", "%0A")
+      end
 
-    def escape_data(value)
-      value.to_s.gsub("%", "%25").gsub("\r", "%0D").gsub("\n", "%0A")
-    end
+      def escape_property(value)
+        escape_data(value).gsub(":", "%3A").gsub(",", "%2C")
+      end
 
-    def escape_property(value)
-      escape_data(value).gsub(":", "%3A").gsub(",", "%2C")
-    end
-
-    def annotation(level, properties, message)
-      "::#{level} #{property_string(properties)}::#{escape_data(message)}"
+      def annotation(level, properties, message)
+        "::#{level} #{property_string(properties)}::#{escape_data(message)}"
+      end
     end
   end
 

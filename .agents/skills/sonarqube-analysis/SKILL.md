@@ -8,6 +8,8 @@ description: Inspect SonarQube Cloud/SonarCloud findings for this repository usi
 ## Workflow
 
 1. Load Sonar settings from the repo `.env` without printing secrets.
+   This checkout is expected to use SonarCloud project
+   `hbmartin_github-action-spm_version_updates` on branch `main`.
 2. Prefer the bundled script:
 
    ```bash
@@ -20,6 +22,7 @@ description: Inspect SonarQube Cloud/SonarCloud findings for this repository usi
    python3 .agents/skills/sonarqube-analysis/scripts/sonar_report.py --bugs --security
    python3 .agents/skills/sonarqube-analysis/scripts/sonar_report.py --new-code
    python3 .agents/skills/sonarqube-analysis/scripts/sonar_report.py --branch trunk --top 20
+   python3 .agents/skills/sonarqube-analysis/scripts/sonar_report.py --project hbmartin_github-action-spm_version_updates
    ```
 
 4. Summarize findings in this order:

@@ -87,6 +87,9 @@ Style/TopLevelMethodDefinition:
   Exclude:
     - spec/*.rb
 
+Style/ModuleFunction:
+  EnforcedStyle: extend_self
+
 Style/StringLiterals:
   EnforcedStyle: double_quotes
   Enabled: true

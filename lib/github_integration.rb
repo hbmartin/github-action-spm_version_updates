@@ -11,29 +11,33 @@ class GithubIntegration < ReporterSink
 
   # Parses supported git remote URLs and renders host-specific links.
   class RepositoryLink
-    GITHUB_HOST = "github.com"
-    GITLAB_HOST = "gitlab.com"
-    BITBUCKET_HOST = "bitbucket.org"
-    SUPPORTED_HOSTS_PATTERN = Regexp.union(GITHUB_HOST, GITLAB_HOST, BITBUCKET_HOST).source
-    URL_REMOTE_PATTERN = %r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})(?::\d+)?/(?<path>.+)\z}i
-    SCP_REMOTE_PATTERN = %r{\A(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})[:/](?<path>.+)\z}i
+    HOSTS = ["github.com", "gitlab.com", "bitbucket.org"].freeze
+    SUPPORTED_HOSTS_PATTERN = Regexp.union(HOSTS).source
+    REMOTE_PATTERNS = [
+      %r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})(?::\d+)?/(?<path>.+)\z}i,
+      %r{\A(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})[:/](?<path>.+)\z}i,
+    ].freeze
     PATH_NORMALIZERS = {
-      GITHUB_HOST => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
-      BITBUCKET_HOST => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
-      GITLAB_HOST => lambda { |segments|
+      "github.com" => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
+      "bitbucket.org" => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
+      "gitlab.com" => lambda { |segments|
         project_segments = segments.take_while { |segment| segment != "-" }
         project_segments.join("/") if project_segments.size >= 2
       }
     }.freeze
-    COMPARE_PATHS = {
-      GITHUB_HOST => ->(current, available) { "/compare/#{current}...#{available}" },
-      GITLAB_HOST => ->(current, available) { "/-/compare/#{current}...#{available}" },
-      BITBUCKET_HOST => ->(current, available) { "/branches/compare/#{available}..#{current}" }
-    }.freeze
-    RELEASE_LINKS = {
-      GITHUB_HOST => ["Releases", "/releases"],
-      GITLAB_HOST => ["Releases", "/-/releases"],
-      BITBUCKET_HOST => ["Tags", "/downloads/?tab=tags"]
+    LINKS = {
+      "github.com" => {
+        compare: ->(current, available) { "/compare/#{current}...#{available}" },
+        release: ["Releases", "/releases"]
+      },
+      "gitlab.com" => {
+        compare: ->(current, available) { "/-/compare/#{current}...#{available}" },
+        release: ["Releases", "/-/releases"]
+      },
+      "bitbucket.org" => {
+        compare: ->(current, available) { "/branches/compare/#{available}..#{current}" },
+        release: ["Tags", "/downloads/?tab=tags"]
+      }
     }.freeze
 
     def self.from(repository_url)
@@ -49,10 +53,11 @@ class GithubIntegration < ReporterSink
       configure_remote(remote_match)
     end
 
-    private_constant :GITHUB_HOST,
-                     :GITLAB_HOST,
-                     :BITBUCKET_HOST,
-                     :SUPPORTED_HOSTS_PATTERN
+    private_constant :HOSTS,
+                     :SUPPORTED_HOSTS_PATTERN,
+                     :REMOTE_PATTERNS,
+                     :PATH_NORMALIZERS,
+                     :LINKS
 
     def valid?
       @host && @path
@@ -61,11 +66,11 @@ class GithubIntegration < ReporterSink
     def compare_url(current, available)
       current_ref = URI.encode_www_form_component(current.to_s)
       available_ref = URI.encode_www_form_component(available.to_s)
-      "#{base_url}#{COMPARE_PATHS.fetch(@host).call(current_ref, available_ref)}"
+      "#{base_url}#{link_builder.fetch(:compare).call(current_ref, available_ref)}"
     end
 
     def release_link
-      label, path = RELEASE_LINKS.fetch(@host)
+      label, path = link_builder.fetch(:release)
       "[#{label}](#{base_url}#{path})"
     end
 
@@ -80,7 +85,9 @@ class GithubIntegration < ReporterSink
     private
 
     def remote_match
-      @value.match(URL_REMOTE_PATTERN) || @value.match(SCP_REMOTE_PATTERN)
+      REMOTE_PATTERNS
+        .filter_map { |pattern| @value.match(pattern) }
+        .first
     end
 
     def configure_remote(match)
@@ -109,6 +116,10 @@ class GithubIntegration < ReporterSink
 
     def base_url
       "https://#{@host}/#{@path}"
+    end
+
+    def link_builder
+      LINKS.fetch(@host)
     end
   end
 

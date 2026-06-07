@@ -12,6 +12,27 @@ module Danger
     end
 
     describe "with Dangerfile" do
+      def versions(*strings)
+        strings.map { |string| SpmVersionUpdates::Semver.new(string) }
+          .sort.reverse
+      end
+
+      def fixture(name)
+        File.expand_path("support/fixtures/#{name}.xcodeproj", __dir__)
+      end
+
+      def stub_versions(*strings)
+        allow(Git).to receive(:version_tags).and_return(versions(*strings))
+      end
+
+      def check_fixture(name)
+        @my_plugin.check_for_updates(fixture(name))
+      end
+
+      def expect_warnings(*warnings)
+        expect(@dangerfile.status_report[:warnings]).to eq(warnings)
+      end
+
       before do
         @dangerfile = testing_dangerfile
         @my_plugin = @dangerfile.spm_version_updates
@@ -23,163 +44,100 @@ module Danger
       end
 
       it "Does not report pre-release versions by default" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.2.0-beta.1"),
-            SpmVersionUpdates::Semver.new("12.2.0-beta.2"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.2.0-beta.1", "12.2.0-beta.2")
 
         @my_plugin.check_when_exact = true
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/ExactVersion.xcodeproj")
+        check_fixture("ExactVersion")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Does not report empty exact-version warnings when every available version is filtered out" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.2.0-beta.1"),
-            SpmVersionUpdates::Semver.new("12.2.0-beta.2"),
-          ].sort.reverse
+        stub_versions("12.2.0-beta.1", "12.2.0-beta.2")
 
         @my_plugin.check_when_exact = true
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/ExactVersion.xcodeproj")
+        check_fixture("ExactVersion")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Reports new versions for exact versions when configured" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.1.7"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.1.7")
 
         @my_plugin.check_when_exact = true
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/ExactVersion.xcodeproj")
+        check_fixture("ExactVersion")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(
-          [
-            "Newer version of kean/Nuke: 12.1.7 (but this package is set to exact version 12.1.6)\n",
-          ]
-        )
+        expect_warnings("Newer version of kean/Nuke: 12.1.7 (but this package is set to exact version 12.1.6)\n")
       end
 
       it "Reports pre-release versions for exact versions when configured" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.2.0-beta.2"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.2.0-beta.2")
 
         @my_plugin.check_when_exact = true
         @my_plugin.report_pre_releases = true
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/ExactVersion.xcodeproj")
+        check_fixture("ExactVersion")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(
-          [
-            "Newer version of kean/Nuke: 12.2.0-beta.2 (but this package is set to exact version 12.1.6)\n",
-          ]
-        )
+        expect_warnings("Newer version of kean/Nuke: 12.2.0-beta.2 (but this package is set to exact version 12.1.6)\n")
       end
 
       it "Reports new versions for up to next major" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.1.7"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.1.7")
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
+        check_fixture("UpToNextMajor")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(
-          [
-            "Newer version of kean/Nuke: 12.1.7",
-          ]
-        )
+        expect_warnings("Newer version of kean/Nuke: 12.1.7")
       end
 
       it "Reports pre-release versions for up to next major when configured" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.2.0-beta.2"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.2.0-beta.2")
 
         @my_plugin.check_when_exact = true
         @my_plugin.report_pre_releases = true
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
+        check_fixture("UpToNextMajor")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(
-          [
-            "Newer version of kean/Nuke: 12.2.0-beta.2",
-          ]
-        )
+        expect_warnings("Newer version of kean/Nuke: 12.2.0-beta.2")
       end
 
       it "Does not report pre-release versions for up to next major" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.2.0-beta.2"),
-            SpmVersionUpdates::Semver.new("13.0.0"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.2.0-beta.2", "13.0.0")
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
+        check_fixture("UpToNextMajor")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Does not report pre-release versions as the newest up to next major version" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.2.0-beta.1"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.2.0-beta.1")
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
+        check_fixture("UpToNextMajor")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Does not report new versions for up to next major when next version is major" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("13.0.0"),
-          ].sort.reverse
+        stub_versions("12.1.6", "13.0.0")
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
+        check_fixture("UpToNextMajor")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Does report new versions for up to next major when next version is major and configured" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("13.0.0"),
-          ].sort.reverse
+        stub_versions("12.1.6", "13.0.0")
 
         @my_plugin.report_above_maximum = true
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
+        check_fixture("UpToNextMajor")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(["Newest version of kean/Nuke: 13.0.0 (but this package is configured up to the next major version)\n"])
+        expect_warnings("Newest version of kean/Nuke: 13.0.0 (but this package is configured up to the next major version)\n")
       end
 
       it "Reports the filtered above-maximum version for up to next major" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("13.0.0"),
-            SpmVersionUpdates::Semver.new("14.0.0-beta.1"),
-          ].sort.reverse
+        stub_versions("12.1.6", "13.0.0", "14.0.0-beta.1")
 
         @my_plugin.report_above_maximum = true
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
+        check_fixture("UpToNextMajor")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(["Newest version of kean/Nuke: 13.0.0 (but this package is configured up to the next major version)\n"])
+        expect_warnings("Newest version of kean/Nuke: 13.0.0 (but this package is configured up to the next major version)\n")
       end
 
       it "Does not match up to next minor versions from a different major" do
@@ -199,105 +157,79 @@ module Danger
       end
 
       it "Reports new versions for ranges" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("13.0.0"),
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.1.7"),
-          ].sort.reverse
+        stub_versions("13.0.0", "12.1.6", "12.1.7")
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/VersionRange.xcodeproj")
+        check_fixture("VersionRange")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(
-          [
-            "Newer version of kean/Nuke: 12.1.7",
-          ]
-        )
+        expect_warnings("Newer version of kean/Nuke: 12.1.7")
       end
 
       it "Does not report pre-release versions as the newest range version" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.2.0-beta.1"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.2.0-beta.1")
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/VersionRange.xcodeproj")
+        check_fixture("VersionRange")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Does not report empty range warnings when no reportable version satisfies the range" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("13.0.0"),
-          ]
+        stub_versions("13.0.0")
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/VersionRange.xcodeproj")
+        check_fixture("VersionRange")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Reports new versions for branches" do
         allow(Git).to receive(:branch_last_commit)
           .and_return "d658f302f56abfd7a163e3b5f44de39b780a64c2"
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/Branch.xcodeproj")
+        check_fixture("Branch")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(
-          [
-            "Newer commit available for kean/Nuke (main): d658f302f56abfd7a163e3b5f44de39b780a64c2",
-          ]
-        )
+        expect_warnings("Newer commit available for kean/Nuke (main): d658f302f56abfd7a163e3b5f44de39b780a64c2")
       end
 
       it "Does not report when pinned to commit" do
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/Commit.xcodeproj")
+        check_fixture("Commit")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Prints to stderr when resolved version is unexpectedly null" do
         expect {
-          @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/PackageV1Commit.xcodeproj")
+          check_fixture("PackageV1Commit")
         }.to output(
           %r{Unable to extract semver from 12f19662426d0434d6c330c6974d53e2eb10ecd9 for AliSoftware/OHHTTPStubs.*}
         ).to_stderr
       end
 
       it "Does not fail when resolved version is unexpectedly null" do
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/PackageV1Commit.xcodeproj")
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        check_fixture("PackageV1Commit")
+        expect_warnings
       end
 
       it "Does not crash or warn when resolved version is missing from xcodeproj" do
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/NoResolvedVersion.xcodeproj")
+        check_fixture("NoResolvedVersion")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Prints to stderr when resolved version is missing from xcodeproj" do
         expect {
-          @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/NoResolvedVersion.xcodeproj")
+          check_fixture("NoResolvedVersion")
         }.to output(
           %r{Unable to locate the current version for kean/Nuke.*}
         ).to_stderr
       end
 
       it "Reports new versions for both possible Package.resolved locations" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.1.7"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.1.7")
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/AlsoHasXcworkspace.xcodeproj")
+        check_fixture("AlsoHasXcworkspace")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(
-          [
-            "Newer version of kean/Nuke: 12.1.7",
-            "Newer version of Something/Else: 12.1.7",
-          ]
+        expect_warnings(
+          "Newer version of kean/Nuke: 12.1.7",
+          "Newer version of Something/Else: 12.1.7"
         )
       end
 
@@ -309,7 +241,7 @@ module Danger
 
       it "Raises error when no Packages.resolved are present" do
         expect {
-          @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/NoPackagesResolved.xcodeproj")
+          check_fixture("NoPackagesResolved")
         }.to raise_error(Xcode::CouldNotFindResolvedFile)
       end
 
@@ -344,40 +276,24 @@ module Danger
       end
 
       it "Reports new versions with ssh and/or .git URLs" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.1.7"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.1.7")
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/MangledUrl.xcodeproj")
+        check_fixture("MangledUrl")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(
-          [
-            "Newer version of kean/Nuke: 12.1.7",
-          ]
-        )
+        expect_warnings("Newer version of kean/Nuke: 12.1.7")
       end
 
       it "Does not report new versions when repo was ignored" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.1.7"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.1.7")
 
         @my_plugin.ignore_repos = ["ssh://github.com/kean/Nuke.git"]
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
+        check_fixture("UpToNextMajor")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Suppresses semantic warnings with repo rules from a YAML file" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("12.1.6"),
-            SpmVersionUpdates::Semver.new("12.1.7"),
-          ].sort.reverse
+        stub_versions("12.1.6", "12.1.7")
 
         Dir.mktmpdir do |dir|
           rules_path = File.join(dir, "repo-rules.yml")
@@ -391,10 +307,10 @@ module Danger
           )
 
           @my_plugin.repo_rules_path = rules_path
-          @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/UpToNextMajor.xcodeproj")
+          check_fixture("UpToNextMajor")
         end
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        expect_warnings
       end
 
       it "Does not suppress branch warnings with repo rules" do
@@ -413,14 +329,10 @@ module Danger
           )
 
           @my_plugin.repo_rules_path = rules_path
-          @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/Branch.xcodeproj")
+          check_fixture("Branch")
         end
 
-        expect(@dangerfile.status_report[:warnings]).to eq(
-          [
-            "Newer commit available for kean/Nuke (main): d658f302f56abfd7a163e3b5f44de39b780a64c2",
-          ]
-        )
+        expect_warnings("Newer commit available for kean/Nuke (main): d658f302f56abfd7a163e3b5f44de39b780a64c2")
       end
 
       it "Transforms git tags into version list" do
@@ -484,18 +396,11 @@ module Danger
       end
 
       it "Reports new versions for version=1 Package.resolved" do
-        allow(Git).to receive(:version_tags)
-          .and_return [
-            SpmVersionUpdates::Semver.new("3.1.3"),
-          ]
+        stub_versions("3.1.3")
 
-        @my_plugin.check_for_updates("#{File.dirname(__FILE__)}/support/fixtures/PackageV1.xcodeproj")
+        check_fixture("PackageV1")
 
-        expect(@dangerfile.status_report[:warnings]).to eq(
-          [
-            "Newer version of gonzalezreal/NetworkImage: 3.1.3",
-          ]
-        )
+        expect_warnings("Newer version of gonzalezreal/NetworkImage: 3.1.3")
       end
     end
   end

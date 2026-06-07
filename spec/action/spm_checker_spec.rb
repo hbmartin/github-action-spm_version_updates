@@ -5,12 +5,62 @@ require "timeout"
 require "tmpdir"
 require_relative "../../lib/spm_checker"
 
+# Writes temporary Swift package manifests and resolved files for specs.
+class ManifestPackageFixture
+  DEFAULT_URL = "https://github.com/a/b"
+  BRANCH_URL = "git@metadata.internal:a/b.git"
+  REVISION_URL = "https://metadata.internal/a/b"
+
+  class << self
+    def write(dir, options)
+      manifest = File.join(dir, "Package.swift")
+      url = options.fetch(:url)
+      File.write(manifest, ".package(url: \"#{url}\", #{options.fetch(:requirement)})")
+      File.write(
+        File.join(dir, "Package.resolved"),
+        {
+          "pins" => [{ "location" => url, "state" => options.fetch(:resolved_state) }],
+          "version" => 2
+        }.to_json
+      )
+      manifest
+    end
+
+    def write_version(dir, options = {})
+      write(
+        dir,
+        url: options.fetch(:url, DEFAULT_URL),
+        requirement: options.fetch(:requirement, 'from: "1.0.0"'),
+        resolved_state: { "version" => options.fetch(:version, "1.0.0") }
+      )
+    end
+
+    def write_branch(dir)
+      write(dir, url: BRANCH_URL, requirement: 'branch: "main"', resolved_state: { "revision" => "abc123" })
+    end
+
+    def write_revision(dir)
+      write(dir, url: REVISION_URL, requirement: 'revision: "abc123"', resolved_state: { "revision" => "abc123" })
+    end
+  end
+end
+
 # End-to-end specs for the manifest source mode of SpmChecker. Git access is
 # stubbed so these run without network access.
 RSpec.describe SpmChecker do
   def versions(*strings)
     strings.map { |string| SpmVersionUpdates::Semver.new(string) }
       .sort.reverse
+  end
+
+  def stub_acme_versions
+    allow(GitOperations).to receive(:version_tags)
+      .with("https://github.com/a/b")
+      .and_return(versions("2.0.0", "1.1.0", "1.0.0"))
+  end
+
+  def apply_repository_rule(rule)
+    checker.repository_update_rules = RepositoryUpdateRules.from_hash("repositories" => [rule])
   end
 
   subject(:checker) { described_class.new }
@@ -138,15 +188,10 @@ RSpec.describe SpmChecker do
       checker.allow_hosts = ["github.com"]
 
       Dir.mktmpdir do |dir|
-        File.write(File.join(dir, "Package.swift"), '.package(url: "https://metadata.internal/a/b", from: "1.0.0")')
-        File.write(File.join(dir, "Package.resolved"),
-                   {
-                     "pins" => [{ "location" => "https://metadata.internal/a/b", "state" => { "version" => "1.0.0" } }],
-                     "version" => 2
-                   }.to_json)
+        manifest = ManifestPackageFixture.write_version(dir, url: "https://metadata.internal/a/b")
 
         expect {
-          checker.check_manifests([File.join(dir, "Package.swift")])
+          checker.check_manifests([manifest])
         }.to raise_error(SpmChecker::DisallowedRepositoryHost, /metadata\.internal.*allow-hosts/)
       end
 
@@ -158,15 +203,10 @@ RSpec.describe SpmChecker do
 
       Dir.mktmpdir do |dir|
         url = "https://github.com@evil.com/a/b"
-        File.write(File.join(dir, "Package.swift"), ".package(url: \"#{url}\", from: \"1.0.0\")")
-        File.write(File.join(dir, "Package.resolved"),
-                   {
-                     "pins" => [{ "location" => url, "state" => { "version" => "1.0.0" } }],
-                     "version" => 2
-                   }.to_json)
+        manifest = ManifestPackageFixture.write_version(dir, url:)
 
         expect {
-          checker.check_manifests([File.join(dir, "Package.swift")])
+          checker.check_manifests([manifest])
         }.to raise_error(SpmChecker::DisallowedRepositoryHost, /evil\.com.*allow-hosts/)
       end
 
@@ -178,15 +218,10 @@ RSpec.describe SpmChecker do
 
       ["file:///tmp/private-repo", "ext::sh -c touch /tmp/pwned"].each do |url|
         Dir.mktmpdir do |dir|
-          File.write(File.join(dir, "Package.swift"), ".package(url: \"#{url}\", from: \"1.0.0\")")
-          File.write(File.join(dir, "Package.resolved"),
-                     {
-                       "pins" => [{ "location" => url, "state" => { "version" => "1.0.0" } }],
-                       "version" => 2
-                     }.to_json)
+          manifest = ManifestPackageFixture.write_version(dir, url:)
 
           expect {
-            checker.check_manifests([File.join(dir, "Package.swift")])
+            checker.check_manifests([manifest])
           }.to raise_error(SpmChecker::DisallowedRepositoryHost, /unknown host.*allow-hosts/)
         end
       end
@@ -198,15 +233,10 @@ RSpec.describe SpmChecker do
       checker.allow_hosts = ["github.com"]
 
       Dir.mktmpdir do |dir|
-        File.write(File.join(dir, "Package.swift"), '.package(url: "git@metadata.internal:a/b.git", branch: "main")')
-        File.write(File.join(dir, "Package.resolved"),
-                   {
-                     "pins" => [{ "location" => "git@metadata.internal:a/b.git", "state" => { "revision" => "abc123" } }],
-                     "version" => 2
-                   }.to_json)
+        manifest = ManifestPackageFixture.write_branch(dir)
 
         expect {
-          checker.check_manifests([File.join(dir, "Package.swift")])
+          checker.check_manifests([manifest])
         }.to raise_error(SpmChecker::DisallowedRepositoryHost, /metadata\.internal.*allow-hosts/)
       end
 
@@ -217,14 +247,9 @@ RSpec.describe SpmChecker do
       checker.allow_hosts = ["github.com"]
 
       Dir.mktmpdir do |dir|
-        File.write(File.join(dir, "Package.swift"), '.package(url: "https://metadata.internal/a/b", exact: "1.0.0")')
-        File.write(File.join(dir, "Package.resolved"),
-                   {
-                     "pins" => [{ "location" => "https://metadata.internal/a/b", "state" => { "version" => "1.0.0" } }],
-                     "version" => 2
-                   }.to_json)
+        manifest = ManifestPackageFixture.write_version(dir, url: "https://metadata.internal/a/b", requirement: 'exact: "1.0.0"')
 
-        expect(checker.check_manifests([File.join(dir, "Package.swift")])).to eq([])
+        expect(checker.check_manifests([manifest])).to eq([])
       end
 
       expect(GitOperations).not_to have_received(:version_tags)
@@ -235,14 +260,9 @@ RSpec.describe SpmChecker do
       checker.check_branches = false
 
       Dir.mktmpdir do |dir|
-        File.write(File.join(dir, "Package.swift"), '.package(url: "git@metadata.internal:a/b.git", branch: "main")')
-        File.write(File.join(dir, "Package.resolved"),
-                   {
-                     "pins" => [{ "location" => "git@metadata.internal:a/b.git", "state" => { "revision" => "abc123" } }],
-                     "version" => 2
-                   }.to_json)
+        manifest = ManifestPackageFixture.write_branch(dir)
 
-        expect(checker.check_manifests([File.join(dir, "Package.swift")])).to eq([])
+        expect(checker.check_manifests([manifest])).to eq([])
       end
 
       expect(GitOperations).not_to have_received(:branch_last_commit)
@@ -252,14 +272,9 @@ RSpec.describe SpmChecker do
       checker.allow_hosts = ["github.com"]
 
       Dir.mktmpdir do |dir|
-        File.write(File.join(dir, "Package.swift"), '.package(url: "https://metadata.internal/a/b", revision: "abc123")')
-        File.write(File.join(dir, "Package.resolved"),
-                   {
-                     "pins" => [{ "location" => "https://metadata.internal/a/b", "state" => { "revision" => "abc123" } }],
-                     "version" => 2
-                   }.to_json)
+        manifest = ManifestPackageFixture.write_revision(dir)
 
-        expect(checker.check_manifests([File.join(dir, "Package.swift")])).to eq([])
+        expect(checker.check_manifests([manifest])).to eq([])
       end
 
       expect(GitOperations).not_to have_received(:version_tags)
@@ -425,22 +440,10 @@ RSpec.describe SpmChecker do
 
     it "applies ignore-until to above-maximum semantic reports" do
       Dir.mktmpdir do |dir|
-        manifest = File.join(dir, "Package.swift")
-        File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
-        File.write(
-          File.join(dir, "Package.resolved"),
-          {
-            "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
-            "version" => 2
-          }.to_json
-        )
-        allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b").and_return(versions("2.0.0", "1.1.0", "1.0.0"))
+        manifest = ManifestPackageFixture.write_version(dir)
+        stub_acme_versions
         checker.report_above_maximum = true
-        checker.repository_update_rules = RepositoryUpdateRules.from_hash(
-          "repositories" => [
-            { "url" => "https://github.com/a/b", "ignore-until" => "2.0.0" },
-          ]
-        )
+        apply_repository_rule("url" => "https://github.com/a/b", "ignore-until" => "2.0.0")
 
         warnings = checker.check_manifests([manifest])
 
@@ -452,22 +455,10 @@ RSpec.describe SpmChecker do
 
     it "allows only patch and minor reports when allowed-updates is minor" do
       Dir.mktmpdir do |dir|
-        manifest = File.join(dir, "Package.swift")
-        File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
-        File.write(
-          File.join(dir, "Package.resolved"),
-          {
-            "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
-            "version" => 2
-          }.to_json
-        )
-        allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b").and_return(versions("2.0.0", "1.1.0", "1.0.0"))
+        manifest = ManifestPackageFixture.write_version(dir)
+        stub_acme_versions
         checker.report_above_maximum = true
-        checker.repository_update_rules = RepositoryUpdateRules.from_hash(
-          "repositories" => [
-            { "url" => "https://github.com/a/b", "allowed-updates" => "minor" },
-          ]
-        )
+        apply_repository_rule("url" => "https://github.com/a/b", "allowed-updates" => "minor")
 
         warnings = checker.check_manifests([manifest])
 
@@ -477,22 +468,10 @@ RSpec.describe SpmChecker do
 
     it "combines ignore-until and allowed-updates suppression" do
       Dir.mktmpdir do |dir|
-        manifest = File.join(dir, "Package.swift")
-        File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
-        File.write(
-          File.join(dir, "Package.resolved"),
-          {
-            "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
-            "version" => 2
-          }.to_json
-        )
-        allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b").and_return(versions("2.0.0", "1.1.0", "1.0.0"))
+        manifest = ManifestPackageFixture.write_version(dir)
+        stub_acme_versions
         checker.report_above_maximum = true
-        checker.repository_update_rules = RepositoryUpdateRules.from_hash(
-          "repositories" => [
-            { "url" => "https://github.com/a/b", "ignore-until" => "2.0.0", "allowed-updates" => "minor" },
-          ]
-        )
+        apply_repository_rule("url" => "https://github.com/a/b", "ignore-until" => "2.0.0", "allowed-updates" => "minor")
 
         warnings = checker.check_manifests([manifest])
 
@@ -563,50 +542,35 @@ RSpec.describe SpmChecker do
 
     it "does not match a different major version for up-to-next-minor constraints" do
       Dir.mktmpdir do |dir|
-        File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", .upToNextMinor(from: "1.5.0"))')
-        File.write(File.join(dir, "Package.resolved"),
-                   {
-                     "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.5.0" } }],
-                     "version" => 2
-                   }.to_json)
+        manifest = ManifestPackageFixture.write_version(dir, requirement: '.upToNextMinor(from: "1.5.0")', version: "1.5.0")
         # 2.5.0 shares the minor component but a different major; it must not match.
         allow(GitOperations).to receive(:version_tags).and_return(versions("2.5.0", "1.5.3", "1.5.0"))
 
-        warnings = checker.check_manifests([File.join(dir, "Package.swift")])
+        warnings = checker.check_manifests([manifest])
 
-        expect(warnings).to eq(["Newer version of a/b: 1.5.3\nSource: #{File.join(dir, 'Package.swift')}"])
+        expect(warnings).to eq(["Newer version of a/b: 1.5.3\nSource: #{manifest}"])
       end
     end
 
     it "does not report a pre-release as the newest version in a range when pre-releases are filtered" do
       Dir.mktmpdir do |dir|
-        File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", "1.0.0"..<"3.0.0")')
-        File.write(File.join(dir, "Package.resolved"),
-                   {
-                     "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
-                     "version" => 2
-                   }.to_json)
+        manifest = ManifestPackageFixture.write_version(dir, requirement: '"1.0.0"..<"3.0.0"')
         # 3.0.0-beta.1 is the absolute newest but a pre-release; report 2.0.0.
         allow(GitOperations).to receive(:version_tags).and_return(versions("3.0.0-beta.1", "2.0.0", "1.0.0"))
 
-        warnings = checker.check_manifests([File.join(dir, "Package.swift")])
+        warnings = checker.check_manifests([manifest])
 
-        expect(warnings).to eq(["Newer version of a/b: 2.0.0\nSource: #{File.join(dir, 'Package.swift')}"])
+        expect(warnings).to eq(["Newer version of a/b: 2.0.0\nSource: #{manifest}"])
       end
     end
 
     it "does not emit an empty warning when no available version satisfies the constraint" do
       Dir.mktmpdir do |dir|
-        File.write(File.join(dir, "Package.swift"), '.package(url: "https://github.com/a/b", from: "1.0.0")')
-        File.write(File.join(dir, "Package.resolved"),
-                   {
-                     "pins" => [{ "location" => "https://github.com/a/b", "state" => { "version" => "1.0.0" } }],
-                     "version" => 2
-                   }.to_json)
+        manifest = ManifestPackageFixture.write_version(dir)
         # Only a newer *major* exists, which an upToNextMajor (`from:`) constraint excludes.
         allow(GitOperations).to receive(:version_tags).and_return(versions("2.0.0"))
 
-        warnings = checker.check_manifests([File.join(dir, "Package.swift")])
+        warnings = checker.check_manifests([manifest])
 
         expect(warnings).to eq([])
       end
