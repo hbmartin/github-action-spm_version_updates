@@ -1,6 +1,6 @@
 # Maintenance Guide
 
-This document provides instructions for maintaining, developing, and releasing the SPM Version Updates GitHub Action.
+This document provides instructions for maintaining, developing, and releasing the Swift Package Version Updates GitHub Action.
 
 ## Development Setup
 
@@ -233,7 +233,7 @@ This action follows semantic versioning:
 1. **Ensure action.yml is properly configured**:
 
    ```yaml
-   name: 'SPM Version Updates'
+   name: 'Swift Package Version Updates'
    description: 'Check for available updates to Swift Package Manager dependencies'
    author: 'hbmartin'
    branding:
