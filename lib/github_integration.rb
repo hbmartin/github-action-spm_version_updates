@@ -85,9 +85,12 @@ class GithubIntegration < ReporterSink
     private
 
     def remote_match
-      REMOTE_PATTERNS
-        .filter_map { |pattern| @value.match(pattern) }
-        .first
+      REMOTE_PATTERNS.each { |pattern|
+        match = @value.match(pattern)
+        return match if match
+      }
+
+      nil
     end
 
     def configure_remote(match)
