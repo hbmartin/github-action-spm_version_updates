@@ -11,25 +11,29 @@ class GithubIntegration < ReporterSink
 
   # Parses supported git remote URLs and renders host-specific links.
   class RepositoryLink
-    URL_REMOTE_PATTERN = %r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>github\.com|gitlab\.com|bitbucket\.org)(?::\d+)?/(?<path>.+)\z}i
-    SCP_REMOTE_PATTERN = %r{\A(?:[^@/\s]+@)?(?<host>github\.com|gitlab\.com|bitbucket\.org)[:/](?<path>.+)\z}i
+    GITHUB_HOST = "github.com"
+    GITLAB_HOST = "gitlab.com"
+    BITBUCKET_HOST = "bitbucket.org"
+    SUPPORTED_HOSTS_PATTERN = Regexp.union(GITHUB_HOST, GITLAB_HOST, BITBUCKET_HOST).source
+    URL_REMOTE_PATTERN = %r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})(?::\d+)?/(?<path>.+)\z}i
+    SCP_REMOTE_PATTERN = %r{\A(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})[:/](?<path>.+)\z}i
     PATH_NORMALIZERS = {
-      "github.com" => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
-      "bitbucket.org" => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
-      "gitlab.com" => lambda { |segments|
+      GITHUB_HOST => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
+      BITBUCKET_HOST => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
+      GITLAB_HOST => lambda { |segments|
         project_segments = segments.take_while { |segment| segment != "-" }
         project_segments.join("/") if project_segments.size >= 2
       }
     }.freeze
     COMPARE_PATHS = {
-      "github.com" => ->(current, available) { "/compare/#{current}...#{available}" },
-      "gitlab.com" => ->(current, available) { "/-/compare/#{current}...#{available}" },
-      "bitbucket.org" => ->(current, available) { "/branches/compare/#{available}..#{current}" }
+      GITHUB_HOST => ->(current, available) { "/compare/#{current}...#{available}" },
+      GITLAB_HOST => ->(current, available) { "/-/compare/#{current}...#{available}" },
+      BITBUCKET_HOST => ->(current, available) { "/branches/compare/#{available}..#{current}" }
     }.freeze
     RELEASE_LINKS = {
-      "github.com" => ["Releases", "/releases"],
-      "gitlab.com" => ["Releases", "/-/releases"],
-      "bitbucket.org" => ["Tags", "/downloads/?tab=tags"]
+      GITHUB_HOST => ["Releases", "/releases"],
+      GITLAB_HOST => ["Releases", "/-/releases"],
+      BITBUCKET_HOST => ["Tags", "/downloads/?tab=tags"]
     }.freeze
 
     def self.from(repository_url)
@@ -44,6 +48,11 @@ class GithubIntegration < ReporterSink
       @path = nil
       configure_remote(remote_match)
     end
+
+    private_constant :GITHUB_HOST,
+                     :GITLAB_HOST,
+                     :BITBUCKET_HOST,
+                     :SUPPORTED_HOSTS_PATTERN
 
     def valid?
       @host && @path
