@@ -1,5 +1,5 @@
-name: 'SPM Version Updates'
-description: 'Check for available updates to Swift Package Manager dependencies in Xcode projects or Package.swift manifests'
+name: 'Swift Package Version Updates'
+description: 'Report available Swift Package Manager dependency updates from Package.swift manifests or Xcode projects'
 author: 'hbmartin'
 branding:
   icon: 'package'
@@ -7,39 +7,39 @@ branding:
 
 inputs:
   xcode-project-path:
-    description: 'Path to the Xcode project file (.xcodeproj). Provide this OR package-manifest-paths.'
+    description: 'Xcode mode: path to the .xcodeproj file. Mutually exclusive with package-manifest-paths.'
     required: false
     default: ''
   package-manifest-paths:
-    description: 'Newline-separated list of Package.swift manifest paths. Provide this OR xcode-project-path.'
+    description: 'Manifest mode: newline-separated Package.swift paths. Mutually exclusive with xcode-project-path.'
     required: false
     default: ''
   package-resolved-paths:
-    description: 'Optional newline-separated list of Package.resolved paths. Defaults to a Package.resolved next to each manifest.'
+    description: 'Optional newline-separated Package.resolved paths. Defaults to a Package.resolved next to each manifest.'
     required: false
     default: ''
   check-when-exact:
-    description: 'Check for updates even when using exact version constraints'
+    description: 'Include exact version constraints when checking for updates'
     required: false
     default: 'false'
   check-branches:
-    description: 'Check for newer commits on branch-pinned dependencies'
+    description: 'Check branch-pinned dependencies for newer commits'
     required: false
     default: 'true'
   check-revisions:
-    description: 'Report the latest tagged version for revision-pinned dependencies'
+    description: 'Report the latest tagged release for revision-pinned dependencies'
     required: false
     default: 'false'
   report-above-maximum:
-    description: 'Report versions above the maximum constraint range'
+    description: 'Also report versions above the maximum allowed constraint range'
     required: false
     default: 'false'
   report-pre-releases:
-    description: 'Include pre-release versions in update reports'
+    description: 'Include pre-release versions when choosing available updates'
     required: false
     default: 'false'
   ignore-repos:
-    description: 'Comma-separated list of repository URLs to ignore'
+    description: 'Comma-separated repository URLs to skip before any git lookup'
     required: false
     default: ''
   repo-rules-path:
@@ -47,15 +47,15 @@ inputs:
     required: false
     default: ''
   allow-hosts:
-    description: 'Comma-separated list of git remote hostnames allowed for version lookups. Empty allows any host for allowed git protocols.'
+    description: 'Comma-separated git remote hostnames allowed for version lookups. Empty allows any host for allowed git protocols.'
     required: false
     default: ''
   fail-on-updates:
-    description: 'Legacy fail behavior. Set true to fail on any update, or major/minor/patch to fail on semantic version updates at or above that severity.'
+    description: 'Deprecated: use fail-on instead. Set true to fail on any update, or major/minor/patch for semantic updates.'
     required: false
     default: 'false'
   fail-on:
-    description: 'Fail on semantic version updates at or above this severity: major, minor, or patch. Overrides fail-on-updates when set.'
+    description: 'Failure threshold: major, minor, patch, or empty to never fail. Overrides fail-on-updates when set.'
     required: false
     default: ''
   comment-on-success:
@@ -63,19 +63,19 @@ inputs:
     required: false
     default: 'false'
   cache-version-tags:
-    description: 'Persist successful git tag lookups between runs with actions/cache'
+    description: 'Cache git tag lookup results with actions/cache to make repeated runs faster'
     required: false
     default: 'true'
   version-tags-cache-ttl:
-    description: 'Freshness window, in seconds, for persisted git tag lookup results. Set to 0 to disable persistent cache reads and writes.'
+    description: 'How long cached git tag results stay fresh, in seconds. Set 0 to disable cache reads and writes.'
     required: false
     default: '21600'
   setup-ruby:
-    description: 'Set up Ruby and install this action bundle. Set false only after an earlier invocation in the same job has already done this.'
+    description: 'Set up Ruby and install this action bundle. Set false only after an earlier invocation in the same job has done this.'
     required: false
     default: 'true'
   github-token:
-    description: 'GitHub token for API access (automatic)'
+    description: 'Token used to create or update pull request comments. Defaults to github.token.'
     required: false
     default: ${{ github.token }}
 
@@ -105,7 +105,7 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Set up Ruby
+    - name: Set up action runtime
       if: ${{ inputs.setup-ruby == 'true' }}
       uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f
       env:
@@ -115,7 +115,7 @@ runs:
         bundler-cache: true
         working-directory: ${{ github.action_path }}
 
-    - name: Prepare version tags cache
+    - name: Prepare git tag cache
       id: version-tags-cache
       if: ${{ inputs.cache-version-tags == 'true' && inputs.version-tags-cache-ttl != '0' }}
       shell: bash
@@ -137,7 +137,7 @@ runs:
         echo "today-restore-key=$today_restore_key" >> "$GITHUB_OUTPUT"
         echo "restore-key=$restore_key" >> "$GITHUB_OUTPUT"
 
-    - name: Restore version tags cache
+    - name: Restore git tag cache
       if: ${{ inputs.cache-version-tags == 'true' && inputs.version-tags-cache-ttl != '0' }}
       uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
@@ -147,7 +147,7 @@ runs:
           ${{ steps.version-tags-cache.outputs.today-restore-key }}
           ${{ steps.version-tags-cache.outputs.restore-key }}
 
-    - name: Check SPM dependencies
+    - name: Check Swift package updates
       id: check
       shell: bash
       env:
@@ -177,7 +177,7 @@ runs:
         bash "$ACTION_PATH/lib/action_runtime_preflight.sh"
         bundle exec ruby "$ACTION_PATH/lib/action.rb"
 
-    - name: Save version tags cache
+    - name: Save git tag cache
       if: ${{ always() && inputs.cache-version-tags == 'true' && inputs.version-tags-cache-ttl != '0' }}
       uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:

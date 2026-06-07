@@ -11,30 +11,33 @@ class GithubIntegration < ReporterSink
 
   # Parses supported git remote URLs and renders host-specific links.
   class RepositoryLink
-    HOSTS = ["github.com", "gitlab.com", "bitbucket.org"].freeze
+    GITHUB_HOST = "github.com"
+    GITLAB_HOST = "gitlab.com"
+    BITBUCKET_HOST = "bitbucket.org"
+    HOSTS = [GITHUB_HOST, GITLAB_HOST, BITBUCKET_HOST].freeze
     SUPPORTED_HOSTS_PATTERN = Regexp.union(HOSTS).source
     REMOTE_PATTERNS = [
       %r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})(?::\d+)?/(?<path>.+)\z}i,
       %r{\A(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})[:/](?<path>.+)\z}i,
     ].freeze
     PATH_NORMALIZERS = {
-      "github.com" => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
-      "bitbucket.org" => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
-      "gitlab.com" => lambda { |segments|
+      GITHUB_HOST => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
+      BITBUCKET_HOST => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
+      GITLAB_HOST => lambda { |segments|
         project_segments = segments.take_while { |segment| segment != "-" }
         project_segments.join("/") if project_segments.size >= 2
       }
     }.freeze
     LINKS = {
-      "github.com" => {
+      GITHUB_HOST => {
         compare: ->(current, available) { "/compare/#{current}...#{available}" },
         release: ["Releases", "/releases"]
       },
-      "gitlab.com" => {
+      GITLAB_HOST => {
         compare: ->(current, available) { "/-/compare/#{current}...#{available}" },
         release: ["Releases", "/-/releases"]
       },
-      "bitbucket.org" => {
+      BITBUCKET_HOST => {
         compare: ->(current, available) { "/branches/compare/#{available}..#{current}" },
         release: ["Tags", "/downloads/?tab=tags"]
       }
@@ -53,7 +56,10 @@ class GithubIntegration < ReporterSink
       configure_remote(remote_match)
     end
 
-    private_constant :HOSTS,
+    private_constant :GITHUB_HOST,
+                     :GITLAB_HOST,
+                     :BITBUCKET_HOST,
+                     :HOSTS,
                      :SUPPORTED_HOSTS_PATTERN,
                      :REMOTE_PATTERNS,
                      :PATH_NORMALIZERS,
@@ -85,12 +91,10 @@ class GithubIntegration < ReporterSink
     private
 
     def remote_match
-      REMOTE_PATTERNS.each { |pattern|
-        match = @value.match(pattern)
-        return match if match
-      }
-
-      nil
+      REMOTE_PATTERNS
+        .lazy
+        .map { |pattern| @value.match(pattern) }
+        .find(&:itself)
     end
 
     def configure_remote(match)
