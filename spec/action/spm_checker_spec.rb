@@ -53,7 +53,7 @@ RSpec.describe SpmChecker do
       .sort.reverse
   end
 
-  def stub_acme_versions
+  def stub_default_versions
     allow(GitOperations).to receive(:version_tags)
       .with("https://github.com/a/b")
       .and_return(versions("2.0.0", "1.1.0", "1.0.0"))
@@ -441,7 +441,7 @@ RSpec.describe SpmChecker do
     it "applies ignore-until to above-maximum semantic reports" do
       Dir.mktmpdir do |dir|
         manifest = ManifestPackageFixture.write_version(dir)
-        stub_acme_versions
+        stub_default_versions
         checker.report_above_maximum = true
         apply_repository_rule("url" => "https://github.com/a/b", "ignore-until" => "2.0.0")
 
@@ -456,7 +456,7 @@ RSpec.describe SpmChecker do
     it "allows only patch and minor reports when allowed-updates is minor" do
       Dir.mktmpdir do |dir|
         manifest = ManifestPackageFixture.write_version(dir)
-        stub_acme_versions
+        stub_default_versions
         checker.report_above_maximum = true
         apply_repository_rule("url" => "https://github.com/a/b", "allowed-updates" => "minor")
 
@@ -469,7 +469,7 @@ RSpec.describe SpmChecker do
     it "combines ignore-until and allowed-updates suppression" do
       Dir.mktmpdir do |dir|
         manifest = ManifestPackageFixture.write_version(dir)
-        stub_acme_versions
+        stub_default_versions
         checker.report_above_maximum = true
         apply_repository_rule("url" => "https://github.com/a/b", "ignore-until" => "2.0.0", "allowed-updates" => "minor")
 
