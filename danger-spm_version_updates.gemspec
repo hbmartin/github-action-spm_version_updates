@@ -27,9 +27,13 @@ Gem::Specification.new do |spec|
     "action.yml",
     "danger-spm_version_updates.gemspec",
   ]
-  git_files = `git ls-files -z lib docs #{release_paths.join(" ")} 2>/dev/null`
-    .split("\x0")
-    .reject(&:empty?)
+  git_files = begin
+    `git ls-files -z lib docs #{release_paths.join(" ")} 2>/dev/null`
+      .split("\x0")
+      .reject(&:empty?)
+  rescue Errno::ENOENT
+    []
+  end
   fallback_files = Dir.glob(["lib/**/*", "docs/**/*", *release_paths])
     .select { |path| File.file?(path) }
   spec.files         = (git_files.empty? ? fallback_files : git_files).sort

@@ -2,6 +2,9 @@
 
 [![CI](https://github.com/hbmartin/github-action-spm_version_updates/actions/workflows/lint_and_test.yml/badge.svg)](https://github.com/hbmartin/github-action-spm_version_updates/actions/workflows/lint_and_test.yml)
 [![CodeFactor](https://www.codefactor.io/repository/github/hbmartin/github-action-spm_version_updates/badge/main)](https://www.codefactor.io/repository/github/hbmartin/github-action-spm_version_updates/overview/main)
+[![Release](https://img.shields.io/github/v/release/hbmartin/github-action-spm_version_updates?sort=semver&logo=github)](https://github.com/hbmartin/github-action-spm_version_updates/releases)
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-SPM%20Version%20Updates-blue?logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/spm-version-updates)
+[![Gem Version](https://img.shields.io/gem/v/danger-spm_version_updates?logo=rubygems&label=danger%20plugin)](https://rubygems.org/gems/danger-spm_version_updates)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A GitHub Action to automatically detect and report available updates for your Swift Package Manager (SPM) dependencies.
@@ -19,6 +22,8 @@ It works in two ways:
 - **Xcode project mode** — dependencies declared as `XCRemoteSwiftPackageReference` objects inside an `.xcodeproj`.
 - **Swift manifest mode** — dependencies declared in one or more `Package.swift` manifests (a SwiftPM-first / modular iOS layout).
 
+> **Which mode do I use?** If your `project.pbxproj` contains `XCRemoteSwiftPackageReference` entries, use **Xcode project mode** (`xcode-project-path`). If your dependencies live in one or more `Package.swift` files, use **Swift manifest mode** (`package-manifest-paths`). Provide exactly one.
+
 📖 **SwiftPM-first repo?** If your dependencies live in `Package.swift` manifests rather than in the `.xcodeproj`, see the [Swift manifest mode guide](docs/swiftpm-manifest-mode.md) for setup and migration steps.
 
 ## Contents
@@ -27,13 +32,16 @@ It works in two ways:
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [Permissions](#permissions)
+- [Security](#security)
 - [Source modes](#source-modes)
 - [Configuration Options](#configuration-options)
 - [How dependency constraints are handled](#how-dependency-constraints-are-handled)
 - [Outputs](#outputs)
 - [Example output](#example-output)
 - [Advanced configuration](#advanced-configuration)
+- [Danger plugin](#danger-plugin)
 - [Limitations](#limitations)
+- [Troubleshooting](#troubleshooting)
 - [Versioning](#versioning)
 - [Development](#development)
 - [Authors](#authors)
@@ -41,11 +49,22 @@ It works in two ways:
 
 ## Why this action?
 
-Swift dependency updates are awkward to keep an eye on in CI:
+Swift dependency updates are awkward to keep an eye on in CI. Here's how this action compares to the common alternatives:
 
-- **Dependabot's SPM support is limited.** It only reads packages declared in an `.xcodeproj`/workspace and doesn't handle the SwiftPM-first, multi-`Package.swift` modular layouts that many iOS apps have moved to. This action checks **either** an `.xcodeproj` **or** any number of `Package.swift` manifests.
-- **No toolchain, no macOS minutes.** It never resolves a graph or runs `swift package`; it parses your manifests/`Package.resolved` and queries each dependency's tags with `git ls-remote`. That means it runs on cheap `ubuntu-latest` runners in seconds.
-- **Report-only and non-intrusive.** Instead of opening a pull request per dependency, it posts and continuously updates a **single** PR comment summarizing what's available — so your PR list stays clean and you decide when to bump.
+| | This action | Dependabot | Renovate |
+| --- | --- | --- | --- |
+| Multiple `Package.swift` (SwiftPM-first layout) | ✅ any number of manifests | ❌ `.xcodeproj`/workspace only | ✅ |
+| Swift/Xcode toolchain or macOS runner | ❌ not needed | n/a | ❌ not needed |
+| Where it runs | `ubuntu-latest`, seconds | hosted | hosted / self-hosted |
+| Default output | one self-updating PR comment | one PR per dependency | PRs (groupable) |
+| Report-only (no auto-PRs) | ✅ | ❌ | optional |
+| Noise control (pre-releases, pins, per-repo rules) | ✅ fine-grained | limited | ✅ |
+
+In short:
+
+- **It handles SwiftPM-first repos.** Dependabot only reads packages declared in an `.xcodeproj`/workspace; this action checks **either** an `.xcodeproj` **or** any number of `Package.swift` manifests.
+- **No toolchain, no macOS minutes.** It never resolves a graph or runs `swift package`; it parses your manifests/`Package.resolved` and queries each dependency's tags with `git ls-remote`, so it runs on cheap `ubuntu-latest` runners in seconds.
+- **Report-only and non-intrusive.** Instead of opening a pull request per dependency, it posts and continuously updates a **single** PR comment — so your PR list stays clean and you decide when to bump.
 - **You control the noise.** Pre-releases, branch/revision pins, exact pins, and above-maximum releases are all opt-in/opt-out, and you can ignore specific repositories entirely.
 
 ## Features
@@ -94,7 +113,6 @@ on:
       - 'Modules/Package.resolved'
       - 'BuildTools/Package.swift'
       - 'BuildTools/Package.resolved'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -129,8 +147,17 @@ A few things worth knowing about the token:
 
 - **`github-token` defaults to `${{ github.token }}`**, the automatic per-job token. You only need to set it explicitly to use a PAT or a GitHub App token (for example, to raise the API rate limit or to comment on a repository the default token can't write to).
 - **The token is used to post the comment, not to look up versions.** Dependency tags are fetched with `git ls-remote`, so a low rate limit on the token won't slow checks down.
-- **Pull requests from forks get a read-only `GITHUB_TOKEN`**, so the comment step can't write. If you want this to run on fork PRs, trigger it with `pull_request_target` (and review the [security implications](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)) or post the results from a separate, trusted workflow.
-- **Fork PR manifests are untrusted input.** With `pull_request_target`, checking out the PR head means a fork can change `Package.swift` or `.xcodeproj` dependency URLs. This action uses `git ls-remote` for those URLs, so a malicious PR can point the runner at hosts it can reach and at credentials already available to git. Lookups are restricted to Git's `https`, `ssh`, and `git` transports; `file`, `ext`, and remote-helper transports are blocked. For fork PR workflows, set `persist-credentials: false`, avoid extra secrets/SSH keys/private network access, and restrict version lookups with `allow-hosts`.
+
+Running on pull requests **from forks** needs extra care — see [Security](#security).
+
+## Security
+
+This action reads dependency URLs from your manifests and contacts each one with `git ls-remote`. On your own branches that's routine, but pull requests from forks can rewrite those URLs, so treat fork runs as untrusted.
+
+- **Fork PRs get a read-only `GITHUB_TOKEN`**, so the comment step can't write. To run on fork PRs, trigger with `pull_request_target` (review the [security implications](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)) or post the results from a separate, trusted workflow.
+- **Fork PR manifests are untrusted input.** With `pull_request_target`, checking out the PR head lets a fork change `Package.swift` or `.xcodeproj` dependency URLs. Because lookups use `git ls-remote`, a malicious PR could point the runner at hosts it can reach and at credentials already available to git.
+- **Transports are restricted.** Lookups are limited to Git's `https`, `ssh`, and `git` transports; `file`, `ext`, and remote-helper transports are blocked.
+- **Lock down fork runs.** Set `persist-credentials: false`, avoid extra secrets / SSH keys / private network access, and restrict version lookups with `allow-hosts`. Host matching is exact, case-insensitive, and ignores schemes, credentials, paths, and ports; an off-list dependency fails the action and writes `blocked=true` plus `error-message`.
 
 ```yaml
 on:
@@ -259,6 +286,35 @@ The action always writes machine-readable outputs, appends a GitHub step summary
 | `blocked` | `true` when the action stopped before a version lookup because a security gate such as `allow-hosts` blocked it; otherwise `false`. |
 | `error-message` | Failure message when `blocked` is `true`. |
 
+### `updates-json` example
+
+```json
+[
+  {
+    "type": "version",
+    "package": "onevcat/Kingfisher",
+    "repository_url": "https://github.com/onevcat/Kingfisher",
+    "current_version": "7.12.0",
+    "available_version": "8.0.0",
+    "severity": "major",
+    "message": "Newer version of onevcat/Kingfisher: 8.0.0",
+    "source": "Modules/Package.swift"
+  },
+  {
+    "type": "version",
+    "package": "SwiftGen/SwiftGenPlugin",
+    "repository_url": "https://github.com/SwiftGen/SwiftGenPlugin",
+    "current_version": "6.6.2",
+    "available_version": "6.7.0",
+    "severity": "minor",
+    "message": "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0",
+    "source": "BuildTools/Package.swift"
+  }
+]
+```
+
+`severity` is present only for semantic `version` / `above_maximum` updates, `source` only in Swift manifest mode, and `note` only for branch/revision/above-maximum reports. `repository_url` is redacted if it contained embedded credentials. When no updates are found, the output is `[]`.
+
 Use `fail-on: major` when only major semantic-version updates should fail the job after the outputs, step summary, annotations, and PR comment have been written. Use `minor` to fail on major or minor updates, and `patch` to fail on any semantic-version update. `fail-on-updates: true` remains supported when any reported update, including branch or revision updates, should fail the job.
 
 ```yaml
@@ -337,12 +393,52 @@ The `Source:` line is only included in Swift manifest mode, where it tells you w
     fail-on-updates: false
 ```
 
+## Danger plugin
+
+The same checker also ships as a [Danger](https://danger.systems/ruby/) plugin, [`danger-spm_version_updates`](https://rubygems.org/gems/danger-spm_version_updates), if you'd rather run dependency checks inside an existing Danger step than as a standalone action. The plugin operates in **Xcode project mode** only and requires Ruby >= 3.2.
+
+Add it to your Gemfile:
+
+```ruby
+gem "danger-spm_version_updates"
+```
+
+Then call it from your `Dangerfile`:
+
+```ruby
+spm_version_updates.check_when_exact = false
+spm_version_updates.report_above_maximum = false
+spm_version_updates.report_pre_releases = false
+spm_version_updates.ignore_repos = ["https://github.com/pointfreeco/swift-snapshot-testing"]
+spm_version_updates.repo_rules_path = ".github/spm-version-rules.yml"
+spm_version_updates.check_for_updates("MyApp.xcodeproj")
+```
+
+Each available update is reported as a Danger `warn`. The configurable accessors mirror the action inputs of the same name: `check_when_exact`, `report_above_maximum`, `report_pre_releases`, `ignore_repos`, and `repo_rules_path`.
+
 ## Limitations
 
-- **The built-in PR comment sink is GitHub-specific.** Comments now flow through a small reporter sink interface, but the only included sink posts through the GitHub API. The action has to run inside GitHub Actions on a GitHub-hosted pull request for that default sink to be available. Outputs, step summaries, and annotations are still emitted on non-PR runs.
-- **Version lookups work against any git host the runner can reach by default.** Tags and branches are read with `git ls-remote` over `https`, `ssh`, or `git` transports, so dependencies hosted on GitHub, GitLab, Bitbucket, or a self-hosted server all work when exposed through those protocols. Private dependencies are supported as long as the runner is already authenticated to fetch them (SSH key or credentials in the environment); the action does not manage those credentials for you. After bounded retries, an unreachable or auth-failing dependency fails the action instead of being treated as "no updates." Set `allow-hosts` for untrusted PRs or locked-down runners; host matching is exact, case-insensitive, and ignores URL schemes, credentials, paths, and ports. When set, `allow-hosts` is enforced before enabled lookups only; an off-list dependency that would be contacted fails the action and writes `blocked=true` plus `error-message`.
+- **The built-in PR comment sink is GitHub-specific.** Comments flow through a small reporter sink interface, but the only included sink posts through the GitHub API, so the PR comment requires running inside GitHub Actions on a GitHub-hosted pull request. Outputs, step summaries, and annotations are still emitted on non-PR runs.
+- **Version lookups need a reachable git host.** Tags and branches are read with `git ls-remote` over `https`, `ssh`, or `git`, so any host exposed through those transports works (GitHub, GitLab, Bitbucket, self-hosted).
+  - Private dependencies are supported as long as the runner is already authenticated to fetch them (SSH key or credentials in the environment); the action does not manage those credentials for you.
+  - After bounded retries, an unreachable or auth-failing dependency fails the action instead of being treated as "no updates."
+  - For untrusted PRs or locked-down runners, set `allow-hosts`. Matching is exact, case-insensitive, and ignores schemes, credentials, paths, and ports; an off-list dependency fails the action and writes `blocked=true` plus `error-message`.
 - **Updates are detected from semver tags.** A dependency that doesn't publish semver-style version tags won't produce version updates. Successful tag lookups are cached briefly across runs by default; branch- and revision-pinned dependencies are handled separately via `check-branches` / `check-revisions`.
 - **Local packages are skipped.** `.package(path: ...)` dependencies and commented-out declarations are ignored.
+
+## Troubleshooting
+
+**No comment appeared on my PR.** Check that the job has `pull-requests: write` and that the run is a real pull request — fork PRs get a read-only token and can't comment (see [Security](#security)). On clean runs the prior comment is deleted by default; set `comment-on-success: true` to keep an "up to date" comment instead.
+
+**The action failed with a missing `Package.resolved`.** In Swift manifest mode every manifest needs a resolved file next to it (e.g. `Modules/Package.swift` → `Modules/Package.resolved`). Commit the resolved file, or point `package-resolved-paths` at its real location.
+
+**No updates found, but I know a newer version exists.** Updates are detected from semver-style tags. Pre-releases (unless `report-pre-releases: true`), versions above your constraint (unless `report-above-maximum: true`), and exact/revision pins (unless `check-when-exact` / `check-revisions`) are skipped by design. A dependency that doesn't publish version tags produces no updates, and `ignore-repos` / `repo-rules-path` may be suppressing the report.
+
+**The output says `blocked=true`.** A dependency's host isn't in `allow-hosts`. Add the host (matching is exact and case-insensitive) or adjust your manifests; `error-message` names what was blocked.
+
+**It can't reach a private dependency.** The runner must already be authenticated (SSH key or git credentials) to fetch private repos — the action doesn't manage credentials. Unreachable or auth-failing dependencies fail the run after retries rather than reporting "no updates."
+
+**"Provide exactly one of…" error.** Set either `xcode-project-path` **or** `package-manifest-paths` — not both, and not neither.
 
 ## Versioning
 

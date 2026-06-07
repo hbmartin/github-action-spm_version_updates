@@ -44,3 +44,21 @@ rules:
       - metavariable-regex:
           metavariable: $PATH
           regex: ^/.*
+  - id: ruby.gemspec.git-ls-files-requires-enoent-rescue
+    languages:
+      - ruby
+    severity: ERROR
+    message: Wrap gemspec git ls-files shell calls in an Errno::ENOENT rescue so packaging works when git is unavailable.
+    paths:
+      include:
+        - "*.gemspec"
+    patterns:
+      - pattern-either:
+          - pattern: "`git ls-files ...`"
+          - pattern: "%x(git ls-files ...)"
+      - pattern-not-inside: |
+          begin
+            ...
+          rescue Errno::ENOENT
+            ...
+          end
