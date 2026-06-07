@@ -1,9 +1,9 @@
-# SPM Version Updates GitHub Action
+# Swift Package Version Updates GitHub Action
 
 [![CI](https://github.com/hbmartin/github-action-spm_version_updates/actions/workflows/lint_and_test.yml/badge.svg)](https://github.com/hbmartin/github-action-spm_version_updates/actions/workflows/lint_and_test.yml)
 [![CodeFactor](https://www.codefactor.io/repository/github/hbmartin/github-action-spm_version_updates/badge/main)](https://www.codefactor.io/repository/github/hbmartin/github-action-spm_version_updates/overview/main)
 [![Release](https://img.shields.io/github/v/release/hbmartin/github-action-spm_version_updates?sort=semver&logo=github)](https://github.com/hbmartin/github-action-spm_version_updates/releases)
-[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-SPM%20Version%20Updates-blue?logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/spm-version-updates)
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Swift%20Package%20Version%20Updates-blue?logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/spm-version-updates)
 [![Gem Version](https://img.shields.io/gem/v/danger-spm_version_updates?logo=rubygems&label=danger%20plugin)](https://rubygems.org/gems/danger-spm_version_updates)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -241,7 +241,7 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `cache-version-tags` | Persist successful git tag lookups between runs with `actions/cache`. | No | `true` |
 | `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Set `0` to disable persistent cache reads and writes. | No | `21600` |
 | `setup-ruby` | Set up Ruby and install this action's bundle. Set to `false` only for later invocations in the same job after an earlier invocation has already run setup. | No | `true` |
-| `github-token` | GitHub token for API access | No | `${{ github.token }}` |
+| `github-token` | Token used to create or update pull request comments. | No | `${{ github.token }}` |
 
 ### Runtime setup
 
@@ -357,7 +357,7 @@ repositories:
 When the action finds available updates, it posts (and keeps updating) a single comment on your pull request:
 
 <!-- TODO: drop a real screenshot at docs/pr-comment-example.png and uncomment the line below for a more compelling, marketplace-style README.
-![Example SPM Version Updates pull request comment](docs/pr-comment-example.png)
+![Example Swift Package Version Updates pull request comment](docs/pr-comment-example.png)
 -->
 
 > ## 📦 SPM Version Updates

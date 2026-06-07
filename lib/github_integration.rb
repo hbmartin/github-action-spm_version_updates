@@ -11,37 +11,32 @@ class GithubIntegration < ReporterSink
 
   # Parses supported git remote URLs and renders host-specific links.
   class RepositoryLink
-    GITHUB_HOST = "github.com"
-    GITLAB_HOST = "gitlab.com"
-    BITBUCKET_HOST = "bitbucket.org"
-    HOSTS = [GITHUB_HOST, GITLAB_HOST, BITBUCKET_HOST].freeze
-    SUPPORTED_HOSTS_PATTERN = Regexp.union(HOSTS).source
-    REMOTE_PATTERNS = [
-      %r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})(?::\d+)?/(?<path>.+)\z}i,
-      %r{\A(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})[:/](?<path>.+)\z}i,
-    ].freeze
-    PATH_NORMALIZERS = {
-      GITHUB_HOST => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
-      BITBUCKET_HOST => ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
-      GITLAB_HOST => lambda { |segments|
-        project_segments = segments.take_while { |segment| segment != "-" }
-        project_segments.join("/") if project_segments.size >= 2
-      }
-    }.freeze
-    LINKS = {
-      GITHUB_HOST => {
+    HOSTS = {
+      "github.com" => {
+        path_normalizer: ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
         compare: ->(current, available) { "/compare/#{current}...#{available}" },
         release: ["Releases", "/releases"]
       },
-      GITLAB_HOST => {
+      "gitlab.com" => {
+        path_normalizer: ->(segments) { segments.join("/").sub(%r{/-/.*\z}, "").then { |path| path if path.count("/") >= 1 } },
         compare: ->(current, available) { "/-/compare/#{current}...#{available}" },
         release: ["Releases", "/-/releases"]
       },
-      BITBUCKET_HOST => {
+      "bitbucket.org" => {
+        path_normalizer: ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
         compare: ->(current, available) { "/branches/compare/#{available}..#{current}" },
         release: ["Tags", "/downloads/?tab=tags"]
       }
     }.freeze
+    SUPPORTED_HOSTS_PATTERN = Regexp.union(HOSTS.keys).source
+    REMOTE_PATTERNS = [
+      %r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})(?::\d+)?/(?<path>.+)\z}i,
+      %r{\A(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})[:/](?<path>.+)\z}i,
+    ].freeze
+
+    private_constant :HOSTS,
+                     :SUPPORTED_HOSTS_PATTERN,
+                     :REMOTE_PATTERNS
 
     def self.from(repository_url)
       link = new(repository_url)
@@ -55,15 +50,6 @@ class GithubIntegration < ReporterSink
       @path = nil
       configure_remote(remote_match)
     end
-
-    private_constant :GITHUB_HOST,
-                     :GITLAB_HOST,
-                     :BITBUCKET_HOST,
-                     :HOSTS,
-                     :SUPPORTED_HOSTS_PATTERN,
-                     :REMOTE_PATTERNS,
-                     :PATH_NORMALIZERS,
-                     :LINKS
 
     def valid?
       @host && @path
@@ -91,10 +77,12 @@ class GithubIntegration < ReporterSink
     private
 
     def remote_match
-      REMOTE_PATTERNS
-        .lazy
-        .map { |pattern| @value.match(pattern) }
-        .find(&:itself)
+      REMOTE_PATTERNS.each { |pattern|
+        match = @value.match(pattern)
+        return match if match
+      }
+
+      nil
     end
 
     def configure_remote(match)
@@ -106,7 +94,7 @@ class GithubIntegration < ReporterSink
     end
 
     def normalized_path
-      PATH_NORMALIZERS.fetch(@host).call(path_segments)
+      link_builder.fetch(:path_normalizer).call(path_segments)
     end
 
     def path_segments
@@ -126,7 +114,7 @@ class GithubIntegration < ReporterSink
     end
 
     def link_builder
-      LINKS.fetch(@host)
+      HOSTS.fetch(@host)
     end
   end
 

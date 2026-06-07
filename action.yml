@@ -55,7 +55,7 @@ inputs:
     required: false
     default: 'false'
   fail-on:
-    description: 'Failure threshold: major, minor, patch, or empty to never fail. Overrides fail-on-updates when set.'
+    description: 'Fail when an update at or above this severity is found: major, minor, patch, or empty to never fail. Overrides fail-on-updates when set.'
     required: false
     default: ''
   comment-on-success:
