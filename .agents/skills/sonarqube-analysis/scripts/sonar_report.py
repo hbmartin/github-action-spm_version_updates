@@ -47,6 +47,7 @@ def load_env(path: Path) -> dict[str, str]:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, value = line.split("=", 1)
+            key = key.strip()
             value = value.strip()
             if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
                 value = value[1:-1]
@@ -89,7 +90,7 @@ class SonarClient:
 
 
 def issue_path(issue: dict[str, Any]) -> str:
-    component = issue.get("component", "")
+    component = issue.get("component") or ""
     return component.split(":", 1)[1] if ":" in component else component
 
 
@@ -119,11 +120,15 @@ def fetch_issues(
 
     while True:
         data = client.get("/api/issues/search", {**params, "p": page})
-        issues.extend(data.get("issues", []))
-        total = data.get("paging", {}).get("total", data.get("total", len(issues)))
+        page_issues = data.get("issues", [])
+        if not page_issues:
+            break
+        issues.extend(page_issues)
+        total = (data.get("paging") or {}).get("total", data.get("total", len(issues)))
         if len(issues) >= total:
-            return issues
+            break
         page += 1
+    return issues
 
 
 def fetch_hotspots(client: SonarClient, project: str, branch: str) -> list[dict[str, Any]]:
@@ -134,11 +139,15 @@ def fetch_hotspots(client: SonarClient, project: str, branch: str) -> list[dict[
             "/api/hotspots/search",
             {"projectKey": project, "branch": branch, "p": page, "ps": 500},
         )
-        hotspots.extend(data.get("hotspots", []))
-        total = data.get("paging", {}).get("total", len(hotspots))
+        page_hotspots = data.get("hotspots", [])
+        if not page_hotspots:
+            break
+        hotspots.extend(page_hotspots)
+        total = (data.get("paging") or {}).get("total", len(hotspots))
         if len(hotspots) >= total:
-            return hotspots
+            break
         page += 1
+    return hotspots
 
 
 def measure_value(measure: dict[str, Any]) -> str | None:
@@ -152,12 +161,18 @@ def measure_value(measure: dict[str, Any]) -> str | None:
 
 def summarize(args: argparse.Namespace) -> dict[str, Any]:
     env = load_env(Path(args.env))
-    missing = [key for key in ["SONAR_HOST_URL", "SONAR_PROJECT_KEY", "SONAR_TOKEN"] if not env.get(key)]
+    missing = [
+        key
+        for key in ["SONAR_HOST_URL", "SONAR_TOKEN"]
+        if not env.get(key)
+    ]
+    if not args.project and not env.get("SONAR_PROJECT_KEY"):
+        missing.append("SONAR_PROJECT_KEY")
     if missing:
         raise SystemExit(f"Missing required env keys: {', '.join(missing)}")
 
     branch = args.branch or env.get("SONAR_BRANCH") or "trunk"
-    project = env["SONAR_PROJECT_KEY"]
+    project = args.project or env["SONAR_PROJECT_KEY"]
     client = SonarClient(env["SONAR_HOST_URL"], env["SONAR_TOKEN"])
 
     project_info = client.get("/api/components/show", {"component": project})
@@ -262,14 +277,17 @@ def render_markdown(report: dict[str, Any]) -> str:
     latest = report["analyses"][0] if report["analyses"] else {}
     measures = report["measures"]
 
+    def fmt(value: Any) -> str:
+        return "unknown" if value is None else str(value)
+
     lines.append(f"# SonarQube Report: {project.get('name', project.get('key', 'project'))}")
     lines.append("")
     lines.append(f"- Project key: `{project.get('key')}`")
     lines.append(f"- Branch: `{report['branch']}`")
-    lines.append(f"- Latest analysis: `{latest.get('date', 'unknown')}`")
-    lines.append(f"- Quality gate: `{report['quality_gate'].get('status', 'unknown')}`")
-    lines.append(f"- NCLOC: `{measures.get('ncloc', 'unknown')}`")
-    lines.append(f"- Duplication: `{measures.get('duplicated_lines_density', 'unknown')}%`")
+    lines.append(f"- Latest analysis: `{fmt(latest.get('date'))}`")
+    lines.append(f"- Quality gate: `{fmt(report['quality_gate'].get('status'))}`")
+    lines.append(f"- NCLOC: `{fmt(measures.get('ncloc'))}`")
+    lines.append(f"- Duplication: `{fmt(measures.get('duplicated_lines_density'))}%`")
     lines.append("")
 
     issues = report["issues"]
@@ -314,8 +332,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append(f"- Total: `{hotspots['total']}`")
     lines.append(f"- By status: `{counter_to_dict(hotspots['by_status'])}`")
     for hotspot in hotspots["items"]:
-        component = hotspot.get("component", "")
-        path = component.split(":", 1)[1] if ":" in component else component
+        path = issue_path(hotspot)
         line = hotspot.get("line")
         location = f"{path}:{line}" if line else path
         lines.append(
@@ -339,6 +356,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize SonarQube Cloud findings.")
     parser.add_argument("--env", default=".env", help="Path to local env file.")
+    parser.add_argument("--project", help="Sonar project key. Defaults to SONAR_PROJECT_KEY.")
     parser.add_argument("--branch", help="Branch to query. Defaults to SONAR_BRANCH or trunk.")
     parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
     parser.add_argument("--top", type=int, default=12, help="Number of detailed rows per section.")
