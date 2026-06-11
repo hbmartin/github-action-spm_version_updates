@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "git_host_normalizer"
 require_relative "git_operations"
 
 # Normalizes user-provided allow-host entries into hostnames.
@@ -24,7 +25,7 @@ class AllowHostNormalizer
   def normalize
     return nil if raw.empty?
     return parsed if parsed && !malformed_scheme?
-    return fallback if fallback.match?(GitOperations::HOST_PATTERN)
+    return fallback if fallback.match?(GitHostNormalizer::HOST_PATTERN)
 
     warn_unparseable
     nil

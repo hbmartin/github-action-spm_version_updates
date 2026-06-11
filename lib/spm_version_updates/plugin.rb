@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../git_operations"
 require_relative "../repository_update_rules"
 require_relative "git"
 require_relative "semver"
@@ -56,7 +57,9 @@ module Danger
     # @return   [void]
     def check_for_updates(xcodeproj_path)
       remote_packages = Xcode.get_packages(xcodeproj_path)
-      resolved_versions = Xcode.get_resolved_versions(xcodeproj_path)
+      resolved_versions = Xcode.get_resolved_versions(xcodeproj_path) { |resolved_path, error|
+        warn("Skipping malformed Package.resolved file #{resolved_path}: #{error.message}")
+      }
       Kernel.warn("Found resolved versions for #{resolved_versions.size} packages")
       if remote_packages.empty? && !resolved_versions.empty?
         Kernel.warn(
@@ -72,38 +75,54 @@ module Danger
       remote_packages.each { |repository_url, requirement|
         next if ignore_repos&.include?(repository_url)
 
-        name = Git.repo_name(repository_url)
-        resolved_version = resolved_versions[repository_url]
-        kind = requirement["kind"]
-
-        if resolved_version.nil?
-          Kernel.warn("Unable to locate the current version for #{name} (#{repository_url})")
-          next
-        end
-
-        if kind == "branch"
-          warn_for_branch(requirement["branch"], name, repository_url, resolved_version)
-          next
-        end
-
-        available_versions = Git.version_tags(repository_url)
-        next if available_versions.first.to_s == resolved_version
-
-        if kind == "exactVersion" && @check_when_exact
-          warn_for_new_versions_exact(available_versions, name, repository_url, resolved_version)
-        elsif kind == "upToNextMajorVersion"
-          warn_for_new_versions(:major, available_versions, name, repository_url, resolved_version)
-        elsif kind == "upToNextMinorVersion"
-          warn_for_new_versions(:minor, available_versions, name, repository_url, resolved_version)
-        elsif kind == "versionRange"
-          warn_for_new_versions_range(available_versions, name, repository_url, requirement, resolved_version)
-        else
-          Kernel.warn("Not processing dependency rule '#{kind}' for #{name} (#{repository_url})")
+        begin
+          check_package(repository_url, requirement, resolved_versions)
+        rescue GitOperations::LsRemoteError => error
+          warn_lookup_failure(repository_url, error)
         end
       }
     end
 
     private
+
+    # Emits a Danger warning for a package whose remote lookup failed.
+    # @param repository_url [String] the Git repository URL
+    # @param error [GitOperations::LsRemoteError] the lookup failure
+    def warn_lookup_failure(repository_url, error)
+      warn("Unable to check #{Git.repo_name(repository_url)} (#{repository_url}) for updates: #{error.message}")
+    end
+
+    # Checks a single package for updates, dispatching on its requirement kind.
+    # @param repository_url [String] the Git repository URL
+    # @param requirement [Hash] the declared dependency requirement
+    # @param resolved_versions [Hash<String, String>] resolved version by repository URL
+    def check_package(repository_url, requirement, resolved_versions)
+      name = Git.repo_name(repository_url)
+      resolved_version = resolved_versions[repository_url]
+      kind = requirement["kind"]
+
+      if resolved_version.nil?
+        Kernel.warn("Unable to locate the current version for #{name} (#{repository_url})")
+        return
+      end
+
+      return warn_for_branch(requirement["branch"], name, repository_url, resolved_version) if kind == "branch"
+
+      available_versions = Git.version_tags(repository_url)
+      return if available_versions.first.to_s == resolved_version
+
+      if kind == "exactVersion" && @check_when_exact
+        warn_for_new_versions_exact(available_versions, name, repository_url, resolved_version)
+      elsif kind == "upToNextMajorVersion"
+        warn_for_new_versions(:major, available_versions, name, repository_url, resolved_version)
+      elsif kind == "upToNextMinorVersion"
+        warn_for_new_versions(:minor, available_versions, name, repository_url, resolved_version)
+      elsif kind == "versionRange"
+        warn_for_new_versions_range(available_versions, name, repository_url, requirement, resolved_version)
+      else
+        Kernel.warn("Not processing dependency rule '#{kind}' for #{name} (#{repository_url})")
+      end
+    end
 
     # Warns if the branch has a newer commit than the resolved version.
     # @param branch [String] the branch name

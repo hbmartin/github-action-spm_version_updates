@@ -134,6 +134,8 @@ class Action
       "Could not find any Package.resolved file (looked in: #{error.message}). " \
       "Commit a Package.resolved next to each manifest or set package-resolved-paths."
     )
+  rescue PackageResolved::MalformedFileError => error
+    fail_with("#{error.message}. Fix or regenerate this Package.resolved file.")
   rescue SpmChecker::DisallowedRepositoryHost => error
     ActionReporter::BlockedReport.write(error.message)
     fail_with_error(error)

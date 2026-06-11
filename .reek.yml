@@ -61,8 +61,6 @@ detectors:
     enabled: true
   NestedIterators:
     enabled: true
-    exclude:
-    - Xcode#self.get_resolved_versions
     max_allowed_nesting: 1
     ignore_iterators:
     - tap
@@ -74,6 +72,7 @@ detectors:
     - ManifestParser#self.package_calls
     - SpmChecker#warn_for_new_versions
     - Danger::DangerSpmVersionUpdates#check_for_updates
+    - Danger::DangerSpmVersionUpdates#check_package
     - Xcode#self.get_packages
     - XcodeParser#self.get_packages
     - with_env
@@ -124,8 +123,8 @@ detectors:
     - SpmChecker#merged_resolved_versions
     - SpmChecker#package_contexts
     - SpmChecker#warn_for_new_versions
-    - Git#self.version_tags
     - Danger::DangerSpmVersionUpdates#check_for_updates
+    - Danger::DangerSpmVersionUpdates#check_package
     - Danger::DangerSpmVersionUpdates#warn_for_new_versions
     - Xcode#self.find_packages_resolved_file
     - Xcode#self.get_resolved_versions

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "xcodeproj"
+require_relative "../package_resolved"
 require_relative "../xcode_project_package_reader"
 
 # Legacy Xcode project parser used by the Danger plugin API.
@@ -18,27 +19,27 @@ module Xcode
     }
   end
 
-  # Extracts resolved versions from Package.resolved relative to an Xcode project
+  # Extracts resolved versions from Package.resolved relative to an Xcode project.
+  # When a block is given, malformed resolved files are reported to it as
+  # `(resolved_path, error)` and skipped; without a block the error is raised.
   # @param   [String] xcodeproj_path
   #          The path to your Xcode project
   # @raise [CouldNotFindResolvedFile] if no Package.resolved files were found
+  # @raise [PackageResolved::MalformedFileError] if a resolved file is invalid JSON and no block is given
   # @return [Hash<String, String>]
   def self.get_resolved_versions(xcodeproj_path)
     resolved_paths = find_packages_resolved_file(xcodeproj_path)
     raise(CouldNotFindResolvedFile) if resolved_paths.empty?
 
-    resolved_versions = resolved_paths.map { |resolved_path|
-      contents = JSON.load_file!(resolved_path)
-      pins = contents["pins"] || contents["object"]["pins"]
-      pins.to_h { |pin|
-        state = pin["state"]
-        [
-          Git.trim_repo_url(pin["location"] || pin["repositoryURL"]),
-          state["version"] || state["revision"],
-        ]
-      }
+    resolved_paths.each_with_object({}) { |resolved_path, pins|
+      begin
+        pins.merge!(PackageResolved.versions_from(resolved_path))
+      rescue PackageResolved::MalformedFileError => error
+        raise unless block_given?
+
+        yield(resolved_path, error)
+      end
     }
-    resolved_versions.reduce(:merge!)
   end
 
   # Find the Packages.resolved file

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "fileutils"
 require "tmpdir"
 require File.expand_path("coverage_helper", __dir__)
 require File.expand_path("spec_helper", __dir__)
@@ -190,12 +191,16 @@ module Danger
       end
 
       it "Does not report when pinned to commit" do
+        stub_versions("12.1.6")
+
         check_fixture("Commit")
 
         expect_warnings
       end
 
       it "Prints to stderr when resolved version is unexpectedly null" do
+        stub_versions("12.1.6")
+
         expect {
           check_fixture("PackageV1Commit")
         }.to output(
@@ -204,6 +209,8 @@ module Danger
       end
 
       it "Does not fail when resolved version is unexpectedly null" do
+        stub_versions("12.1.6")
+
         check_fixture("PackageV1Commit")
         expect_warnings
       end
@@ -231,6 +238,62 @@ module Danger
           "Newer version of kean/Nuke: 12.1.7",
           "Newer version of Something/Else: 12.1.7"
         )
+      end
+
+      it "Warns and keeps checking other packages when a version lookup fails" do
+        allow(Git).to receive(:version_tags) { |repo_url|
+          raise(GitOperations::LsRemoteError, "fatal: could not read from remote") if repo_url.include?("kean/Nuke")
+
+          versions("12.1.6", "12.1.7")
+        }
+
+        check_fixture("AlsoHasXcworkspace")
+
+        expect_warnings(
+          "Unable to check kean/Nuke (github.com/kean/Nuke) for updates: fatal: could not read from remote",
+          "Newer version of Something/Else: 12.1.7"
+        )
+      end
+
+      it "Warns and skips malformed Package.resolved files while processing valid ones", :aggregate_failures do
+        stub_versions("12.1.6", "12.1.7")
+
+        Dir.mktmpdir do |dir|
+          xcodeproj_path = File.join(dir, "App.xcodeproj")
+          FileUtils.mkdir_p(xcodeproj_path)
+          FileUtils.cp(File.join(fixture("UpToNextMajor"), "project.pbxproj"), xcodeproj_path)
+
+          valid_resolved_dir = File.join(xcodeproj_path, "project.xcworkspace/xcshareddata/swiftpm")
+          FileUtils.mkdir_p(valid_resolved_dir)
+          File.write(
+            File.join(valid_resolved_dir, "Package.resolved"),
+            <<~JSON
+              {
+                "pins" : [
+                  {
+                    "identity" : "nuke",
+                    "kind" : "remoteSourceControl",
+                    "location" : "https://github.com/kean/Nuke",
+                    "state" : { "revision" : "0000", "version" : "12.1.6" }
+                  }
+                ],
+                "version" : 2
+              }
+            JSON
+          )
+
+          malformed_resolved_dir = File.join(dir, "App.xcworkspace/xcshareddata/swiftpm")
+          FileUtils.mkdir_p(malformed_resolved_dir)
+          malformed_path = File.join(malformed_resolved_dir, "Package.resolved")
+          File.write(malformed_path, "{ not json")
+
+          @my_plugin.check_for_updates(xcodeproj_path)
+
+          warnings = @dangerfile.status_report[:warnings]
+          expect(warnings.size).to eq(2)
+          expect(warnings.first).to include("Skipping malformed Package.resolved file #{malformed_path}")
+          expect(warnings.last).to eq("Newer version of kean/Nuke: 12.1.7")
+        end
       end
 
       it "Raises error when xcodeproj_path is nil" do
@@ -337,7 +400,11 @@ module Danger
 
       it "Transforms git tags into version list" do
         allow(Open3).to receive(:capture3)
-          .with(*git_ls_remote_args("-t", "https://github.com/hbmartin/danger-spm_version_updates"))
+          .with(*git_ls_remote_args(
+            "https://github.com/hbmartin/danger-spm_version_updates",
+            options: ["--tags", "--refs"],
+            patterns: GitOperations::TAG_REF_PATTERNS
+          ))
           .and_return [
             <<~TEXT,
               From git@github.com:hbmartin/danger-spm_version_updates.git
@@ -356,15 +423,32 @@ module Danger
         )
       end
 
-      it "Returns no versions when git raises a system error" do
+      it "Raises LsRemoteError when git raises a system error" do
         allow(Open3).to receive(:capture3).and_raise(Errno::EACCES)
 
-        expect(Git.version_tags("https://github.com/hbmartin/danger-spm_version_updates")).to eq([])
+        expect {
+          Git.version_tags("https://github.com/hbmartin/danger-spm_version_updates")
+        }.to raise_error(GitOperations::LsRemoteError, /failed to start/)
+          .and output(/failed to start/).to_stderr
+      end
+
+      it "Raises LsRemoteError when git ls-remote keeps failing" do
+        allow(GitOperations).to receive(:sleep)
+        allow(Open3).to receive(:capture3).and_return(["", "fatal: nope", command_status(false)])
+
+        expect {
+          Git.version_tags("https://github.com/hbmartin/danger-spm_version_updates")
+        }.to raise_error(GitOperations::LsRemoteError, /fatal: nope/)
+          .and output(/fatal: nope/).to_stderr
       end
 
       it "Gathers latest commit on git branch" do
         allow(Open3).to receive(:capture3)
-          .with(*git_ls_remote_args("-h", "https://github.com/hbmartin/danger-spm_version_updates"))
+          .with(*git_ls_remote_args(
+            "https://github.com/hbmartin/danger-spm_version_updates",
+            options: ["--branches"],
+            patterns: ["refs/heads/main"]
+          ))
           .and_return [
             <<~TEXT,
               From git@github.com:hbmartin/danger-spm_version_updates.git
@@ -410,6 +494,6 @@ def command_status(success)
   instance_double(Process::Status, success?: success)
 end
 
-def git_ls_remote_args(flag, repo_url)
-  [{ "GIT_ALLOW_PROTOCOL" => Git::ALLOWED_PROTOCOLS }, "git", "ls-remote", flag, "--", repo_url]
+def git_ls_remote_args(repo_url, options:, patterns: [])
+  [GitOperations::NON_INTERACTIVE_ENV, "git", "ls-remote", *options, "--", repo_url, *patterns]
 end
