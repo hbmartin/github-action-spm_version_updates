@@ -40,7 +40,7 @@ class GithubIntegration < ReporterSink
     # Close the open tracking issue, leaving a resolution comment. No-op when
     # no tracking issue exists.
     def close(comment)
-      number = find_existing&.fetch(:number, nil)
+      number = find_existing&.[](:number)
       return unless number
 
       @client.add_comment(@repository, number, comment)
@@ -71,9 +71,6 @@ class GithubIntegration < ReporterSink
     def find_existing
       @client.list_issues(@repository, state: "open", labels: LABEL)
         .find { |issue| !issue[:pull_request] && issue[:body].to_s.include?(ISSUE_IDENTIFIER) }
-    rescue Octokit::Error => error
-      puts("Error listing tracking issues: #{error.message}")
-      nil
     end
   end
 
@@ -169,10 +166,16 @@ class GithubIntegration < ReporterSink
       @details.each_with_object({}) { |detail, grouped|
         next unless value(detail, :suggested_command)
 
-        identities = grouped[File.dirname(value(detail, :source).to_s)] ||= []
-        identity = value(detail, :package_identity)
-        identities << identity unless identities.include?(identity)
+        add_command_identity(grouped, detail)
       }
+    end
+
+    def add_command_identity(grouped, detail)
+      identity = value(detail, :package_identity).to_s.strip
+      return if identity.empty?
+
+      identities = grouped[File.dirname(value(detail, :source).to_s)] ||= []
+      identities << identity unless identities.include?(identity)
     end
 
     def requirement_section

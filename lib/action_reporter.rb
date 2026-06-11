@@ -115,12 +115,21 @@ class ActionReporter
     def self.write(result)
       return unless result
 
+      unless result.kind_of?(Hash) && result.key?(:number) && result.key?(:url)
+        puts("Warning: tracking issue result was malformed; skipping tracking issue outputs")
+        return
+      end
+
+      number = result[:number]
+      url = result[:url]
+      return if number.to_s.empty? || url.to_s.empty?
+
       output_path = WorkflowCommand.env_value("GITHUB_OUTPUT")
       return unless output_path
 
       File.open(output_path, "a") { |file|
-        file.puts("tracking-issue-number=#{result[:number]}")
-        file.puts("tracking-issue-url=#{result[:url]}")
+        file.puts("tracking-issue-number=#{number}")
+        file.puts("tracking-issue-url=#{url}")
       }
     end
   end

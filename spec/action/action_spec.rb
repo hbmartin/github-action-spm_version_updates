@@ -272,6 +272,23 @@ RSpec.describe Action do
       end
     end
 
+    it "skips malformed tracking-issue outputs without raising", :aggregate_failures do
+      allow(reporter_sink).to receive(:tracking_issue_result).and_return({ number: 7 })
+
+      Dir.mktmpdir do |dir|
+        output_path = File.join(dir, "github_output")
+
+        stdout = capture_stdout do
+          with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => nil) do
+            action.send(:report, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil)
+          end
+        end
+
+        expect(File.read(output_path)).not_to include("tracking-issue")
+        expect(stdout).to include("tracking issue result was malformed")
+      end
+    end
+
     it "writes no tracking-issue outputs when no issue was touched" do
       Dir.mktmpdir do |dir|
         output_path = File.join(dir, "github_output")
