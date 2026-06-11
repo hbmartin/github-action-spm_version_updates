@@ -4,6 +4,15 @@
 class ReporterSink
   SUCCESS_MESSAGE = "✅ **SPM Dependencies**: All dependencies are up to date!"
 
+  # Accepts per-run reporter configuration read from the action inputs. Sinks
+  # that need no configuration ignore it.
+  def configure(_inputs); end
+
+  # The tracking issue created or updated by the last publish, as
+  # `{ number:, url: }`. Nil for sinks without tracking-issue support or when
+  # no issue was touched.
+  def tracking_issue_result; end
+
   def publish_updates(_warnings, _warning_details = nil)
     raise_not_implemented(:publish_updates)
   end

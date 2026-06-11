@@ -2,6 +2,7 @@
 
 require "xcodeproj"
 require_relative "../package_resolved"
+require_relative "../xcode_parser"
 require_relative "../xcode_project_package_reader"
 
 # Legacy Xcode project parser used by the Danger plugin API.
@@ -56,10 +57,10 @@ module Xcode
   private_class_method :find_packages_resolved_file
 
   # Raised when Danger plugin Xcode mode is invoked without a project path.
-  class XcodeprojPathMustBeSet < StandardError
-  end
+  # Aliased to the core parser's class so plugin callers rescuing the legacy
+  # name keep working now that the plugin delegates to SpmChecker/XcodeParser.
+  XcodeprojPathMustBeSet = XcodeParser::XcodeprojPathMustBeSet
 
   # Raised when a Danger plugin Xcode project has no Package.resolved file.
-  class CouldNotFindResolvedFile < StandardError
-  end
+  CouldNotFindResolvedFile = XcodeParser::CouldNotFindResolvedFile
 end

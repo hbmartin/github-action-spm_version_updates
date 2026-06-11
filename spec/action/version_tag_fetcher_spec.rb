@@ -19,4 +19,33 @@ RSpec.describe VersionTagFetcher do
       expect(error.cause).to equal(original_error)
     }
   end
+
+  it "returns results and errors keyed by cache key when raise_on_error is false", :aggregate_failures do
+    failure = GitOperations::LsRemoteError.new("git ls-remote failed for https://github.com/acme/bad")
+    allow(GitOperations).to receive(:version_tags).with("https://github.com/acme/bad").and_raise(failure)
+    allow(GitOperations).to receive(:version_tags).with("https://github.com/acme/good").and_return(["1.0.0"])
+
+    results, errors = described_class.call(
+      [
+        ["bad-key", "https://github.com/acme/bad", "bad-persistent-key"],
+        ["good-key", "https://github.com/acme/good", "good-persistent-key"],
+      ],
+      worker_limit: 1,
+      raise_on_error: false
+    )
+
+    expect(results).to eq("good-key" => ["1.0.0"])
+    expect(errors).to eq("bad-key" => failure)
+  end
+
+  it "returns results and empty errors on success" do
+    allow(GitOperations).to receive(:version_tags).and_return(["1.0.0"])
+
+    results, errors = described_class.call(
+      [["cache-key", "https://github.com/acme/one", "persistent-key"]],
+      worker_limit: 1
+    )
+
+    expect([results, errors]).to eq([{ "cache-key" => ["1.0.0"] }, {}])
+  end
 end

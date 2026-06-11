@@ -11,7 +11,7 @@ RSpec.describe Action do
   let(:checker) { instance_double(SpmChecker) }
   let(:checker_factory) { SpmChecker }
   let(:reporter_sink) {
-    instance_double(ReporterSink, clear: nil, publish_success: nil, publish_updates: nil)
+    instance_double(ReporterSink, clear: nil, configure: nil, publish_success: nil, publish_updates: nil, tracking_issue_result: nil)
   }
 
   def with_env(overrides)
@@ -108,28 +108,31 @@ RSpec.describe Action do
           "INPUT_COMMENT_ON_SUCCESS" => "true"
         )
       ) do
-        expect(action.send(:read_inputs)).to eq(
-          {
-            xcode_project_path: "App.xcodeproj",
-            manifest_paths: ["Modules/Package.swift", "BuildTools/Package.swift"],
-            resolved_paths: ["Modules/Package.resolved", "BuildTools/Package.resolved"],
-            check_when_exact: true,
-            check_branches: false,
-            check_revisions: true,
-            report_above_maximum: true,
-            report_pre_releases: true,
-            ignore_repos: ["https://github.com/a/b", "https://github.com/c/d"],
-            repo_rules_path: ".spm-version-updates.yml",
-            allow_hosts: ["github.com", "gitlab.com"],
-            fail_on: "minor",
-            comment: true,
-            comment_on_success: true,
-            cache_version_tags: true,
-            version_tags_cache_ttl: 21_600,
-            version_tags_cache_dir: nil
-          }
-        )
+        expect(action.send(:read_inputs)).to eq(expected_parsed_inputs)
       end
+    end
+
+    def expected_parsed_inputs
+      {
+        xcode_project_path: "App.xcodeproj",
+        manifest_paths: ["Modules/Package.swift", "BuildTools/Package.swift"],
+        resolved_paths: ["Modules/Package.resolved", "BuildTools/Package.resolved"],
+        check_when_exact: true,
+        check_branches: false,
+        check_revisions: true,
+        report_above_maximum: true,
+        report_pre_releases: true,
+        ignore_repos: ["https://github.com/a/b", "https://github.com/c/d"],
+        repo_rules_path: ".spm-version-updates.yml",
+        allow_hosts: ["github.com", "gitlab.com"],
+        fail_on: "minor",
+        comment: true,
+        comment_on_success: true,
+        open_tracking_issue: false,
+        cache_version_tags: true,
+        version_tags_cache_ttl: 21_600,
+        version_tags_cache_dir: nil
+      }
     end
 
     it "defaults check_branches to true when the env var is absent" do
@@ -249,6 +252,40 @@ RSpec.describe Action do
       end
     end
 
+    it "writes tracking-issue outputs when the sink created or updated one" do
+      allow(reporter_sink).to receive(:tracking_issue_result)
+        .and_return({ number: 7, url: "https://github.com/owner/repo/issues/7" })
+
+      Dir.mktmpdir do |dir|
+        output_path = File.join(dir, "github_output")
+
+        capture_stdout do
+          with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => nil) do
+            action.send(:report, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil)
+          end
+        end
+
+        expect(File.read(output_path)).to include(
+          "tracking-issue-number=7",
+          "tracking-issue-url=https://github.com/owner/repo/issues/7"
+        )
+      end
+    end
+
+    it "writes no tracking-issue outputs when no issue was touched" do
+      Dir.mktmpdir do |dir|
+        output_path = File.join(dir, "github_output")
+
+        capture_stdout do
+          with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => nil) do
+            action.send(:report, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil)
+          end
+        end
+
+        expect(File.read(output_path)).not_to include("tracking-issue")
+      end
+    end
+
     it "keeps every warning when structured details are partial or mismatched", :aggregate_failures do
       warnings = [
         "Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift",
@@ -355,6 +392,7 @@ RSpec.describe Action do
         end
 
         expect(File.read(output_path)).to include("updates-found=1")
+        expect(File.read(summary_path)).to include("Found **1** potential dependency update.")
         expect(reporter_sink).not_to have_received(:publish_updates)
       end
     end
@@ -368,6 +406,7 @@ RSpec.describe Action do
           action.send(:report, [], nil, comment: false, comment_on_success: true)
         end
 
+        expect(File.read(summary_path)).to include("All SPM dependencies are up to date.")
         expect(reporter_sink).not_to have_received(:publish_success)
         expect(reporter_sink).not_to have_received(:clear)
         expect(reporter_sink).not_to have_received(:publish_updates)
@@ -404,6 +443,7 @@ RSpec.describe Action do
       expect(configured_checker).not_to have_received(:check_for_updates)
       expect(reporter_sink).to have_received(:clear)
       expect(reporter_sink).not_to have_received(:publish_success)
+      expect(reporter_sink).to have_received(:configure).with(hash_including(open_tracking_issue: false))
     end
 
     it "dispatches Xcode mode from environment inputs", :aggregate_failures do

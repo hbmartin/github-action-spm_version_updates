@@ -4,117 +4,76 @@ require "json"
 require "octokit"
 require "uri"
 require_relative "reporter_sink"
+require_relative "repository_link"
 
 # GitHub-backed reporter sink for posting PR comments.
 class GithubIntegration < ReporterSink
   COMMENT_IDENTIFIER = "<!-- spm-version-updates-action -->"
+  TRACKING_ISSUE_RESOLVED_COMMENT = "✅ All SPM dependencies are up to date as of the latest run."
 
-  # Parses supported git remote URLs and renders host-specific links.
-  class RepositoryLink
-    HOSTS = {
-      "github.com" => {
-        path_normalizer: ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
-        compare: ->(current, available) { "/compare/#{current}...#{available}" },
-        release: ["Releases", "/releases"]
-      },
-      "gitlab.com" => {
-        path_normalizer: ->(segments) { segments.join("/").sub(%r{/-/.*\z}, "").then { |path| path if path.count("/") >= 1 } },
-        compare: ->(current, available) { "/-/compare/#{current}...#{available}" },
-        release: ["Releases", "/-/releases"]
-      },
-      "bitbucket.org" => {
-        path_normalizer: ->(segments) { segments.first(2).join("/") if segments.size >= 2 },
-        compare: ->(current, available) { "/branches/compare/#{available}..#{current}" },
-        release: ["Tags", "/downloads/?tab=tags"]
-      }
-    }.freeze
-    SUPPORTED_HOSTS_PATTERN = Regexp.union(HOSTS.keys).source
-    REMOTE_PATTERNS = [
-      %r{\A(?:https?|git|ssh)://(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})(?::\d+)?/(?<path>.+)\z}i,
-      %r{\A(?:[^@/\s]+@)?(?<host>#{SUPPORTED_HOSTS_PATTERN})[:/](?<path>.+)\z}i,
-    ].freeze
+  RepositoryLink = ::RepositoryLink
 
-    private_constant :HOSTS,
-                     :SUPPORTED_HOSTS_PATTERN,
-                     :REMOTE_PATTERNS
+  # Finds, creates, updates, and closes the single tracking issue used to
+  # report updates on runs without a pull request context.
+  class TrackingIssue
+    ISSUE_IDENTIFIER = "<!-- spm-version-updates-action:tracking-issue -->"
+    LABEL = "spm-version-updates"
+    TITLE = "Swift package dependency updates available"
 
-    def self.from(repository_url)
-      link = new(repository_url)
-      link if link.valid?
+    def initialize(client, repository)
+      @client = client
+      @repository = repository
     end
 
-    def initialize(repository_url)
-      @value = repository_url.to_s.strip
-      @host = nil
-      @raw_path = nil
-      @path = nil
-      configure_remote(remote_match)
+    # Update the existing open tracking issue or create a new one.
+    # @return [Hash, nil] `{ number:, url: }`, or nil when the API call failed
+    def upsert(body_content)
+      issue = upsert_issue(find_existing, "#{ISSUE_IDENTIFIER}\n#{body_content}")
+      url = issue[:html_url]
+      puts("Tracking issue: #{url}")
+      { number: issue[:number], url: }
+    rescue Octokit::Error => error
+      puts("Error upserting tracking issue: #{error.message}")
+      nil
     end
 
-    def valid?
-      @host && @path
-    end
+    # Close the open tracking issue, leaving a resolution comment. No-op when
+    # no tracking issue exists.
+    def close(comment)
+      number = find_existing&.fetch(:number, nil)
+      return unless number
 
-    def compare_url(current, available)
-      current_ref = URI.encode_www_form_component(current.to_s)
-      available_ref = URI.encode_www_form_component(available.to_s)
-      "#{base_url}#{link_builder.fetch(:compare).call(current_ref, available_ref)}"
-    end
-
-    def release_link
-      label, path = link_builder.fetch(:release)
-      "[#{label}](#{base_url}#{path})"
-    end
-
-    def markdown_links(updates)
-      compare_links = updates.map.with_index(1) { |update, index|
-        label = updates.size == 1 ? "Compare" : "Compare #{index}"
-        "[#{label}](#{compare_url(update[:current], update[:available])})"
-      }
-      (compare_links + [release_link]).join("<br>")
+      @client.add_comment(@repository, number, comment)
+      @client.close_issue(@repository, number)
+      puts("Closed resolved tracking issue ##{number}")
+    rescue Octokit::Error => error
+      puts("Error closing tracking issue: #{error.message}")
     end
 
     private
 
-    def remote_match
-      REMOTE_PATTERNS.each { |pattern|
-        match = @value.match(pattern)
-        return match if match
-      }
+    def upsert_issue(existing, body)
+      return @client.update_issue(@repository, existing[:number], TITLE, body) if existing
 
+      create_issue(body)
+    end
+
+    def create_issue(body)
+      @client.create_issue(@repository, TITLE, body, labels: LABEL)
+    rescue Octokit::UnprocessableEntity
+      # Tokens that cannot create the label can still create the issue; the
+      # body marker alone keeps find_existing working.
+      @client.create_issue(@repository, TITLE, body)
+    end
+
+    # The issues API also returns pull requests, and the label can be reused by
+    # humans, so both the marker and the pull_request check guard the match.
+    def find_existing
+      @client.list_issues(@repository, state: "open", labels: LABEL)
+        .find { |issue| !issue[:pull_request] && issue[:body].to_s.include?(ISSUE_IDENTIFIER) }
+    rescue Octokit::Error => error
+      puts("Error listing tracking issues: #{error.message}")
       nil
-    end
-
-    def configure_remote(match)
-      return unless match
-
-      @host = match[:host].downcase
-      @raw_path = match[:path]
-      @path = normalized_path
-    end
-
-    def normalized_path
-      link_builder.fetch(:path_normalizer).call(path_segments)
-    end
-
-    def path_segments
-      @raw_path.to_s
-        .split(/[?#]/, 2)
-        .first
-        .to_s
-        .sub(%r{\A/+}, "")
-        .sub(%r{/+\z}, "")
-        .sub(/\.git\z/i, "")
-        .split("/")
-        .reject(&:empty?)
-    end
-
-    def base_url
-      "https://#{@host}/#{@path}"
-    end
-
-    def link_builder
-      HOSTS.fetch(@host)
     end
   end
 
@@ -154,6 +113,89 @@ class GithubIntegration < ReporterSink
     end
   end
 
+  # Renders the collapsed "How to update dependencies" section. With structured
+  # details it emits concrete `swift package update` commands (grouped by
+  # manifest directory) and the manifest requirement changes needed for
+  # out-of-range updates; otherwise it falls back to generic guidance.
+  class UpgradeHintsSection
+    STATIC_GUIDANCE = <<~MARKDOWN.chomp
+      To update your SPM dependencies:
+      - **Package.swift**: bump the version constraint and run `swift package update` (or `swift package resolve`)
+      - **Xcode project**: go to **File → Packages → Update to Latest Package Versions**, or update individual packages from the Package Dependencies section in the Project Navigator
+    MARKDOWN
+
+    def initialize(details = nil)
+      @details = Array(details)
+    end
+
+    def markdown
+      <<~MARKDOWN.chomp
+        <details>
+        <summary>💡 How to update dependencies</summary>
+
+        #{body}
+
+        </details>
+      MARKDOWN
+    end
+
+    private
+
+    def body
+      sections = [command_section, requirement_section].compact
+      sections.empty? ? STATIC_GUIDANCE : sections.join("\n\n")
+    end
+
+    def value(detail, key)
+      detail[key] || detail[key.to_s]
+    end
+
+    def command_section
+      blocks = commands_by_directory.map { |directory, identities| command_block(directory, identities) }
+      blocks.join("\n\n") unless blocks.empty?
+    end
+
+    def command_block(directory, identities)
+      <<~MARKDOWN.chomp
+        Run in `#{directory}`:
+
+        ```sh
+        swift package update #{identities.join(' ')}
+        ```
+      MARKDOWN
+    end
+
+    def commands_by_directory
+      @details.each_with_object({}) { |detail, grouped|
+        next unless value(detail, :suggested_command)
+
+        identities = grouped[File.dirname(value(detail, :source).to_s)] ||= []
+        identity = value(detail, :package_identity)
+        identities << identity unless identities.include?(identity)
+      }
+    end
+
+    def requirement_section
+      rows = @details.filter_map { |detail| requirement_row(detail) }
+      return nil if rows.empty?
+
+      <<~MARKDOWN.chomp
+        Manifest changes needed before updating:
+
+        | Package | New requirement | Source |
+        | --- | --- | --- |
+        #{rows.join("\n")}
+      MARKDOWN
+    end
+
+    def requirement_row(detail)
+      requirement = value(detail, :suggested_requirement)
+      return unless requirement
+
+      "| `#{value(detail, :package)}` | `#{requirement}` | `#{value(detail, :source) || 'Xcode project'}` |"
+    end
+  end
+
   # Renders the source column for grouped structured warning details.
   class SourceCell
     def initialize(sources, formatter)
@@ -181,11 +223,16 @@ class GithubIntegration < ReporterSink
     end
   end
 
+  # The issue created or updated by the last publish (see ReporterSink).
+  attr_reader :tracking_issue_result
+
   def initialize
     super
     @github_token = ENV.fetch("GITHUB_TOKEN", nil)
     @github_repository = ENV.fetch("GITHUB_REPOSITORY", nil)
     @github_event_path = ENV.fetch("GITHUB_EVENT_PATH", nil)
+    @open_tracking_issue = false
+    @tracking_issue_result = nil
 
     if github_token_missing?
       puts("Warning: GITHUB_TOKEN not set, comments will not be posted")
@@ -199,18 +246,30 @@ class GithubIntegration < ReporterSink
     puts("GitHub integration initialized for #{@github_repository}, PR ##{@pr_number}")
   end
 
+  def configure(inputs)
+    @open_tracking_issue = inputs.fetch(:open_tracking_issue, false)
+  end
+
   def publish_updates(warnings, warning_details = nil)
-    with_comment_target {
-      message = build_warnings_message(warnings, warning_details)
-      post_comment_body(build_comment_message(message))
-    }
+    return unless tracking_issue_run? || comment_target?
+
+    message = build_comment_message(build_warnings_message(warnings, warning_details))
+    if tracking_issue_run?
+      @tracking_issue_result = tracking_issue.upsert(message)
+    else
+      post_comment_body(message)
+    end
   end
 
   def publish_success
+    return tracking_issue.close(TRACKING_ISSUE_RESOLVED_COMMENT) if tracking_issue_run?
+
     post_comment(SUCCESS_MESSAGE)
   end
 
   def clear
+    return tracking_issue.close(TRACKING_ISSUE_RESOLVED_COMMENT) if tracking_issue_run?
+
     with_comment_target {
       existing_comment = find_existing_comment
       delete_comment(existing_comment[:id]) if existing_comment
@@ -231,8 +290,22 @@ class GithubIntegration < ReporterSink
 
   private
 
+  # Tracking-issue mode applies only on runs without a pull request context
+  # (schedule, workflow_dispatch, push) when explicitly enabled.
+  def tracking_issue_run?
+    @open_tracking_issue && !@pr_number && @client && @github_repository
+  end
+
+  def tracking_issue
+    @tracking_issue ||= TrackingIssue.new(@client, @github_repository)
+  end
+
+  def comment_target?
+    @client && @pr_number
+  end
+
   def with_comment_target
-    return unless @client && @pr_number
+    return unless comment_target?
 
     yield
   end
@@ -290,25 +363,12 @@ class GithubIntegration < ReporterSink
       | --- | --- | --- | --- |
       #{table}
 
-      #{how_to_update_details}
+      #{UpgradeHintsSection.new(details).markdown}
     MARKDOWN
   end
 
   def build_legacy_warnings_message(warnings)
-    LegacyWarningsMessage.new(warnings, how_to_update_details).markdown
-  end
-
-  def how_to_update_details
-    <<~MARKDOWN.chomp
-      <details>
-      <summary>💡 How to update dependencies</summary>
-
-      To update your SPM dependencies:
-      - **Package.swift**: bump the version constraint and run `swift package update` (or `swift package resolve`)
-      - **Xcode project**: go to **File → Packages → Update to Latest Package Versions**, or update individual packages from the Package Dependencies section in the Project Navigator
-
-      </details>
-    MARKDOWN
+    LegacyWarningsMessage.new(warnings, UpgradeHintsSection.new.markdown).markdown
   end
 
   def structured_warning_details(warning_details)

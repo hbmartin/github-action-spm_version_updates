@@ -66,6 +66,10 @@ inputs:
     description: 'Post a pull request comment when all dependencies are up to date'
     required: false
     default: 'false'
+  open-tracking-issue:
+    description: 'On runs without a pull request context (schedule, workflow_dispatch, push), open or update a single tracking issue with the update report, and close it when everything is up to date. Requires issues: write permission.'
+    required: false
+    default: 'false'
   cache-version-tags:
     description: 'Cache git tag lookup results with actions/cache to make repeated runs faster'
     required: false
@@ -105,6 +109,12 @@ outputs:
   error-message:
     description: 'Failure message when blocked is true'
     value: ${{ steps.check.outputs.error-message }}
+  tracking-issue-number:
+    description: 'Number of the tracking issue created or updated, when open-tracking-issue is enabled and the run had no pull request context'
+    value: ${{ steps.check.outputs.tracking-issue-number }}
+  tracking-issue-url:
+    description: 'HTML URL of the tracking issue created or updated'
+    value: ${{ steps.check.outputs.tracking-issue-url }}
 
 runs:
   using: 'composite'
@@ -172,6 +182,7 @@ runs:
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
         INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_COMMENT_ON_SUCCESS: ${{ inputs.comment-on-success }}
+        INPUT_OPEN_TRACKING_ISSUE: ${{ inputs.open-tracking-issue }}
         INPUT_CACHE_VERSION_TAGS: ${{ inputs.cache-version-tags }}
         INPUT_VERSION_TAGS_CACHE_TTL: ${{ inputs.version-tags-cache-ttl }}
         INPUT_SETUP_RUBY: ${{ inputs.setup-ruby }}

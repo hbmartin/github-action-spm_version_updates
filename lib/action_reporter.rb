@@ -2,6 +2,7 @@
 
 require "json"
 require_relative "credential_redactor"
+require_relative "repository_link"
 require_relative "update_severity"
 
 # Writes GitHub Actions-visible reports for the dependency update results.
@@ -106,6 +107,21 @@ class ActionReporter
 
     def emit_error_annotation
       puts(WorkflowCommand.annotation("error", { "title" => "SPM version check blocked" }, message))
+    end
+  end
+
+  # Writes tracking-issue outputs for runs that created or updated one.
+  class TrackingIssueOutput
+    def self.write(result)
+      return unless result
+
+      output_path = WorkflowCommand.env_value("GITHUB_OUTPUT")
+      return unless output_path
+
+      File.open(output_path, "a") { |file|
+        file.puts("tracking-issue-number=#{result[:number]}")
+        file.puts("tracking-issue-url=#{result[:url]}")
+      }
     end
   end
 
@@ -225,8 +241,28 @@ class ActionReporter
       message, source = record.values_at("message", "source")
       lines = ["#{index}. #{message}"]
       lines << "   Source: `#{source}`" if source
-      lines
+      links = summary_links(record)
+      lines << "   #{links}" if links
+      lines.concat(upgrade_hint_lines(record))
     }
+  end
+
+  def upgrade_hint_lines(record)
+    command, requirement = record.values_at("suggested_command", "suggested_requirement")
+    lines = []
+    lines << "   Update: `#{command}`" if command
+    lines << "   Manifest: `#{requirement}`" if requirement
+    lines
+  end
+
+  def summary_links(record)
+    link = RepositoryLink.from(record["repository_url"])
+    return unless link
+
+    current, available = record.values_at("current_version", "available_version")
+    return unless current && available
+
+    link.markdown_links([{ current:, available: }], separator: " · ")
   end
 
   def emit_warning_annotations

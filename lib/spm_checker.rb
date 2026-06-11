@@ -8,6 +8,7 @@ require_relative "package_resolved"
 require_relative "repository_update_rules"
 require_relative "spm_package_context"
 require_relative "spm_version_updates/semver"
+require_relative "upgrade_suggestion"
 require_relative "version_tag_fetcher"
 require_relative "version_tags_persistent_cache"
 require_relative "xcode_parser"
@@ -35,6 +36,17 @@ class SpmChecker
                 :version_tags_cache_dir,
                 :version_tags_cache_ttl_seconds
 
+  # Optional callable `(package, error)` invoked instead of raising when a git
+  # lookup fails, so callers like the Danger plugin can warn and keep checking
+  # the remaining packages. When nil (the default), lookup failures raise one
+  # combined GitOperations::LsRemoteError exactly as before.
+  attr_accessor :lookup_failure_handler
+
+  # Optional callable `(resolved_path, error)` invoked instead of raising when a
+  # Package.resolved file is malformed; the file is skipped. When nil (the
+  # default), PackageResolved::MalformedFileError is raised.
+  attr_accessor :malformed_resolved_handler
+
   def self.redact_credentials(value)
     CredentialRedactor.redact(value)
   end
@@ -42,6 +54,7 @@ class SpmChecker
   def initialize
     @check_when_exact = @check_revisions = @report_above_maximum = @report_pre_releases = false
     @check_branches = true
+    @lookup_failure_handler = @malformed_resolved_handler = nil
     @ignore_repos = []
     @repository_update_rules = RepositoryUpdateRules.empty
     @allow_hosts = []
@@ -63,7 +76,7 @@ class SpmChecker
     normalize_allow_hosts
 
     remote_packages = XcodeParser.get_packages(xcodeproj_path)
-    resolved_versions = XcodeParser.get_resolved_versions(xcodeproj_path)
+    resolved_versions = XcodeParser.get_resolved_versions(xcodeproj_path, &@malformed_resolved_handler)
     puts("Found resolved versions for #{resolved_versions.size} packages")
     warn_for_empty_xcode_project(remote_packages, resolved_versions, xcodeproj_path)
 
@@ -155,7 +168,16 @@ class SpmChecker
     raise(ManifestParser::CouldNotFindResolvedFile, missing.join(", ")) unless missing.empty?
 
     puts("Reading resolved packages from: #{paths}")
-    paths.each_with_object({}) { |path, pins| pins.merge!(PackageResolved.versions_from(path)) }
+    paths.each_with_object({}) { |path, pins| pins.merge!(resolved_versions_from(path)) }
+  end
+
+  def resolved_versions_from(path)
+    PackageResolved.versions_from(path)
+  rescue PackageResolved::MalformedFileError => error
+    raise unless @malformed_resolved_handler
+
+    @malformed_resolved_handler.call(path, error)
+    {}
   end
 
   # Compare a set of declared dependencies against the resolved pins.
@@ -170,9 +192,22 @@ class SpmChecker
   # @param source [String, nil] the manifest a warning should be attributed to
   def check_packages(remote_packages, resolved_versions, source = nil)
     packages = package_contexts(remote_packages, resolved_versions, source)
-    prefetch_version_tags(packages)
+    failed_lookups = prefetch_version_tags(packages)
 
-    packages.each { |package| check_package(package) }
+    packages.each { |package|
+      prefetch_error = failed_lookups[package.cache_key]
+      next @lookup_failure_handler.call(package, prefetch_error) if prefetch_error
+
+      check_package_handling_lookup_failure(package)
+    }
+  end
+
+  def check_package_handling_lookup_failure(package)
+    check_package(package)
+  rescue GitOperations::LsRemoteError => error
+    raise unless @lookup_failure_handler
+
+    @lookup_failure_handler.call(package, error)
   end
 
   def package_contexts(remote_packages, resolved_versions, source)
@@ -227,18 +262,21 @@ class SpmChecker
     "#{normalized_url}\n#{repository_url}"
   end
 
+  # @return [Hash] failed lookups keyed by cache key (always empty when no
+  #   lookup_failure_handler is configured -- failures raise instead)
   def prefetch_version_tags(packages)
     pending = pending_version_tag_lookups(packages)
-    return if pending.empty?
+    return {} if pending.empty?
 
     persistent_cache = VersionTagsPersistentCache.new(directory: @version_tags_cache_dir, ttl_seconds: @version_tags_cache_ttl_seconds)
-    @version_tags_cache.merge!(
-      VersionTagFetcher.call(
-        pending,
-        worker_limit: VERSION_TAG_WORKER_COUNT,
-        persistent_cache:
-      )
+    results, errors = VersionTagFetcher.call(
+      pending,
+      worker_limit: VERSION_TAG_WORKER_COUNT,
+      persistent_cache:,
+      raise_on_error: !@lookup_failure_handler
     )
+    @version_tags_cache.merge!(results)
+    errors
   end
 
   def pending_version_tag_lookups(packages)
@@ -337,7 +375,7 @@ class SpmChecker
       current_version: package.resolved_version.to_s,
       available_version: available_version.to_s,
       note:
-    }
+    }.merge(UpgradeSuggestion.fields(package, available_version, type))
   end
 
   # Warns if the branch has a newer commit than the resolved version.

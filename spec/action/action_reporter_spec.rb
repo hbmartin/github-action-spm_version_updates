@@ -107,6 +107,62 @@ RSpec.describe ActionReporter do
         expect(content).to include("2. Newer version of baz/qux: 1.1.0")
       end
     end
+
+    it "renders compare and release links from structured details", :aggregate_failures do
+      Dir.mktmpdir do |dir|
+        summary_file = File.join(dir, "summary.md")
+        reporter = described_class.new(
+          ["Newer version of foo/bar: 2.0.0"],
+          [{ type: "version", repository_url: "https://github.com/foo/bar.git", current_version: "1.0.0", available_version: "2.0.0" }]
+        )
+
+        quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
+
+        content = File.read(summary_file)
+        expect(content).to include(
+          "   [Compare](https://github.com/foo/bar/compare/1.0.0...2.0.0) · [Releases](https://github.com/foo/bar/releases)"
+        )
+      end
+    end
+
+    it "renders upgrade hint lines from structured details", :aggregate_failures do
+      Dir.mktmpdir do |dir|
+        summary_file = File.join(dir, "summary.md")
+        reporter = described_class.new(
+          ["Newest version of foo/bar: 2.0.0"],
+          [{
+            type: "above_maximum",
+            current_version: "1.0.0",
+            available_version: "2.0.0",
+            suggested_command: "swift package update bar",
+            suggested_requirement: 'from: "2.0.0"'
+          }]
+        )
+
+        quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
+
+        content = File.read(summary_file)
+        expect(content).to include("   Update: `swift package update bar`")
+        expect(content).to include('   Manifest: `from: "2.0.0"`')
+      end
+    end
+
+    it "omits the links line for records without a usable repository URL" do
+      Dir.mktmpdir do |dir|
+        summary_file = File.join(dir, "summary.md")
+        reporter = described_class.new(
+          ["Newer version of foo/bar: 2.0.0", "Newer version of baz/qux: 1.1.0"],
+          [
+            { type: "version", repository_url: "https://example.com/foo/bar", current_version: "1.0.0", available_version: "2.0.0" },
+            { type: "version", current_version: "1.0.0", available_version: "1.1.0" },
+          ]
+        )
+
+        quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
+
+        expect(File.read(summary_file)).not_to include("[Compare]")
+      end
+    end
   end
 
   describe "#write annotations" do
