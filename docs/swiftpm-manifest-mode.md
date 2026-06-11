@@ -290,6 +290,22 @@ versions. `allowed-updates: minor` allows patch and minor reports but suppresses
 major reports. Rules apply only to semantic `version` and `above_maximum`
 reports; branch and revision reports use their existing controls.
 
+## Using the Danger plugin
+
+Manifest mode is also available in the [`danger-spm_version_updates`](https://rubygems.org/gems/danger-spm_version_updates)
+plugin for repos that already run [Danger](https://danger.systems/ruby/):
+
+```ruby
+spm_version_updates.check_manifests(["Modules/Package.swift", "BuildTools/Package.swift"])
+```
+
+`check_manifests` accepts a single path or a list, plus an optional second
+argument with explicit `Package.resolved` paths (by default a `Package.resolved`
+next to each manifest is used). Warnings include Compare/Releases links, the
+originating manifest, and a ready-to-run `swift package update` command. The
+plugin accessors mirror the action inputs of the same name; see the
+[README](../README.md#danger-plugin).
+
 ## A note on versioning
 
 Examples above pin to `@v1`. Pinning to the major tag means you automatically

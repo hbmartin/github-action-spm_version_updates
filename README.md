@@ -141,6 +141,7 @@ The action reads your manifests from the checked-out repo and posts a single com
 permissions:
   contents: read         # checkout / read the manifests
   pull-requests: write   # create and update the summary comment
+  issues: write          # only with open-tracking-issue: true
 ```
 
 A few things worth knowing about the token:
@@ -237,8 +238,9 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `allow-hosts` | Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. | No | `''` |
 | `fail-on-updates` | Legacy fail behavior. Set `true` to fail on any update, or `major` / `minor` / `patch` to fail on semantic version updates at or above that severity. | No | `false` |
 | `fail-on` | Fail on semantic version updates at or above this severity: `major`, `minor`, or `patch`. Overrides `fail-on-updates` when set. | No | `''` |
-| `comment` | Post or update the pull request comment. Set `false` to disable all PR commenting; outputs, the step summary, and annotations are still produced. | No | `true` |
+| `comment` | Post or update the pull request comment. Set `false` to disable all PR commenting; outputs, the step summary, and annotations are still produced, and a comment left by a prior run is kept as-is rather than deleted. | No | `true` |
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | No | `false` |
+| `open-tracking-issue` | On runs without a pull request context (`schedule`, `workflow_dispatch`, `push`), open or update a single tracking issue with the update report, and close it once everything is up to date. Requires `issues: write`. | No | `false` |
 | `cache-version-tags` | Persist successful git tag lookups between runs with `actions/cache`. | No | `true` |
 | `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Set `0` to disable persistent cache reads and writes. | No | `21600` |
 | `setup-ruby` | Set up Ruby and install this action's bundle. Set to `false` only for later invocations in the same job after an earlier invocation has already run setup. | No | `true` |
@@ -275,7 +277,7 @@ Across all of the constraint types above, pre-release tags (versions with a `-` 
 
 ## Outputs
 
-The action always writes machine-readable outputs, appends a GitHub step summary, and emits `::warning` annotations for each update. Pull request runs get a summary comment when updates are found. Clean runs delete the prior generated comment by default; set `comment-on-success: true` to keep an up-to-date comment instead, or `comment: false` to disable PR commenting entirely. Scheduled and `workflow_dispatch` runs still have visible results in the workflow run summary and annotations.
+The action always writes machine-readable outputs, appends a GitHub step summary, and emits `::warning` annotations for each update. Pull request runs get a summary comment when updates are found. Clean runs delete the prior generated comment by default; set `comment-on-success: true` to keep an up-to-date comment instead, or `comment: false` to disable PR commenting entirely. Scheduled and `workflow_dispatch` runs still have visible results in the workflow run summary and annotations — set `open-tracking-issue: true` to also keep a single tracking issue updated with the same report (it is closed automatically once everything is up to date).
 
 | Output | Description |
 | ------ | ----------- |
@@ -283,9 +285,11 @@ The action always writes machine-readable outputs, appends a GitHub step summary
 | `major-updates-found` | Number of major semantic-version updates found. |
 | `minor-updates-found` | Number of minor semantic-version updates found. |
 | `patch-updates-found` | Number of patch semantic-version updates found. |
-| `updates-json` | JSON array of update objects. Each object has a `message` field and, when available, structured fields such as `type`, `package`, `repository_url`, `current_version`, `available_version`, `severity`, `note`, and `source`. |
+| `updates-json` | JSON array of update objects. Each object has a `message` field and, when available, structured fields such as `type`, `package`, `repository_url`, `current_version`, `available_version`, `severity`, `note`, `source`, `requirement_kind`, `package_identity`, `suggested_command`, and `suggested_requirement`. |
 | `blocked` | `true` when the action stopped before a version lookup because a security gate such as `allow-hosts` blocked it; otherwise `false`. |
 | `error-message` | Failure message when `blocked` is `true`. |
+| `tracking-issue-number` | Number of the tracking issue created or updated, when `open-tracking-issue` is enabled and the run had no pull request context. Empty otherwise. |
+| `tracking-issue-url` | HTML URL of the tracking issue created or updated. Empty otherwise. |
 
 ### `updates-json` example
 
@@ -299,7 +303,10 @@ The action always writes machine-readable outputs, appends a GitHub step summary
     "available_version": "8.0.0",
     "severity": "major",
     "message": "Newer version of onevcat/Kingfisher: 8.0.0",
-    "source": "Modules/Package.swift"
+    "source": "Modules/Package.swift",
+    "requirement_kind": "upToNextMajorVersion",
+    "package_identity": "kingfisher",
+    "suggested_command": "swift package update kingfisher"
   },
   {
     "type": "version",
@@ -309,12 +316,17 @@ The action always writes machine-readable outputs, appends a GitHub step summary
     "available_version": "6.7.0",
     "severity": "minor",
     "message": "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0",
-    "source": "BuildTools/Package.swift"
+    "source": "BuildTools/Package.swift",
+    "requirement_kind": "upToNextMajorVersion",
+    "package_identity": "swiftgenplugin",
+    "suggested_command": "swift package update swiftgenplugin"
   }
 ]
 ```
 
 `severity` is present only for semantic `version` / `above_maximum` updates, `source` only in Swift manifest mode, and `note` only for branch/revision/above-maximum reports. `repository_url` is redacted if it contained embedded credentials. When no updates are found, the output is `[]`.
+
+Each update also carries upgrade guidance: `package_identity` is the SwiftPM package identity (derived from the repository URL), `suggested_command` is a ready-to-run `swift package update <identity>` command (manifest mode only — it never appears in Xcode project mode, where updates go through Xcode), and `suggested_requirement` is the new `Package.swift` requirement text needed first when the suggested version is outside the declared constraint (for example `from: "8.0.0"` on an `above_maximum` report, or `exact: "8.0.0"` for exact pins). The same guidance is rendered in the PR comment's "How to update dependencies" section and in the step summary.
 
 Use `fail-on: major` when only major semantic-version updates should fail the job after the outputs, step summary, annotations, and PR comment have been written. Use `minor` to fail on major or minor updates, and `patch` to fail on any semantic-version update. `fail-on-updates: true` remains supported when any reported update, including branch or revision updates, should fail the job.
 
@@ -359,14 +371,18 @@ When the action finds available updates, it posts (and keeps updating) a single 
 
 > ## 📦 SPM Version Updates
 >
-> ⚠️ **Found 2 potential dependency updates:**
+> ⚠️ **Found 2 packages with potential dependency updates:**
 >
-> 1. Newer version of onevcat/Kingfisher: 8.0.0
->    Source: Modules/Package.swift
-> 2. Newer version of SwiftGen/SwiftGenPlugin: 6.7.0
->    Source: BuildTools/Package.swift
+> | Package | Current → Available | Source | Links |
+> | --- | --- | --- | --- |
+> | `onevcat/Kingfisher` | `7.12.0` → `8.0.0` | `Modules/Package.swift` | [Compare](https://github.com/onevcat/Kingfisher/compare/7.12.0...8.0.0)<br>[Releases](https://github.com/onevcat/Kingfisher/releases) |
+> | `SwiftGen/SwiftGenPlugin` | `6.6.2` → `6.7.0` | `BuildTools/Package.swift` | [Compare](https://github.com/SwiftGen/SwiftGenPlugin/compare/6.6.2...6.7.0)<br>[Releases](https://github.com/SwiftGen/SwiftGenPlugin/releases) |
+>
+> <details><summary>💡 How to update dependencies</summary>
+> Ready-to-run <code>swift package update</code> commands per manifest directory, plus any manifest requirement changes needed first.
+> </details>
 
-The `Source:` line is only included in Swift manifest mode, where it tells you which manifest a given update applies to.
+The `Source` column is filled in Swift manifest mode, where it tells you which manifest a given update applies to (Xcode mode shows "Xcode project"). Compare/Releases links are rendered for GitHub, GitLab, and Bitbucket remotes.
 
 ## Advanced configuration
 
@@ -392,7 +408,7 @@ The `Source:` line is only included in Swift manifest mode, where it tells you w
 
 ## Danger plugin
 
-The same checker also ships as a [Danger](https://danger.systems/ruby/) plugin, [`danger-spm_version_updates`](https://rubygems.org/gems/danger-spm_version_updates), if you'd rather run dependency checks inside an existing Danger step than as a standalone action. The plugin operates in **Xcode project mode** only and requires Ruby >= 3.2.
+The same checker also ships as a [Danger](https://danger.systems/ruby/) plugin, [`danger-spm_version_updates`](https://rubygems.org/gems/danger-spm_version_updates), if you'd rather run dependency checks inside an existing Danger step than as a standalone action. The plugin supports both source modes — Xcode projects and `Package.swift` manifests — and requires Ruby >= 3.2.
 
 Add it to your Gemfile:
 
@@ -411,7 +427,13 @@ spm_version_updates.repo_rules_path = ".github/spm-version-rules.yml"
 spm_version_updates.check_for_updates("MyApp.xcodeproj")
 ```
 
-Each available update is reported as a Danger `warn`. The configurable accessors mirror the action inputs of the same name: `check_when_exact`, `report_above_maximum`, `report_pre_releases`, `ignore_repos`, and `repo_rules_path`.
+Or, for SwiftPM-first repos, check `Package.swift` manifests directly:
+
+```ruby
+spm_version_updates.check_manifests(["Modules/Package.swift", "BuildTools/Package.swift"])
+```
+
+`check_manifests` accepts a single path or a list, and an optional second argument with explicit `Package.resolved` paths (by default a `Package.resolved` next to each manifest is used). Each available update is reported as a Danger `warn` that includes Compare/Releases links for supported hosts, the originating manifest, and a ready-to-run `swift package update` command in manifest mode. The configurable accessors mirror the action inputs of the same name: `check_when_exact`, `check_branches`, `check_revisions`, `report_above_maximum`, `report_pre_releases`, `ignore_repos`, and `repo_rules_path`.
 
 ## Limitations
 
@@ -426,6 +448,8 @@ Each available update is reported as a Danger `warn`. The configurable accessors
 ## Troubleshooting
 
 **No comment appeared on my PR.** Check that the job has `pull-requests: write` and that the run is a real pull request — fork PRs get a read-only token and can't comment (see [Security](#security)). On clean runs the prior comment is deleted by default; set `comment-on-success: true` to keep an "up to date" comment instead.
+
+**No tracking issue appeared on my scheduled run.** Tracking issues require `open-tracking-issue: true`, the `issues: write` permission, and a run *without* a pull request context — PR runs always use the PR comment instead. Check `tracking-issue-url` in the step outputs to confirm whether one was touched.
 
 **The action failed with a missing `Package.resolved`.** In Swift manifest mode every manifest needs a resolved file next to it (e.g. `Modules/Package.swift` → `Modules/Package.resolved`). Commit the resolved file, or point `package-resolved-paths` at its real location.
 

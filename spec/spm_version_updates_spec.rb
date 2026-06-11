@@ -23,7 +23,7 @@ module Danger
       end
 
       def stub_versions(*strings)
-        allow(Git).to receive(:version_tags).and_return(versions(*strings))
+        allow(GitOperations).to receive(:version_tags).and_return(versions(*strings))
       end
 
       def check_fixture(name)
@@ -32,6 +32,11 @@ module Danger
 
       def expect_warnings(*warnings)
         expect(@dangerfile.status_report[:warnings]).to eq(warnings)
+      end
+
+      def links(repo_path, current, available)
+        "([Compare](https://github.com/#{repo_path}/compare/#{current}...#{available}) · " \
+          "[Releases](https://github.com/#{repo_path}/releases))"
       end
 
       before do
@@ -68,7 +73,10 @@ module Danger
         @my_plugin.check_when_exact = true
         check_fixture("ExactVersion")
 
-        expect_warnings("Newer version of kean/Nuke: 12.1.7 (but this package is set to exact version 12.1.6)\n")
+        expect_warnings(
+          "Newer version of kean/Nuke: 12.1.7 (but this package is set to exact version 12.1.6) " \
+          "#{links('kean/Nuke', '12.1.6', '12.1.7')}"
+        )
       end
 
       it "Reports pre-release versions for exact versions when configured" do
@@ -78,7 +86,10 @@ module Danger
         @my_plugin.report_pre_releases = true
         check_fixture("ExactVersion")
 
-        expect_warnings("Newer version of kean/Nuke: 12.2.0-beta.2 (but this package is set to exact version 12.1.6)\n")
+        expect_warnings(
+          "Newer version of kean/Nuke: 12.2.0-beta.2 (but this package is set to exact version 12.1.6) " \
+          "#{links('kean/Nuke', '12.1.6', '12.2.0-beta.2')}"
+        )
       end
 
       it "Reports new versions for up to next major" do
@@ -86,7 +97,7 @@ module Danger
 
         check_fixture("UpToNextMajor")
 
-        expect_warnings("Newer version of kean/Nuke: 12.1.7")
+        expect_warnings("Newer version of kean/Nuke: 12.1.7 #{links('kean/Nuke', '12.1.6', '12.1.7')}")
       end
 
       it "Reports pre-release versions for up to next major when configured" do
@@ -96,7 +107,7 @@ module Danger
         @my_plugin.report_pre_releases = true
         check_fixture("UpToNextMajor")
 
-        expect_warnings("Newer version of kean/Nuke: 12.2.0-beta.2")
+        expect_warnings("Newer version of kean/Nuke: 12.2.0-beta.2 #{links('kean/Nuke', '12.1.6', '12.2.0-beta.2')}")
       end
 
       it "Does not report pre-release versions for up to next major" do
@@ -129,7 +140,10 @@ module Danger
         @my_plugin.report_above_maximum = true
         check_fixture("UpToNextMajor")
 
-        expect_warnings("Newest version of kean/Nuke: 13.0.0 (but this package is configured up to the next major version)\n")
+        expect_warnings(
+          "Newest version of kean/Nuke: 13.0.0 (but this package is configured up to the next major version) " \
+          "#{links('kean/Nuke', '12.1.6', '13.0.0')}"
+        )
       end
 
       it "Reports the filtered above-maximum version for up to next major" do
@@ -138,23 +152,41 @@ module Danger
         @my_plugin.report_above_maximum = true
         check_fixture("UpToNextMajor")
 
-        expect_warnings("Newest version of kean/Nuke: 13.0.0 (but this package is configured up to the next major version)\n")
+        expect_warnings(
+          "Newest version of kean/Nuke: 13.0.0 (but this package is configured up to the next major version) " \
+          "#{links('kean/Nuke', '12.1.6', '13.0.0')}"
+        )
       end
 
       it "Does not match up to next minor versions from a different major" do
-        @my_plugin.send(
-          :warn_for_new_versions,
-          :minor,
-          [
-            SpmVersionUpdates::Semver.new("1.5.0"),
-            SpmVersionUpdates::Semver.new("2.5.0"),
-          ].sort.reverse,
-          "kean/Nuke",
-          "github.com/kean/Nuke",
-          "1.5.0"
-        )
+        stub_versions("1.5.0", "2.5.0")
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        Dir.mktmpdir do |dir|
+          File.write(
+            File.join(dir, "Package.swift"),
+            '.package(url: "https://github.com/kean/Nuke", .upToNextMinor(from: "1.5.0"))'
+          )
+          File.write(
+            File.join(dir, "Package.resolved"),
+            <<~JSON
+              {
+                "pins" : [
+                  {
+                    "identity" : "nuke",
+                    "kind" : "remoteSourceControl",
+                    "location" : "https://github.com/kean/Nuke",
+                    "state" : { "revision" : "0000", "version" : "1.5.0" }
+                  }
+                ],
+                "version" : 2
+              }
+            JSON
+          )
+
+          @my_plugin.check_manifests(File.join(dir, "Package.swift"))
+        end
+
+        expect_warnings
       end
 
       it "Reports new versions for ranges" do
@@ -162,7 +194,7 @@ module Danger
 
         check_fixture("VersionRange")
 
-        expect_warnings("Newer version of kean/Nuke: 12.1.7")
+        expect_warnings("Newer version of kean/Nuke: 12.1.7 #{links('kean/Nuke', '12.1.6', '12.1.7')}")
       end
 
       it "Does not report pre-release versions as the newest range version" do
@@ -182,12 +214,15 @@ module Danger
       end
 
       it "Reports new versions for branches" do
-        allow(Git).to receive(:branch_last_commit)
+        allow(GitOperations).to receive(:branch_last_commit)
           .and_return "d658f302f56abfd7a163e3b5f44de39b780a64c2"
 
         check_fixture("Branch")
 
-        expect_warnings("Newer commit available for kean/Nuke (main): d658f302f56abfd7a163e3b5f44de39b780a64c2")
+        expect_warnings(
+          "Newer commit available for kean/Nuke (main): d658f302f56abfd7a163e3b5f44de39b780a64c2 " \
+          "#{links('kean/Nuke', '3f666f120b63ea7de57d42e9a7c9b47f8e7a290b', 'd658f302f56abfd7a163e3b5f44de39b780a64c2')}"
+        )
       end
 
       it "Does not report when pinned to commit" do
@@ -198,14 +233,14 @@ module Danger
         expect_warnings
       end
 
-      it "Prints to stderr when resolved version is unexpectedly null" do
+      it "Prints to stdout when resolved version is unexpectedly null" do
         stub_versions("12.1.6")
 
         expect {
           check_fixture("PackageV1Commit")
         }.to output(
           %r{Unable to extract semver from 12f19662426d0434d6c330c6974d53e2eb10ecd9 for AliSoftware/OHHTTPStubs.*}
-        ).to_stderr
+        ).to_stdout
       end
 
       it "Does not fail when resolved version is unexpectedly null" do
@@ -221,12 +256,12 @@ module Danger
         expect_warnings
       end
 
-      it "Prints to stderr when resolved version is missing from xcodeproj" do
+      it "Prints to stdout when resolved version is missing from xcodeproj" do
         expect {
           check_fixture("NoResolvedVersion")
         }.to output(
           %r{Unable to locate the current version for kean/Nuke.*}
-        ).to_stderr
+        ).to_stdout
       end
 
       it "Reports new versions for both possible Package.resolved locations" do
@@ -235,13 +270,13 @@ module Danger
         check_fixture("AlsoHasXcworkspace")
 
         expect_warnings(
-          "Newer version of kean/Nuke: 12.1.7",
-          "Newer version of Something/Else: 12.1.7"
+          "Newer version of kean/Nuke: 12.1.7 #{links('kean/Nuke', '12.1.6', '12.1.7')}",
+          "Newer version of Something/Else: 12.1.7 #{links('Something/Else', '12.1.6', '12.1.7')}"
         )
       end
 
       it "Warns and keeps checking other packages when a version lookup fails" do
-        allow(Git).to receive(:version_tags) { |repo_url|
+        allow(GitOperations).to receive(:version_tags) { |repo_url|
           raise(GitOperations::LsRemoteError, "fatal: could not read from remote") if repo_url.include?("kean/Nuke")
 
           versions("12.1.6", "12.1.7")
@@ -251,7 +286,7 @@ module Danger
 
         expect_warnings(
           "Unable to check kean/Nuke (github.com/kean/Nuke) for updates: fatal: could not read from remote",
-          "Newer version of Something/Else: 12.1.7"
+          "Newer version of Something/Else: 12.1.7 #{links('Something/Else', '12.1.6', '12.1.7')}"
         )
       end
 
@@ -292,7 +327,7 @@ module Danger
           warnings = @dangerfile.status_report[:warnings]
           expect(warnings.size).to eq(2)
           expect(warnings.first).to include("Skipping malformed Package.resolved file #{malformed_path}")
-          expect(warnings.last).to eq("Newer version of kean/Nuke: 12.1.7")
+          expect(warnings.last).to eq("Newer version of kean/Nuke: 12.1.7 #{links('kean/Nuke', '12.1.6', '12.1.7')}")
         end
       end
 
@@ -343,7 +378,7 @@ module Danger
 
         check_fixture("MangledUrl")
 
-        expect_warnings("Newer version of kean/Nuke: 12.1.7")
+        expect_warnings("Newer version of kean/Nuke: 12.1.7 #{links('kean/Nuke', '12.1.6', '12.1.7')}")
       end
 
       it "Does not report new versions when repo was ignored" do
@@ -377,7 +412,7 @@ module Danger
       end
 
       it "Does not suppress branch warnings with repo rules" do
-        allow(Git).to receive(:branch_last_commit)
+        allow(GitOperations).to receive(:branch_last_commit)
           .and_return "d658f302f56abfd7a163e3b5f44de39b780a64c2"
 
         Dir.mktmpdir do |dir|
@@ -395,7 +430,10 @@ module Danger
           check_fixture("Branch")
         end
 
-        expect_warnings("Newer commit available for kean/Nuke (main): d658f302f56abfd7a163e3b5f44de39b780a64c2")
+        expect_warnings(
+          "Newer commit available for kean/Nuke (main): d658f302f56abfd7a163e3b5f44de39b780a64c2 " \
+          "#{links('kean/Nuke', '3f666f120b63ea7de57d42e9a7c9b47f8e7a290b', 'd658f302f56abfd7a163e3b5f44de39b780a64c2')}"
+        )
       end
 
       it "Transforms git tags into version list" do
@@ -484,7 +522,140 @@ module Danger
 
         check_fixture("PackageV1")
 
-        expect_warnings("Newer version of gonzalezreal/NetworkImage: 3.1.3")
+        expect_warnings("Newer version of gonzalezreal/NetworkImage: 3.1.3 #{links('gonzalezreal/NetworkImage', '3.1.2', '3.1.3')}")
+      end
+
+      describe "#check_manifests" do
+        let(:manifests_dir) { File.expand_path("support/manifests", __dir__) }
+        let(:modules_manifest) { File.join(manifests_dir, "Modules", "Package.swift") }
+        let(:build_tools_manifest) { File.join(manifests_dir, "BuildTools", "Package.swift") }
+
+        before do
+          allow(GitOperations).to receive(:version_tags) do |url|
+            case url
+            when /Kingfisher/ then versions("7.10.2", "7.5.0", "7.0.0")
+            when /swift-argument-parser/ then versions("1.3.0", "1.2.3")
+            when /Nuke/ then versions("13.0.0", "12.1.7", "12.0.0")
+            when /SwiftGenPlugin/ then versions("6.7.0", "6.6.0")
+            when /SwiftFormat/ then versions("0.53.0", "0.52.7", "0.52.0")
+            else []
+            end
+          end
+          allow(GitOperations).to receive(:branch_last_commit).and_return("1111111111111111111111111111111111111111")
+        end
+
+        it "Checks dependencies across multiple manifests with links and source attribution" do
+          @my_plugin.check_when_exact = true
+          @my_plugin.check_manifests([modules_manifest, build_tools_manifest])
+
+          expect_warnings(
+            "Newer version of onevcat/Kingfisher: 7.10.2 #{links('onevcat/Kingfisher', '7.0.0', '7.10.2')}" \
+            "<br>Source: `#{modules_manifest}`<br>Update: `swift package update kingfisher`",
+            "Newer version of apple/swift-argument-parser: 1.3.0 (but this package is set to exact version 1.2.3) " \
+            "#{links('apple/swift-argument-parser', '1.2.3', '1.3.0')}<br>Source: `#{modules_manifest}`" \
+            "<br>Update: `swift package update swift-argument-parser`",
+            "Newer version of kean/Nuke: 12.1.7 #{links('kean/Nuke', '12.0.0', '12.1.7')}" \
+            "<br>Source: `#{modules_manifest}`<br>Update: `swift package update nuke`",
+            "Newer commit available for hbmartin/analytics-swift (main): 1111111111111111111111111111111111111111 " \
+            "#{links('hbmartin/analytics-swift', '0000000000000000000000000000000000000000', '1111111111111111111111111111111111111111')}" \
+            "<br>Source: `#{modules_manifest}`<br>Update: `swift package update analytics-swift`",
+            "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0 #{links('SwiftGen/SwiftGenPlugin', '6.6.0', '6.7.0')}" \
+            "<br>Source: `#{build_tools_manifest}`<br>Update: `swift package update swiftgenplugin`",
+            "Newer version of nicklockwood/SwiftFormat: 0.52.7 #{links('nicklockwood/SwiftFormat', '0.52.0', '0.52.7')}" \
+            "<br>Source: `#{build_tools_manifest}`<br>Update: `swift package update swiftformat`"
+          )
+        end
+
+        it "Accepts a single manifest path string" do
+          @my_plugin.check_manifests(build_tools_manifest)
+
+          expect(@dangerfile.status_report[:warnings].size).to eq(2)
+        end
+
+        it "Accepts explicit resolved paths" do
+          @my_plugin.check_manifests(
+            build_tools_manifest,
+            File.join(manifests_dir, "BuildTools", "Package.resolved")
+          )
+
+          expect(@dangerfile.status_report[:warnings].size).to eq(2)
+        end
+
+        it "Respects ignore_repos with mangled URLs" do
+          @my_plugin.ignore_repos = [
+            "ssh://github.com/SwiftGen/SwiftGenPlugin.git",
+            "https://github.com/nicklockwood/SwiftFormat",
+          ]
+          @my_plugin.check_manifests(build_tools_manifest)
+
+          expect_warnings
+        end
+
+        it "Suppresses semantic warnings with repo rules from a YAML file" do
+          Dir.mktmpdir do |dir|
+            rules_path = File.join(dir, "repo-rules.yml")
+            File.write(
+              rules_path,
+              <<~YAML
+                repositories:
+                  - url: "https://github.com/SwiftGen/SwiftGenPlugin"
+                    ignore-until: "7.0.0"
+                  - url: "https://github.com/nicklockwood/SwiftFormat"
+                    ignore-until: "1.0.0"
+              YAML
+            )
+
+            @my_plugin.repo_rules_path = rules_path
+            @my_plugin.check_manifests(build_tools_manifest)
+          end
+
+          expect_warnings
+        end
+
+        it "Warns and keeps checking other packages when a version lookup fails" do
+          allow(GitOperations).to receive(:version_tags) { |repo_url|
+            raise(GitOperations::LsRemoteError, "fatal: could not read from remote") if repo_url.include?("SwiftGenPlugin")
+
+            versions("0.53.0", "0.52.7", "0.52.0")
+          }
+
+          @my_plugin.check_manifests(build_tools_manifest)
+
+          expect_warnings(
+            "Unable to check SwiftGen/SwiftGenPlugin (github.com/SwiftGen/SwiftGenPlugin) for updates: fatal: could not read from remote",
+            "Newer version of nicklockwood/SwiftFormat: 0.52.7 #{links('nicklockwood/SwiftFormat', '0.52.0', '0.52.7')}" \
+            "<br>Source: `#{build_tools_manifest}`<br>Update: `swift package update swiftformat`"
+          )
+        end
+
+        it "Raises when manifest_paths is nil or empty", :aggregate_failures do
+          expect { @my_plugin.check_manifests(nil) }
+            .to raise_error(ManifestParser::ManifestPathMustBeSet)
+          expect { @my_plugin.check_manifests([]) }
+            .to raise_error(ManifestParser::ManifestPathMustBeSet)
+        end
+
+        it "Raises when a manifest does not exist" do
+          Dir.mktmpdir do |dir|
+            missing_manifest = File.join(dir, "Package.swift")
+            File.write(File.join(dir, "Package.resolved"), '{ "pins" : [], "version" : 2 }')
+
+            expect {
+              @my_plugin.check_manifests(missing_manifest)
+            }.to raise_error(ManifestParser::CouldNotFindManifest)
+          end
+        end
+
+        it "Raises when an expected Package.resolved is missing" do
+          Dir.mktmpdir do |dir|
+            manifest = File.join(dir, "Package.swift")
+            File.write(manifest, '.package(url: "https://github.com/kean/Nuke", from: "1.0.0")')
+
+            expect {
+              @my_plugin.check_manifests(manifest)
+            }.to raise_error(ManifestParser::CouldNotFindResolvedFile)
+          end
+        end
       end
     end
   end

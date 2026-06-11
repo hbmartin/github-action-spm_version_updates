@@ -11,6 +11,7 @@ RSpec.describe XcodeProjectPackageReader do
 
   def remote_package_double(repository_url:, requirement: { "kind" => "exactVersion" })
     package = Object.new
+    allow(package).to receive(:kind_of?).and_return(false)
     allow(package).to receive(:kind_of?)
       .with(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
       .and_return(true)

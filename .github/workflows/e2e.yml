@@ -53,7 +53,9 @@ jobs:
             and .[0].available_version == "1.2.3"
             and .[0].severity == "minor"
             and .[0].type == "version"
-            and .[0].source == "e2e/manifest/Package.swift"' <<<"$UPDATES_JSON"
+            and .[0].source == "e2e/manifest/Package.swift"
+            and .[0].package_identity == "spm-action-e2e-fixture"
+            and .[0].suggested_command == "swift package update spm-action-e2e-fixture"' <<<"$UPDATES_JSON"
 
   xcode-mode:
     name: E2E (Xcode project mode)
@@ -92,4 +94,5 @@ jobs:
             and .[0].current_version == "1.0.0"
             and .[0].available_version == "1.2.3"
             and .[0].severity == "minor"
-            and .[0].type == "version"' <<<"$UPDATES_JSON"
+            and .[0].type == "version"
+            and (.[0] | has("suggested_command")) == false' <<<"$UPDATES_JSON"

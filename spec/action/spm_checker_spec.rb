@@ -645,6 +645,77 @@ RSpec.describe SpmChecker do
       expect(checker.instance_variable_get(:@warnings)).to eq([])
     end
 
+    it "routes lookup failures to the handler and keeps checking other packages", :aggregate_failures do
+      failures = []
+      checker.lookup_failure_handler = ->(package, error) { failures << [package.name, error.message] }
+      allow(GitOperations).to receive(:version_tags)
+        .with("https://github.com/acme/shared")
+        .and_raise(GitOperations::LsRemoteError, "git ls-remote failed for https://github.com/acme/shared")
+      allow(GitOperations).to receive(:version_tags)
+        .with("https://github.com/acme/other")
+        .and_return(versions("1.2.0", "1.0.0"))
+      remote_packages = cache_remote_packages.merge(
+        "github.com/acme/other" => {
+          "repository_url" => "https://github.com/acme/other",
+          "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }
+        }
+      )
+      resolved_versions = cache_resolved_versions.merge("github.com/acme/other" => "1.0.0")
+
+      expect {
+        checker.send(:check_packages, remote_packages, resolved_versions)
+      }.not_to raise_error
+      expect(failures).to eq([["acme/shared", "git ls-remote failed for https://github.com/acme/shared"]])
+      expect(checker.instance_variable_get(:@warnings)).to eq(["Newer version of acme/other: 1.2.0"])
+    end
+
+    it "routes branch lookup failures to the handler", :aggregate_failures do
+      failures = []
+      checker.lookup_failure_handler = ->(package, error) { failures << [package.name, error.message] }
+      allow(GitOperations).to receive(:branch_last_commit)
+        .and_raise(GitOperations::LsRemoteError, "git ls-remote failed for branch")
+
+      Dir.mktmpdir do |dir|
+        manifest = ManifestPackageFixture.write_branch(dir)
+
+        expect { checker.check_manifests([manifest]) }
+          .not_to raise_error
+      end
+
+      expect(failures).to eq([["a/b", "git ls-remote failed for branch"]])
+    end
+
+    it "routes malformed resolved files to the handler and continues with remaining pins", :aggregate_failures do
+      stub_default_versions
+      malformed = []
+      checker.malformed_resolved_handler = ->(path, error) { malformed << [path, error.message] }
+
+      Dir.mktmpdir do |dir|
+        manifest = ManifestPackageFixture.write_version(dir)
+        bad_resolved = File.join(dir, "Bad.resolved")
+        File.write(bad_resolved, "{not json")
+
+        warnings = checker.check_manifests([manifest], [File.join(dir, "Package.resolved"), bad_resolved])
+
+        expect(warnings).to eq(["Newer version of a/b: 1.1.0\nSource: #{manifest}"])
+        expect(malformed.size).to eq(1)
+        expect(malformed.first.first).to eq(bad_resolved)
+        expect(malformed.first.last).to include("Malformed Package.resolved at #{bad_resolved}")
+      end
+    end
+
+    it "raises for malformed resolved files when no handler is configured" do
+      Dir.mktmpdir do |dir|
+        manifest = ManifestPackageFixture.write_version(dir)
+        bad_resolved = File.join(dir, "Bad.resolved")
+        File.write(bad_resolved, "{not json")
+
+        expect {
+          checker.check_manifests([manifest], [bad_resolved])
+        }.to raise_error(PackageResolved::MalformedFileError)
+      end
+    end
+
     it "redacts embedded credentials when logging missing resolved versions" do
       remote_packages = {
         "github.com/acme/private" => {

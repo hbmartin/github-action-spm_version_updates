@@ -4,12 +4,17 @@ detectors:
     enabled: false
   BooleanParameter:
     enabled: true
+    exclude:
+    - VersionTagFetcher#self.call
+    - VersionTagFetcher#initialize
+    - tracking_integration
   ClassVariable:
     enabled: true
   ControlParameter:
     enabled: true
     exclude:
     - ManifestParser#self.version_range_requirement
+    - UpgradeSuggestion#self.requirement_change
     - Danger::DangerSpmVersionUpdates#warn_for_branch
   DataClump:
     enabled: true
@@ -34,6 +39,8 @@ detectors:
     enabled: true
     exclude:
     - Action#configure_checker
+    - Danger::DangerSpmVersionUpdates#render_warning
+    - Danger::DangerSpmVersionUpdates#warn_lookup_failure
     - parse
   InstanceVariableAssumption:
     enabled: true
@@ -45,8 +52,10 @@ detectors:
     enabled: true
     exclude:
     - SpmChecker#warning_detail
+    - VersionTagFetcher#self.call
     - Danger::DangerSpmVersionUpdates#warn_for_branch
     - Danger::DangerSpmVersionUpdates#warn_for_new_versions
+    - package
     max_params: 3
     overrides:
       initialize:
@@ -79,6 +88,8 @@ detectors:
     - with_env
   RepeatedConditional:
     enabled: true
+    exclude:
+    - GithubIntegration
     max_ifs: 2
   SubclassedFromCoreClass:
     enabled: true
@@ -90,6 +101,7 @@ detectors:
     exclude:
     - GithubIntegration
     - SpmChecker
+    - VersionTagFetcher
     max_instance_variables: 4
   TooManyMethods:
     enabled: true
@@ -103,13 +115,18 @@ detectors:
     - Action#report
     - Action#configure_checker
     - Action#run
+    - ActionReporter#update_summary_lines
+    - ActionReporter::TrackingIssueOutput#self.write
     - GitOperations#self.ls_remote
     - GitOperations#self.version_tags
     - GithubIntegration#initialize
     - GithubIntegration#build_warnings_message
     - GithubIntegration#extract_pr_number
     - GithubIntegration#find_existing_comment
+    - GithubIntegration#publish_updates
     - GithubIntegration#warning_group
+    - GithubIntegration::TrackingIssue#close
+    - GithubIntegration::TrackingIssue#upsert
     - ManifestParser#self.copy_string_literal
     - ManifestParser#self.get_packages
     - ManifestParser#self.matching_paren
@@ -119,17 +136,22 @@ detectors:
     - ManifestParser#self.strip_comments
     - SpmChecker#check_for_updates
     - SpmChecker#check_manifests
+    - SpmChecker#check_packages
     - SpmChecker#check_versioned_package
     - SpmChecker#initialize
     - SpmChecker#merged_resolved_versions
     - SpmChecker#package_contexts
+    - SpmChecker#prefetch_version_tags
     - SpmChecker#warn_for_new_versions
     - Danger::DangerSpmVersionUpdates#check_for_updates
     - Danger::DangerSpmVersionUpdates#check_package
+    - Danger::DangerSpmVersionUpdates#copy_accessors
+    - Danger::DangerSpmVersionUpdates#render_warning
     - Danger::DangerSpmVersionUpdates#warn_for_new_versions
     - Xcode#self.find_packages_resolved_file
     - Xcode#self.get_resolved_versions
     - XcodeParser#self.find_packages_resolved_file
+    - XcodeParser#self.get_resolved_versions
     - with_env
     max_statements: 5
   UncommunicativeMethodName:
@@ -171,19 +193,27 @@ detectors:
     - Action#env_csv
     - Action#env_lines
     - Action#env_value
+    - ActionReporter#summary_links
+    - ActionReporter#upgrade_hint_lines
+    - GithubIntegration#build_legacy_warnings_message
     - GithubIntegration#detail_value
     - GithubIntegration#display_version
     - GithubIntegration#how_to_update_details
     - GithubIntegration#inline_code
     - GithubIntegration#table_cell
+    - GithubIntegration::UpgradeHintsSection#command_block
+    - GithubIntegration::UpgradeHintsSection#value
+    - Danger::DangerSpmVersionUpdates#warning_links
     - SpmChecker#warning_detail
     - capture_stdout
     - input_env
     - inputs
     - output_json
     - output_json_from
+    - package
     - with_env
     - write_event_file
     - write_resolved
+    - write_schedule_event_file
     - versions
     public_methods_only: false

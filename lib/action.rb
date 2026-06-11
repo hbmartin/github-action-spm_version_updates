@@ -34,6 +34,7 @@ class Action
       allow_hosts: "Allow hosts",
       comment: "Comment",
       comment_on_success: "Comment on success",
+      open_tracking_issue: "Open tracking issue",
       cache_version_tags: "Cache version tags",
       version_tags_cache_ttl: "Version tags cache TTL"
     }.freeze
@@ -82,6 +83,7 @@ class Action
       puts("Fail on: #{@inputs[:fail_on] || 'none'}")
       print_value(:comment)
       print_value(:comment_on_success)
+      print_value(:open_tracking_issue)
     end
 
     def print_cache_inputs
@@ -113,6 +115,7 @@ class Action
   def run
     inputs = read_inputs
     ConfigPrinter.new(inputs).print
+    @reporter_sink.configure(inputs)
     move_to_workspace
 
     checker = configure_checker(inputs)
@@ -168,6 +171,7 @@ class Action
       fail_on: FailOnThreshold.from_inputs(env_value("INPUT_FAIL_ON"), env_value("INPUT_FAIL_ON_UPDATES")),
       comment: env_flag_default_true("INPUT_COMMENT"),
       comment_on_success: env_flag("INPUT_COMMENT_ON_SUCCESS"),
+      open_tracking_issue: env_flag("INPUT_OPEN_TRACKING_ISSUE"),
       cache_version_tags: env_flag_default_true("INPUT_CACHE_VERSION_TAGS"),
       version_tags_cache_ttl: cache_ttl,
       version_tags_cache_dir: env_value("SPM_VERSION_UPDATES_TAG_CACHE_DIR")
@@ -218,6 +222,7 @@ class Action
       puts("⚠️  Found #{warnings.size} potential updates")
     end
     publish(warnings, warning_details, options) if options.fetch(:comment, true)
+    ActionReporter::TrackingIssueOutput.write(@reporter_sink.tracking_issue_result)
 
     reporter
   end
