@@ -201,7 +201,9 @@ detectors:
     - GithubIntegration#how_to_update_details
     - GithubIntegration#inline_code
     - GithubIntegration#table_cell
+    - GithubIntegration::TrackingIssue#matching_tracking_issue
     - GithubIntegration::UpgradeHintsSection#command_block
+    - GithubIntegration::UpgradeHintsSection#directory_label
     - GithubIntegration::UpgradeHintsSection#value
     - Danger::DangerSpmVersionUpdates#warning_links
     - SpmChecker#warning_detail

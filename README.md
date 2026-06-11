@@ -238,7 +238,7 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `allow-hosts` | Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. | No | `''` |
 | `fail-on-updates` | Legacy fail behavior. Set `true` to fail on any update, or `major` / `minor` / `patch` to fail on semantic version updates at or above that severity. | No | `false` |
 | `fail-on` | Fail on semantic version updates at or above this severity: `major`, `minor`, or `patch`. Overrides `fail-on-updates` when set. | No | `''` |
-| `comment` | Post or update the pull request comment. Set `false` to disable all PR commenting; outputs, the step summary, and annotations are still produced, and a comment left by a prior run is kept as-is rather than deleted. | No | `true` |
+| `comment` | Post or update the pull request comment. Set `false` to disable all PR commenting; outputs, the step summary, and annotations are still produced, and a comment left by a prior run is kept as-is rather than deleted. Tracking issues (`open-tracking-issue`) are unaffected. | No | `true` |
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | No | `false` |
 | `open-tracking-issue` | On runs without a pull request context (`schedule`, `workflow_dispatch`, `push`), open or update a single tracking issue with the update report, and close it once everything is up to date. Requires `issues: write`. | No | `false` |
 | `cache-version-tags` | Persist successful git tag lookups between runs with `actions/cache`. | No | `true` |

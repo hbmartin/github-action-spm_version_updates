@@ -11,7 +11,15 @@ RSpec.describe Action do
   let(:checker) { instance_double(SpmChecker) }
   let(:checker_factory) { SpmChecker }
   let(:reporter_sink) {
-    instance_double(ReporterSink, clear: nil, configure: nil, publish_success: nil, publish_updates: nil, tracking_issue_result: nil)
+    instance_double(
+      ReporterSink,
+      clear: nil,
+      configure: nil,
+      publish_success: nil,
+      publish_updates: nil,
+      tracking_issue_result: nil,
+      tracking_issue_run?: false
+    )
   }
 
   def with_env(overrides)
@@ -428,6 +436,30 @@ RSpec.describe Action do
         expect(reporter_sink).not_to have_received(:clear)
         expect(reporter_sink).not_to have_received(:publish_updates)
       end
+    end
+
+    it "still publishes updates on tracking-issue runs when commenting is disabled" do
+      allow(reporter_sink).to receive(:tracking_issue_run?).and_return(true)
+
+      Dir.mktmpdir do |dir|
+        with_env("GITHUB_OUTPUT" => File.join(dir, "github_output"), "GITHUB_STEP_SUMMARY" => nil) do
+          action.send(:report, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil, comment: false)
+        end
+      end
+
+      expect(reporter_sink).to have_received(:publish_updates)
+    end
+
+    it "still closes the tracking issue on clean tracking-issue runs when commenting is disabled" do
+      allow(reporter_sink).to receive(:tracking_issue_run?).and_return(true)
+
+      Dir.mktmpdir do |dir|
+        with_env("GITHUB_OUTPUT" => File.join(dir, "github_output"), "GITHUB_STEP_SUMMARY" => nil) do
+          action.send(:report, [], nil, comment: false)
+        end
+      end
+
+      expect(reporter_sink).to have_received(:clear)
     end
   end
 
