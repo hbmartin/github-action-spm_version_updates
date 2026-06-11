@@ -4,8 +4,10 @@ name: E2E
 # hbmartin/spm-action-e2e-fixture (created by script/setup_e2e_fixture_repo.sh,
 # tags: 1.0.0, 1.2.3, 2.0.0-beta.1, 2.0.0). The sample projects pin 1.0.0 with
 # an up-to-next-major constraint, so the expected result is always exactly one
-# minor update to 1.2.3. On pull requests the action also posts its real
-# summary comment — that is intentional dogfooding of the comment path.
+# minor update to 1.2.3. On pull requests the manifest-mode job also posts the
+# action's real summary comment — that is intentional dogfooding of the comment
+# path; xcode-mode runs with comment: 'false' so the two jobs never race on the
+# single sticky PR comment.
 on:
   pull_request:
   workflow_dispatch:
@@ -55,11 +57,10 @@ jobs:
 
   xcode-mode:
     name: E2E (Xcode project mode)
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    # Commenting is disabled here, so this job is safe to run on fork PRs too.
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -70,6 +71,7 @@ jobs:
         with:
           xcode-project-path: e2e/E2EFixture.xcodeproj
           cache-version-tags: 'false'
+          comment: 'false'
       - name: Assert outputs
         env:
           UPDATES_FOUND: ${{ steps.spm.outputs.updates-found }}
