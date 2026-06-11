@@ -4,6 +4,8 @@ require "stringio"
 require "tmpdir"
 require_relative("../../lib/github_integration")
 
+TRACKING_ISSUE_URL = "https://github.com/owner/repo/issues/7"
+
 RSpec.describe(GithubIntegration) {
   subject(:integration) { described_class.allocate }
 
@@ -189,6 +191,20 @@ RSpec.describe(GithubIntegration) {
       expect(message).not_to(include("To update your SPM dependencies:"))
     end
 
+    it("skips malformed package identities when rendering update commands") do
+      details = [
+        base_detail.merge(suggested_command: "swift package update kingfisher", package_identity: "kingfisher"),
+        base_detail.merge(package: "kean/Nuke", suggested_command: "swift package update nuke", package_identity: nil),
+        base_detail.merge(package: "SwiftGen/SwiftGenPlugin", suggested_command: "swift package update swiftgenplugin", package_identity: " "),
+      ]
+      warnings = details.map { |detail| "Newer version of #{detail[:package]}: 8.0.0" }
+
+      message = integration.send(:build_warnings_message, warnings, details)
+
+      command_lines = message.lines.select { |line| line.start_with?("swift package update") }
+      expect(command_lines).to(eq(["swift package update kingfisher\n"]))
+    end
+
     it("renders manifest changes needed for out-of-range updates", :aggregate_failures) do
       details = [
         base_detail.merge(
@@ -362,6 +378,14 @@ RSpec.describe(GithubIntegration) {
       client
     end
 
+    def issue_resource(attributes)
+      Struct.new(:attributes) {
+        def [](key)
+          attributes[key]
+        end
+      }.new(attributes)
+    end
+
     let(:issue_marker) { described_class::TrackingIssue::ISSUE_IDENTIFIER }
     let(:issue_label) { described_class::TrackingIssue::LABEL }
     let(:issue_title) { described_class::TrackingIssue::TITLE }
@@ -371,7 +395,7 @@ RSpec.describe(GithubIntegration) {
       allow(client).to(
         receive_messages(
           list_issues: [],
-          create_issue: { number: 7, html_url: "https://github.com/owner/repo/issues/7" }
+          create_issue: { number: 7, html_url: TRACKING_ISSUE_URL }
         )
       )
 
@@ -389,7 +413,7 @@ RSpec.describe(GithubIntegration) {
         expect(body).to(include(issue_marker, "Newer version of onevcat/Kingfisher: 8.0.0"))
         expect(options).to(eq(labels: issue_label))
       end
-      expect(integration.tracking_issue_result).to(eq(number: 7, url: "https://github.com/owner/repo/issues/7"))
+      expect(integration.tracking_issue_result).to(eq(number: 7, url: TRACKING_ISSUE_URL))
     end
 
     it("updates the existing marker-bearing issue instead of creating a duplicate", :aggregate_failures) do
@@ -401,7 +425,7 @@ RSpec.describe(GithubIntegration) {
             { number: 5, body: "a PR somehow carrying the marker #{issue_marker}", pull_request: { url: "x" } },
             { number: 7, body: "#{issue_marker}\nold report", pull_request: nil },
           ],
-          update_issue: { number: 7, html_url: "https://github.com/owner/repo/issues/7" },
+          update_issue: { number: 7, html_url: TRACKING_ISSUE_URL },
           create_issue: nil
         )
       )
@@ -419,7 +443,28 @@ RSpec.describe(GithubIntegration) {
           .with("owner/repo", 7, issue_title, include(issue_marker, "Newer version of onevcat/Kingfisher: 8.0.0"))
       )
       expect(client).not_to(have_received(:create_issue))
-      expect(integration.tracking_issue_result).to(eq(number: 7, url: "https://github.com/owner/repo/issues/7"))
+      expect(integration.tracking_issue_result).to(eq(number: 7, url: TRACKING_ISSUE_URL))
+    end
+
+    it("does not create a duplicate tracking issue when listing existing issues fails", :aggregate_failures) do
+      client = stubbed_client
+      allow(client).to(receive(:list_issues).and_raise(Octokit::Error.new))
+      allow(client).to(receive(:create_issue))
+
+      integration = nil
+      Dir.mktmpdir do |dir|
+        stdout = capture_stdout do
+          with_env(github_env(write_schedule_event_file(dir))) do
+            integration = tracking_integration
+            integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+          end
+        end
+
+        expect(stdout).to(include("Error upserting tracking issue"))
+      end
+
+      expect(client).not_to(have_received(:create_issue))
+      expect(integration.tracking_issue_result).to(be_nil)
     end
 
     it("closes the tracking issue with a resolution comment on clean runs", :aggregate_failures) do
@@ -427,6 +472,28 @@ RSpec.describe(GithubIntegration) {
       allow(client).to(
         receive_messages(
           list_issues: [{ number: 7, body: issue_marker, pull_request: nil }],
+          add_comment: nil,
+          close_issue: nil
+        )
+      )
+
+      Dir.mktmpdir do |dir|
+        with_env(github_env(write_schedule_event_file(dir))) do
+          tracking_integration.clear
+        end
+      end
+
+      expect(client).to(
+        have_received(:add_comment).with("owner/repo", 7, described_class::TRACKING_ISSUE_RESOLVED_COMMENT)
+      )
+      expect(client).to(have_received(:close_issue).with("owner/repo", 7))
+    end
+
+    it("closes tracking issues returned as Octokit-style resources", :aggregate_failures) do
+      client = stubbed_client
+      allow(client).to(
+        receive_messages(
+          list_issues: [issue_resource(number: 7, body: issue_marker, pull_request: nil)],
           add_comment: nil,
           close_issue: nil
         )

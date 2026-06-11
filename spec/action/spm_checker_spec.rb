@@ -645,6 +645,26 @@ RSpec.describe SpmChecker do
       expect(checker.instance_variable_get(:@warnings)).to eq([])
     end
 
+    it "raises prefetched lookup failures when no handler is configured" do
+      error = GitOperations::LsRemoteError.new("prefetch failed")
+      checker_class = Class.new(described_class) {
+        def initialize(prefetch_error)
+          super()
+          @prefetch_error = prefetch_error
+        end
+
+        private
+
+        def prefetch_version_tags(_packages)
+          { "github.com/acme/shared\nhttps://github.com/acme/shared" => @prefetch_error }
+        end
+      }
+
+      expect {
+        checker_class.new(error).send(:check_packages, cache_remote_packages, cache_resolved_versions)
+      }.to raise_error(GitOperations::LsRemoteError, "prefetch failed")
+    end
+
     it "routes lookup failures to the handler and keeps checking other packages", :aggregate_failures do
       failures = []
       checker.lookup_failure_handler = ->(package, error) { failures << [package.name, error.message] }

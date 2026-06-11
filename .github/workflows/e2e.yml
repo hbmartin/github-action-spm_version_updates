@@ -1,8 +1,8 @@
 name: E2E
 
 # Runs the composite action for real against the frozen fixture repository
-# hbmartin/spm-action-e2e-fixture (created by script/setup_e2e_fixture_repo.sh,
-# tags: 1.0.0, 1.2.3, 2.0.0-beta.1, 2.0.0). The sample projects pin 1.0.0 with
+# hbmartin/spm-action-e2e-fixture (frozen tags: 1.0.0, 1.2.3, 2.0.0-beta.1,
+# 2.0.0). The sample projects pin 1.0.0 with
 # an up-to-next-major constraint, so the expected result is always exactly one
 # minor update to 1.2.3. On pull requests the manifest-mode job also posts the
 # action's real summary comment — that is intentional dogfooding of the comment

@@ -62,3 +62,36 @@ rules:
           rescue Errno::ENOENT
             ...
           end
+  - id: ruby.github-integration.tracking-issue-no-resource-fetch
+    languages:
+      - ruby
+    severity: ERROR
+    message: >-
+      TrackingIssue works with Octokit/Sawyer resources; use [] access instead
+      of fetch because Sawyer::Resource does not implement fetch.
+    paths:
+      include:
+        - "**/lib/github_integration.rb"
+    patterns:
+      - pattern-inside: |
+          class TrackingIssue
+            ...
+          end
+      - pattern: $RESOURCE.fetch(...)
+  - id: ruby.spm-checker.no-unguarded-lookup-handler-call
+    languages:
+      - ruby
+    severity: ERROR
+    message: >-
+      Guard lookup_failure_handler before calling it for prefetch failures; raise
+      the original error when no handler is configured.
+    paths:
+      include:
+        - "**/lib/spm_checker.rb"
+    patterns:
+      - pattern-either:
+          - pattern: next @lookup_failure_handler.call($PACKAGE, $ERROR) if $ERROR
+          - pattern: |
+              if $ERROR
+                next @lookup_failure_handler.call($PACKAGE, $ERROR)
+              end

@@ -196,7 +196,11 @@ class SpmChecker
 
     packages.each { |package|
       prefetch_error = failed_lookups[package.cache_key]
-      next @lookup_failure_handler.call(package, prefetch_error) if prefetch_error
+      if prefetch_error
+        raise(prefetch_error) unless @lookup_failure_handler
+
+        next @lookup_failure_handler.call(package, prefetch_error)
+      end
 
       check_package_handling_lookup_failure(package)
     }

@@ -257,7 +257,9 @@ it came from, so you know exactly where to make the change:
 | `ignore-repos` | Comma-separated list of repository URLs to ignore. | `''` |
 | `repo-rules-path` | Path to a YAML file with per-repository semantic update suppression rules. | `''` |
 | `allow-hosts` | Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. A blocked lookup fails the action and writes `blocked=true` plus `error-message`. | `''` |
+| `comment` | Post or update the pull request comment. Set `false` to disable all PR commenting while keeping outputs, the step summary, and annotations. | `true` |
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | `false` |
+| `open-tracking-issue` | On runs without a pull request context, open or update one tracking issue with the update report, and close it once dependencies are up to date. Requires `issues: write`. | `false` |
 | `cache-version-tags` | Persist successful git tag lookups between runs with `actions/cache`. | `true` |
 | `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Set `0` to disable persistent cache reads and writes. | `21600` |
 | `setup-ruby` | Set up Ruby and install this action's bundle. Set to `false` only for later invocations in the same job after an earlier invocation has already run setup. | `true` |
