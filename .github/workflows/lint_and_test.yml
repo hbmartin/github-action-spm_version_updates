@@ -57,6 +57,8 @@ jobs:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
       - name: Run specs
+        env:
+          SIMPLECOV_MINIMUM_COVERAGE: "80"
         run: bundle exec rspec --require ./spec/coverage_helper
       - name: Upload coverage report
         if: always()

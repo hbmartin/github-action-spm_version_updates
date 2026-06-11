@@ -8,7 +8,6 @@ require_relative "spm_version_updates/semver"
 # Git operations for SPM version checking (migrated from git.rb)
 module GitOperations
   ALLOWED_PROTOCOLS = "https:ssh:git"
-  HOST_PATTERN = GitHostNormalizer::HOST_PATTERN
   LS_REMOTE_RETRY_DELAYS = [0.25, 0.5].freeze
   NON_INTERACTIVE_ENV = {
     "GIT_ALLOW_PROTOCOL" => ALLOWED_PROTOCOLS,
@@ -102,6 +101,8 @@ module GitOperations
     raise_ls_remote_error(failure_message(repo_url, stderr, attempts))
   rescue Errno::ENOENT
     raise_ls_remote_error("git command not found. Please ensure git is installed and available in your PATH.")
+  rescue SystemCallError => error
+    raise_ls_remote_error("git ls-remote failed to start: #{error.message}")
   end
 
   def self.ls_remote_attempts
