@@ -26,6 +26,7 @@ detectors:
     - ManifestParser#self.matching_paren
     - ManifestParser#self.skip_block_comment
     - ManifestParser#self.strip_comments
+    - remote_package_double
     - with_env
     max_calls: 1
     allow_calls: []
@@ -179,8 +180,10 @@ detectors:
     - capture_stdout
     - input_env
     - inputs
+    - output_json
     - output_json_from
     - with_env
     - write_event_file
+    - write_resolved
     - versions
     public_methods_only: false
