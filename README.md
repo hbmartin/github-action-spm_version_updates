@@ -356,10 +356,6 @@ repositories:
 
 When the action finds available updates, it posts (and keeps updating) a single comment on your pull request:
 
-<!-- TODO: drop a real screenshot at docs/pr-comment-example.png and uncomment the line below for a more compelling, marketplace-style README.
-![Example Swift Package Version Updates pull request comment](docs/pr-comment-example.png)
--->
-
 > ## 📦 SPM Version Updates
 >
 > ⚠️ **Found 2 potential dependency updates:**

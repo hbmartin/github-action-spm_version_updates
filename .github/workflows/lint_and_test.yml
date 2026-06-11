@@ -27,13 +27,20 @@ jobs:
       - name: Install Semgrep
         run: python3 -m pip install --user semgrep==1.151.0
       - name: Run Semgrep
-        run: $HOME/.local/bin/semgrep --config .semgrep.yml --error
+        run: |
+          "$HOME/.local/bin/semgrep" --config .semgrep.yml --error
       - name: Run RuboCop
         run: bundle exec rubocop
       - name: Run Reek
         run: bundle exec rake reek
       - name: Run Danger plugin lint
         run: bundle exec danger plugins lint
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+      - name: Validate action.yml schema
+        run: npx --yes @action-validator/cli@0.6.0 action.yml
 
   build:
     name: Action specs

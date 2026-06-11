@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "spm-action-e2e-fixture",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/hbmartin/spm-action-e2e-fixture",
+      "state" : {
+        "revision" : "0000000000000000000000000000000000000000",
+        "version" : "1.0.0"
+      }
+    }
+  ],
+  "version" : 2
+}

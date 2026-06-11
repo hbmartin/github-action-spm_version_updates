@@ -1,0 +1,91 @@
+name: E2E
+
+# Runs the composite action for real against the frozen fixture repository
+# hbmartin/spm-action-e2e-fixture (created by script/setup_e2e_fixture_repo.sh,
+# tags: 1.0.0, 1.2.3, 2.0.0-beta.1, 2.0.0). The sample projects pin 1.0.0 with
+# an up-to-next-major constraint, so the expected result is always exactly one
+# minor update to 1.2.3. On pull requests the action also posts its real
+# summary comment — that is intentional dogfooding of the comment path.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  manifest-mode:
+    name: E2E (manifest mode)
+    # Fork PRs get a read-only token, so the comment step inside the action
+    # cannot post; only run for same-repo PRs and manual dispatches.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Run action
+        id: spm
+        uses: ./
+        with:
+          package-manifest-paths: e2e/manifest/Package.swift
+          cache-version-tags: 'false'
+      - name: Assert outputs
+        env:
+          UPDATES_FOUND: ${{ steps.spm.outputs.updates-found }}
+          MAJOR: ${{ steps.spm.outputs.major-updates-found }}
+          MINOR: ${{ steps.spm.outputs.minor-updates-found }}
+          PATCH: ${{ steps.spm.outputs.patch-updates-found }}
+          BLOCKED: ${{ steps.spm.outputs.blocked }}
+          UPDATES_JSON: ${{ steps.spm.outputs.updates-json }}
+        run: |
+          set -euo pipefail
+          [ "$UPDATES_FOUND" = "1" ]
+          [ "$MAJOR" = "0" ]
+          [ "$MINOR" = "1" ]
+          [ "$PATCH" = "0" ]
+          [ "$BLOCKED" = "false" ]
+          jq -e 'length == 1
+            and .[0].package == "hbmartin/spm-action-e2e-fixture"
+            and .[0].current_version == "1.0.0"
+            and .[0].available_version == "1.2.3"
+            and .[0].severity == "minor"
+            and .[0].type == "version"
+            and .[0].source == "e2e/manifest/Package.swift"' <<<"$UPDATES_JSON"
+
+  xcode-mode:
+    name: E2E (Xcode project mode)
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Run action
+        id: spm
+        uses: ./
+        with:
+          xcode-project-path: e2e/E2EFixture.xcodeproj
+          cache-version-tags: 'false'
+      - name: Assert outputs
+        env:
+          UPDATES_FOUND: ${{ steps.spm.outputs.updates-found }}
+          MAJOR: ${{ steps.spm.outputs.major-updates-found }}
+          MINOR: ${{ steps.spm.outputs.minor-updates-found }}
+          PATCH: ${{ steps.spm.outputs.patch-updates-found }}
+          BLOCKED: ${{ steps.spm.outputs.blocked }}
+          UPDATES_JSON: ${{ steps.spm.outputs.updates-json }}
+        run: |
+          set -euo pipefail
+          [ "$UPDATES_FOUND" = "1" ]
+          [ "$MAJOR" = "0" ]
+          [ "$MINOR" = "1" ]
+          [ "$PATCH" = "0" ]
+          [ "$BLOCKED" = "false" ]
+          jq -e 'length == 1
+            and .[0].package == "hbmartin/spm-action-e2e-fixture"
+            and .[0].current_version == "1.0.0"
+            and .[0].available_version == "1.2.3"
+            and .[0].severity == "minor"
+            and .[0].type == "version"' <<<"$UPDATES_JSON"
