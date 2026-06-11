@@ -32,6 +32,7 @@ class Action
       ignore_repos: "Ignore repos",
       repo_rules_path: "Repo rules",
       allow_hosts: "Allow hosts",
+      comment: "Comment",
       comment_on_success: "Comment on success",
       cache_version_tags: "Cache version tags",
       version_tags_cache_ttl: "Version tags cache TTL"
@@ -79,6 +80,7 @@ class Action
 
     def print_report_inputs
       puts("Fail on: #{@inputs[:fail_on] || 'none'}")
+      print_value(:comment)
       print_value(:comment_on_success)
     end
 
@@ -116,7 +118,7 @@ class Action
     checker = configure_checker(inputs)
     warnings = run_checks(checker, inputs)
     warning_details = checker.warning_details
-    reporter = report(warnings, warning_details, comment_on_success: inputs[:comment_on_success])
+    reporter = report(warnings, warning_details, comment: inputs[:comment], comment_on_success: inputs[:comment_on_success])
     failure_message = FailOnThreshold.failure_message(inputs[:fail_on], reporter)
     fail_with(failure_message) if failure_message
 
@@ -164,6 +166,7 @@ class Action
       repo_rules_path: env_value("INPUT_REPO_RULES_PATH"),
       allow_hosts: env_csv("INPUT_ALLOW_HOSTS"),
       fail_on: FailOnThreshold.from_inputs(env_value("INPUT_FAIL_ON"), env_value("INPUT_FAIL_ON_UPDATES")),
+      comment: env_flag_default_true("INPUT_COMMENT"),
       comment_on_success: env_flag("INPUT_COMMENT_ON_SUCCESS"),
       cache_version_tags: env_flag_default_true("INPUT_CACHE_VERSION_TAGS"),
       version_tags_cache_ttl: cache_ttl,
@@ -211,17 +214,22 @@ class Action
 
     if warnings.empty?
       puts("✅ All SPM dependencies are up to date!")
-      if options.fetch(:comment_on_success, false)
-        @reporter_sink.publish_success
-      else
-        @reporter_sink.clear
-      end
     else
       puts("⚠️  Found #{warnings.size} potential updates")
-      @reporter_sink.publish_updates(warnings, warning_details)
     end
+    publish(warnings, warning_details, options) if options.fetch(:comment, true)
 
     reporter
+  end
+
+  def publish(warnings, warning_details, options)
+    if warnings.any?
+      @reporter_sink.publish_updates(warnings, warning_details)
+    elsif options.fetch(:comment_on_success, false)
+      @reporter_sink.publish_success
+    else
+      @reporter_sink.clear
+    end
   end
 
   def move_to_workspace

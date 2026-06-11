@@ -58,6 +58,10 @@ inputs:
     description: 'Fail when an update at or above this severity is found: major, minor, patch, or empty to never fail. Overrides fail-on-updates when set.'
     required: false
     default: ''
+  comment:
+    description: 'Post or update the pull request comment. Set false to disable all PR commenting.'
+    required: false
+    default: 'true'
   comment-on-success:
     description: 'Post a pull request comment when all dependencies are up to date'
     required: false
@@ -166,6 +170,7 @@ runs:
         INPUT_ALLOW_HOSTS: ${{ inputs.allow-hosts }}
         INPUT_FAIL_ON_UPDATES: ${{ inputs.fail-on-updates }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_COMMENT_ON_SUCCESS: ${{ inputs.comment-on-success }}
         INPUT_CACHE_VERSION_TAGS: ${{ inputs.cache-version-tags }}
         INPUT_VERSION_TAGS_CACHE_TTL: ${{ inputs.version-tags-cache-ttl }}

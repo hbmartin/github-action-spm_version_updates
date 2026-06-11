@@ -38,6 +38,7 @@ RSpec.describe Action do
       INPUT_ALLOW_HOSTS
       INPUT_FAIL_ON_UPDATES
       INPUT_FAIL_ON
+      INPUT_COMMENT
       INPUT_COMMENT_ON_SUCCESS
       INPUT_CACHE_VERSION_TAGS
       INPUT_VERSION_TAGS_CACHE_TTL
@@ -121,6 +122,7 @@ RSpec.describe Action do
             repo_rules_path: ".spm-version-updates.yml",
             allow_hosts: ["github.com", "gitlab.com"],
             fail_on: "minor",
+            comment: true,
             comment_on_success: true,
             cache_version_tags: true,
             version_tags_cache_ttl: 21_600,
@@ -133,6 +135,12 @@ RSpec.describe Action do
     it "defaults check_branches to true when the env var is absent" do
       with_env(input_env) do
         expect(action.send(:read_inputs)[:check_branches]).to be(true)
+      end
+    end
+
+    it "defaults comment to true when the env var is absent" do
+      with_env(input_env) do
+        expect(action.send(:read_inputs)[:comment]).to be(true)
       end
     end
 
@@ -334,6 +342,37 @@ RSpec.describe Action do
         expect(reporter_sink).not_to have_received(:clear)
       end
     end
+
+    it "skips the PR comment for updates when commenting is disabled", :aggregate_failures do
+      warnings = ["Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift"]
+
+      Dir.mktmpdir do |dir|
+        output_path = File.join(dir, "github_output")
+        summary_path = File.join(dir, "step_summary")
+
+        with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
+          action.send(:report, warnings, nil, comment: false)
+        end
+
+        expect(File.read(output_path)).to include("updates-found=1")
+        expect(reporter_sink).not_to have_received(:publish_updates)
+      end
+    end
+
+    it "skips all PR comment calls on a clean run when commenting is disabled", :aggregate_failures do
+      Dir.mktmpdir do |dir|
+        output_path = File.join(dir, "github_output")
+        summary_path = File.join(dir, "step_summary")
+
+        with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
+          action.send(:report, [], nil, comment: false, comment_on_success: true)
+        end
+
+        expect(reporter_sink).not_to have_received(:publish_success)
+        expect(reporter_sink).not_to have_received(:clear)
+        expect(reporter_sink).not_to have_received(:publish_updates)
+      end
+    end
   end
 
   describe "#run" do
@@ -420,6 +459,25 @@ RSpec.describe Action do
 
       expect(reporter_sink).to have_received(:publish_success)
       expect(reporter_sink).not_to have_received(:clear)
+    end
+
+    it "never touches the PR comment when comment is disabled", :aggregate_failures do
+      allow(configured_checker).to receive(:check_for_updates).and_return([])
+      allow(configured_checker).to receive(:check_manifests)
+
+      with_env(
+        input_env(
+          "INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj",
+          "INPUT_COMMENT" => "false",
+          "INPUT_COMMENT_ON_SUCCESS" => "true"
+        )
+      ) do
+        action.run
+      end
+
+      expect(reporter_sink).not_to have_received(:publish_success)
+      expect(reporter_sink).not_to have_received(:clear)
+      expect(reporter_sink).not_to have_received(:publish_updates)
     end
 
     it "writes structured output when allow-hosts blocks a lookup", :aggregate_failures do

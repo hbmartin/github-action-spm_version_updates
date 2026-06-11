@@ -237,6 +237,7 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 | `allow-hosts` | Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. | No | `''` |
 | `fail-on-updates` | Legacy fail behavior. Set `true` to fail on any update, or `major` / `minor` / `patch` to fail on semantic version updates at or above that severity. | No | `false` |
 | `fail-on` | Fail on semantic version updates at or above this severity: `major`, `minor`, or `patch`. Overrides `fail-on-updates` when set. | No | `''` |
+| `comment` | Post or update the pull request comment. Set `false` to disable all PR commenting; outputs, the step summary, and annotations are still produced. | No | `true` |
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | No | `false` |
 | `cache-version-tags` | Persist successful git tag lookups between runs with `actions/cache`. | No | `true` |
 | `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Set `0` to disable persistent cache reads and writes. | No | `21600` |
@@ -274,7 +275,7 @@ Across all of the constraint types above, pre-release tags (versions with a `-` 
 
 ## Outputs
 
-The action always writes machine-readable outputs, appends a GitHub step summary, and emits `::warning` annotations for each update. Pull request runs get a summary comment when updates are found. Clean runs delete the prior generated comment by default; set `comment-on-success: true` to keep an up-to-date comment instead. Scheduled and `workflow_dispatch` runs still have visible results in the workflow run summary and annotations.
+The action always writes machine-readable outputs, appends a GitHub step summary, and emits `::warning` annotations for each update. Pull request runs get a summary comment when updates are found. Clean runs delete the prior generated comment by default; set `comment-on-success: true` to keep an up-to-date comment instead, or `comment: false` to disable PR commenting entirely. Scheduled and `workflow_dispatch` runs still have visible results in the workflow run summary and annotations.
 
 | Output | Description |
 | ------ | ----------- |

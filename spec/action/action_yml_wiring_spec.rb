@@ -7,7 +7,7 @@ require "yaml"
 # read by the Ruby action that no declared input produces.
 RSpec.describe "action.yml wiring" do # rubocop:disable RSpec/DescribeClass
   let(:root) { File.expand_path("../..", __dir__) }
-  let(:action) { YAML.safe_load_file(File.join(root, "action.yml")) }
+  let(:action) { YAML.load_file(File.join(root, "action.yml")) }
   let(:check_step) { action.fetch("runs").fetch("steps").find { |step| step["id"] == "check" } }
   let(:check_env) { check_step.fetch("env") }
 
@@ -29,8 +29,8 @@ RSpec.describe "action.yml wiring" do # rubocop:disable RSpec/DescribeClass
 
   it "declares an input for every INPUT_* env var the action reads" do
     declared = action.fetch("inputs").keys.map { |name| input_env_name(name) }
-    sources = ["lib/action.rb", "lib/action_runtime_preflight.sh"]
-    read = sources.flat_map { |path| File.read(File.join(root, path)).scan(/INPUT_[A-Z0-9_]+/) }
+    read = Dir.glob(File.join(root, "lib/**/*.{rb,sh}"))
+      .flat_map { |path| File.read(path).scan(/INPUT_[A-Z0-9_]+/) }
       .uniq
 
     expect(read - declared).to be_empty,
