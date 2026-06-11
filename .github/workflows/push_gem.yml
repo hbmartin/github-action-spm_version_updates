@@ -26,5 +26,25 @@ jobs:
           bundler-cache: true
           ruby-version: ruby
 
+      # Verify the pushed tag matches the gem version constant before anything
+      # is published, so a mistagged release fails fast.
+      - name: Verify tag matches gem version
+        run: |
+          set -euo pipefail
+          version="$(ruby -e 'require "./lib/spm_version_updates/gem_version"; print SpmVersionUpdates::VERSION')"
+          if [ "$GITHUB_REF_NAME" != "v${version}" ]; then
+            echo "::error::Pushed tag ${GITHUB_REF_NAME} does not match gem version v${version} (lib/spm_version_updates/gem_version.rb)"
+            exit 1
+          fi
+
       # Release
       - uses: rubygems/release-gem@6317d8d1f7e28c24d28f6eff169ea854948bd9f7 # v1.2.0
+
+      # Keep the floating major tag (e.g. v1) on the latest release so the
+      # documented `uses: ...@v1` pinning always resolves.
+      - name: Move floating major tag
+        run: |
+          set -euo pipefail
+          major_tag="${GITHUB_REF_NAME%%.*}"
+          git tag -f "$major_tag" "$GITHUB_SHA"
+          git push origin "$major_tag" --force
