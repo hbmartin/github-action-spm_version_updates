@@ -656,7 +656,7 @@ RSpec.describe SpmChecker do
         private
 
         def prefetch_version_tags(_packages)
-          { "github.com/acme/shared\nhttps://github.com/acme/shared" => @prefetch_error }
+          @version_tag_lookup_errors["github.com/acme/shared\nhttps://github.com/acme/shared"] = @prefetch_error
         end
       }
 
@@ -703,6 +703,31 @@ RSpec.describe SpmChecker do
       end
 
       expect(failures).to eq([["a/b", "git ls-remote failed for branch"]])
+    end
+
+    it "fails a dependency shared by several manifests once: one fetch, one handler call", :aggregate_failures do
+      failures = []
+      checker.lookup_failure_handler = ->(package, error) { failures << [package.name, error.message] }
+      lookup_count = 0
+      allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b") {
+        lookup_count += 1
+        raise(GitOperations::LsRemoteError, "git ls-remote failed for https://github.com/a/b")
+      }
+
+      Dir.mktmpdir do |first_dir|
+        Dir.mktmpdir do |second_dir|
+          manifests = [
+            ManifestPackageFixture.write_version(first_dir),
+            ManifestPackageFixture.write_version(second_dir),
+          ]
+
+          expect { checker.check_manifests(manifests) }
+            .not_to raise_error
+        end
+      end
+
+      expect(lookup_count).to eq(1)
+      expect(failures).to eq([["a/b", "git ls-remote failed for https://github.com/a/b"]])
     end
 
     it "routes malformed resolved files to the handler and continues with remaining pins", :aggregate_failures do

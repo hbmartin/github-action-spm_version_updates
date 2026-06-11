@@ -19,6 +19,7 @@ class GithubIntegration < ReporterSink
     ISSUE_IDENTIFIER = "<!-- spm-version-updates-action:tracking-issue -->"
     LABEL = "spm-version-updates"
     TITLE = "Swift package dependency updates available"
+    PAGE_SIZE = 100
 
     def initialize(client, repository)
       @client = client
@@ -68,9 +69,22 @@ class GithubIntegration < ReporterSink
 
     # The issues API also returns pull requests, and the label can be reused by
     # humans, so both the marker and the pull_request check guard the match.
+    # Label-squatting issues can push the real tracking issue past the first
+    # page, so paging continues until the marker-bearing issue is found.
     def find_existing
-      @client.list_issues(@repository, state: "open", labels: LABEL)
-        .find { |issue| !issue[:pull_request] && issue[:body].to_s.include?(ISSUE_IDENTIFIER) }
+      1.step { |page|
+        issues = open_labeled_issues(page)
+        match = matching_tracking_issue(issues)
+        return match if match || issues.size < PAGE_SIZE
+      }
+    end
+
+    def open_labeled_issues(page)
+      @client.list_issues(@repository, state: "open", labels: LABEL, per_page: PAGE_SIZE, page:)
+    end
+
+    def matching_tracking_issue(issues)
+      issues.find { |issue| !issue[:pull_request] && issue[:body].to_s.include?(ISSUE_IDENTIFIER) }
     end
   end
 
@@ -154,12 +168,16 @@ class GithubIntegration < ReporterSink
 
     def command_block(directory, identities)
       <<~MARKDOWN.chomp
-        Run in `#{directory}`:
+        Run in #{directory_label(directory)}:
 
         ```sh
         swift package update #{identities.join(' ')}
         ```
       MARKDOWN
+    end
+
+    def directory_label(directory)
+      directory == "." ? "the repository root" : "`#{directory}`"
     end
 
     def commands_by_directory
@@ -253,6 +271,13 @@ class GithubIntegration < ReporterSink
     @open_tracking_issue = inputs.fetch(:open_tracking_issue, false)
   end
 
+  # Tracking-issue mode applies only on runs without a pull request context
+  # (schedule, workflow_dispatch, push) when explicitly enabled. Public so the
+  # action can publish tracking issues even when PR commenting is disabled.
+  def tracking_issue_run?
+    @open_tracking_issue && !@pr_number && @client && @github_repository ? true : false
+  end
+
   def publish_updates(warnings, warning_details = nil)
     return unless tracking_issue_run? || comment_target?
 
@@ -292,12 +317,6 @@ class GithubIntegration < ReporterSink
   end
 
   private
-
-  # Tracking-issue mode applies only on runs without a pull request context
-  # (schedule, workflow_dispatch, push) when explicitly enabled.
-  def tracking_issue_run?
-    @open_tracking_issue && !@pr_number && @client && @github_repository
-  end
 
   def tracking_issue
     @tracking_issue ||= TrackingIssue.new(@client, @github_repository)

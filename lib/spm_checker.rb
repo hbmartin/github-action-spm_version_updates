@@ -61,6 +61,8 @@ class SpmChecker
     @warnings = []
     @warning_details = []
     @version_tags_cache = {}
+    @version_tag_lookup_errors = {}
+    @reported_lookup_failures = []
     @version_tags_cache_dir = nil
     @version_tags_cache_ttl_seconds = VersionTagsPersistentCache::DEFAULT_TTL_SECONDS
   end
@@ -151,7 +153,11 @@ class SpmChecker
     )
   end
 
-  def reset_version_tags_cache = @version_tags_cache = {}
+  def reset_version_tags_cache
+    @version_tags_cache = {}
+    @version_tag_lookup_errors = {}
+    @reported_lookup_failures = []
+  end
 
   # Merge the resolved pins of every relevant `Package.resolved` file.
   #
@@ -192,14 +198,14 @@ class SpmChecker
   # @param source [String, nil] the manifest a warning should be attributed to
   def check_packages(remote_packages, resolved_versions, source = nil)
     packages = package_contexts(remote_packages, resolved_versions, source)
-    failed_lookups = prefetch_version_tags(packages)
+    prefetch_version_tags(packages)
 
     packages.each { |package|
-      prefetch_error = failed_lookups[package.cache_key]
-      if prefetch_error
-        raise(prefetch_error) unless @lookup_failure_handler
+      lookup_error = @version_tag_lookup_errors[package.cache_key]
+      if lookup_error
+        raise(lookup_error) unless @lookup_failure_handler
 
-        next @lookup_failure_handler.call(package, prefetch_error)
+        next report_lookup_failure(package, lookup_error)
       end
 
       check_package_handling_lookup_failure(package)
@@ -211,6 +217,18 @@ class SpmChecker
   rescue GitOperations::LsRemoteError => error
     raise unless @lookup_failure_handler
 
+    @version_tag_lookup_errors[package.cache_key] = error
+    report_lookup_failure(package, error)
+  end
+
+  # A dependency shared by several manifests fails its lookup once per run:
+  # the error is cached so it is never re-fetched, and reported to the handler
+  # only the first time it is seen.
+  def report_lookup_failure(package, error)
+    key = package.cache_key
+    return if @reported_lookup_failures.include?(key)
+
+    @reported_lookup_failures << key
     @lookup_failure_handler.call(package, error)
   end
 
@@ -266,11 +284,12 @@ class SpmChecker
     "#{normalized_url}\n#{repository_url}"
   end
 
-  # @return [Hash] failed lookups keyed by cache key (always empty when no
-  #   lookup_failure_handler is configured -- failures raise instead)
+  # Failed lookups land in @version_tag_lookup_errors keyed by cache key
+  # (always empty when no lookup_failure_handler is configured -- failures
+  # raise instead).
   def prefetch_version_tags(packages)
     pending = pending_version_tag_lookups(packages)
-    return {} if pending.empty?
+    return if pending.empty?
 
     persistent_cache = VersionTagsPersistentCache.new(directory: @version_tags_cache_dir, ttl_seconds: @version_tags_cache_ttl_seconds)
     results, errors = VersionTagFetcher.call(
@@ -280,12 +299,13 @@ class SpmChecker
       raise_on_error: !@lookup_failure_handler
     )
     @version_tags_cache.merge!(results)
-    errors
+    @version_tag_lookup_errors.merge!(errors)
   end
 
   def pending_version_tag_lookups(packages)
     packages.each_with_object({}) { |package, lookups|
       next unless version_tag_lookup_required?(package.kind)
+      next if @version_tag_lookup_errors.key?(package.cache_key)
 
       package.add_version_tag_lookup(lookups, @version_tags_cache)
     }.values

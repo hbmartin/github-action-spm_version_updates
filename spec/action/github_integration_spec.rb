@@ -191,6 +191,21 @@ RSpec.describe(GithubIntegration) {
       expect(message).not_to(include("To update your SPM dependencies:"))
     end
 
+    it("labels root-level manifests as the repository root in update commands", :aggregate_failures) do
+      details = [
+        base_detail.merge(
+          source: "Package.swift",
+          suggested_command: "swift package update kingfisher",
+          package_identity: "kingfisher"
+        ),
+      ]
+
+      message = integration.send(:build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], details)
+
+      expect(message).to(include("Run in the repository root:"))
+      expect(message).not_to(include("Run in `.`:"))
+    end
+
     it("skips malformed package identities when rendering update commands") do
       details = [
         base_detail.merge(suggested_command: "swift package update kingfisher", package_identity: "kingfisher"),
@@ -443,6 +458,30 @@ RSpec.describe(GithubIntegration) {
           .with("owner/repo", 7, issue_title, include(issue_marker, "Newer version of onevcat/Kingfisher: 8.0.0"))
       )
       expect(client).not_to(have_received(:create_issue))
+      expect(integration.tracking_issue_result).to(eq(number: 7, url: TRACKING_ISSUE_URL))
+    end
+
+    it("finds the tracking issue beyond the first page of labeled issues", :aggregate_failures) do
+      client = stubbed_client
+      label_squatters = Array.new(described_class::TrackingIssue::PAGE_SIZE) { |index|
+        { number: index + 100, body: "human issue reusing the label", pull_request: nil }
+      }
+      allow(client).to(receive(:list_issues).with("owner/repo", hash_including(page: 1)).and_return(label_squatters))
+      allow(client).to(
+        receive(:list_issues).with("owner/repo", hash_including(page: 2))
+          .and_return([{ number: 7, body: issue_marker, pull_request: nil }])
+      )
+      allow(client).to(receive(:update_issue).and_return({ number: 7, html_url: TRACKING_ISSUE_URL }))
+
+      integration = nil
+      Dir.mktmpdir do |dir|
+        with_env(github_env(write_schedule_event_file(dir))) do
+          integration = tracking_integration
+          integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+        end
+      end
+
+      expect(client).to(have_received(:update_issue).with("owner/repo", 7, issue_title, anything))
       expect(integration.tracking_issue_result).to(eq(number: 7, url: TRACKING_ISSUE_URL))
     end
 

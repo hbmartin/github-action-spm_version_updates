@@ -221,7 +221,9 @@ class Action
     else
       puts("⚠️  Found #{warnings.size} potential updates")
     end
-    publish(warnings, warning_details, options) if options.fetch(:comment, true)
+    # The comment input only controls PR commenting; tracking-issue runs
+    # (open-tracking-issue on a non-PR run) still publish their report.
+    publish(warnings, warning_details, options) if options.fetch(:comment, true) || @reporter_sink.tracking_issue_run?
     ActionReporter::TrackingIssueOutput.write(@reporter_sink.tracking_issue_result)
 
     reporter

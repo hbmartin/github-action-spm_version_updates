@@ -16,6 +16,12 @@ class ReporterSink
     # Intentionally no-op; subclasses override when they expose issue metadata.
   end
 
+  # True when this run reports via a tracking issue rather than a PR comment,
+  # so publishing must happen even when PR commenting is disabled.
+  def tracking_issue_run?
+    false
+  end
+
   def publish_updates(_warnings, _warning_details = nil)
     raise_not_implemented(:publish_updates)
   end
