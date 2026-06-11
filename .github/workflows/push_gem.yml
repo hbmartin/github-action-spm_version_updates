@@ -23,7 +23,6 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
         with:
-          bundler-cache: true
           ruby-version: ruby
 
       # Verify the pushed tag matches the gem version constant before anything
@@ -31,14 +30,32 @@ jobs:
       - name: Verify tag matches gem version
         run: |
           set -euo pipefail
-          version="$(ruby -e 'require "./lib/spm_version_updates/gem_version"; print SpmVersionUpdates::VERSION')"
+          version="$(ruby -e 'require "./gems/spm_version_updates/lib/spm_version_updates/version"; print SpmVersionUpdates::VERSION')"
           if [ "$GITHUB_REF_NAME" != "v${version}" ]; then
-            echo "::error::Pushed tag ${GITHUB_REF_NAME} does not match gem version v${version} (lib/spm_version_updates/gem_version.rb)"
+            echo "::error::Pushed tag ${GITHUB_REF_NAME} does not match gem version v${version} (gems/spm_version_updates/lib/spm_version_updates/version.rb)"
             exit 1
           fi
 
-      # Release
-      - uses: rubygems/release-gem@6317d8d1f7e28c24d28f6eff169ea854948bd9f7 # v1.2.0
+      - name: Install core gem bundle
+        working-directory: gems/spm_version_updates
+        run: bundle install
+
+      - name: Install plugin gem bundle
+        working-directory: gems/danger-spm_version_updates
+        run: bundle install
+
+      # Release the core gem first and wait for it to propagate, so the plugin
+      # gem's runtime dependency on it is resolvable as soon as it publishes.
+      - name: Release spm_version_updates
+        uses: rubygems/release-gem@6317d8d1f7e28c24d28f6eff169ea854948bd9f7 # v1.2.0
+        with:
+          working-directory: gems/spm_version_updates
+          await-release: true
+
+      - name: Release danger-spm_version_updates
+        uses: rubygems/release-gem@6317d8d1f7e28c24d28f6eff169ea854948bd9f7 # v1.2.0
+        with:
+          working-directory: gems/danger-spm_version_updates
 
       # Keep the floating major tag (e.g. v1) on the latest release so the
       # documented `uses: ...@v1` pinning always resolves.

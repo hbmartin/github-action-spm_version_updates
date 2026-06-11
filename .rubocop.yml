@@ -27,7 +27,7 @@ Style/BlockDelimiters:
     - spec/**/*.rb
     - Guardfile
     - Rakefile
-    - danger-*.gemspec
+    - gems/*/*.gemspec
 
 Metrics/ModuleLength:
   Enabled: true
@@ -35,7 +35,7 @@ Metrics/ModuleLength:
     - spec/**/*.rb
     # The Swift manifest parser is a cohesive, stateful parser; splitting it only
     # to satisfy a line-count metric would make the implementation harder to read.
-    - lib/manifest_parser.rb
+    - gems/spm_version_updates/lib/spm_version_updates/manifest_parser.rb
 
 Layout/ClassStructure:
   Enabled: true
@@ -85,7 +85,7 @@ Style/StringMethods:
 Style/TopLevelMethodDefinition:
   Enabled: true
   Exclude:
-    - spec/*.rb
+    - spec/plugin/*.rb
 
 Style/ModuleFunction:
   EnforcedStyle: forbidden

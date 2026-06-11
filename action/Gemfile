@@ -1,0 +1,15 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+# Core checker, resolved from this repository checkout — `uses: <repo>@<ref>`
+# ships the whole repo, so the path source is always present at runtime.
+gem "spm_version_updates", path: "../gems/spm_version_updates"
+
+# Octokit configures Faraday retry middleware at runtime under Faraday v2.
+gem "faraday-retry", "~> 2.4"
+gem "octokit", "~> 8.0"
+
+group(:xcode) {
+  gem "xcodeproj", "~> 1.24"
+}

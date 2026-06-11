@@ -1,0 +1,14 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gemspec
+
+# Isolation bundle: proves the core gem and its specs load without
+# danger, octokit, or any action-only dependencies.
+group(:development, :test) {
+  gem "rake", "~> 13.2"
+  gem "rspec", "~> 3.0"
+  # Exercises the optional Xcode-project mode in the core specs.
+  gem "xcodeproj", "~> 1.24"
+}

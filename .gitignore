@@ -140,3 +140,7 @@ reviews_triage/
 triage_decisions.db
 .env
 *.pyc
+
+# Per-gem isolation bundles resolve at install time; only the root and action lockfiles are committed.
+gems/*/Gemfile.lock
+.yardoc/

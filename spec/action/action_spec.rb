@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "tmpdir"
-require_relative "../../lib/action"
+require_relative "../../action/lib/action"
 
 # Covers the source-mode selection logic that decides between Xcode-project mode
 # and Swift-manifest mode based on the configured inputs.

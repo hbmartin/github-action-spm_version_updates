@@ -11,7 +11,7 @@ SimpleCov.formatter = SimpleCov::Formatter::MultiFormatter.new(
 )
 
 SimpleCov.start do
-  track_files "lib/**/*.rb"
+  track_files "{action,gems/*}/lib/**/*.rb"
   add_filter "/spec/"
 
   minimum_coverage ENV.fetch("SIMPLECOV_MINIMUM_COVERAGE").to_f if ENV["SIMPLECOV_MINIMUM_COVERAGE"]

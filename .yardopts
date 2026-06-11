@@ -1,0 +1,3 @@
+gems/danger-spm_version_updates/lib/**/*.rb
+gems/spm_version_updates/lib/**/*.rb
+action/lib/**/*.rb

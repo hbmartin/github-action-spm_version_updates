@@ -15,7 +15,6 @@ guard :rspec, cmd: "bundle exec rspec" do
   watch(rspec.spec_support) { rspec.spec_dir }
   watch(rspec.spec_files)
 
-  # Ruby files
-  ruby = dsl.ruby
-  dsl.watch_spec_files_for(ruby.lib_files)
+  # Ruby files: any change under the gems or action sources reruns the suite
+  watch(%r{^(?:gems/[^/]+|action)/lib/.+\.rb$}) { rspec.spec_dir }
 end

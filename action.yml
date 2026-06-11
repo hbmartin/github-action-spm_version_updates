@@ -127,7 +127,7 @@ runs:
       with:
         ruby-version: '3.3'
         bundler-cache: true
-        working-directory: ${{ github.action_path }}
+        working-directory: ${{ github.action_path }}/action
 
     - name: Prepare git tag cache
       id: version-tags-cache
@@ -189,9 +189,9 @@ runs:
         SPM_VERSION_UPDATES_TAG_CACHE_DIR: ${{ steps.version-tags-cache.outputs.path }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
-        cd "$ACTION_PATH"
-        bash "$ACTION_PATH/lib/action_runtime_preflight.sh"
-        bundle exec ruby "$ACTION_PATH/lib/action.rb"
+        cd "$ACTION_PATH/action"
+        bash "$ACTION_PATH/action/action_runtime_preflight.sh"
+        bundle exec ruby "$ACTION_PATH/action/lib/action.rb"
 
     - name: Save git tag cache
       if: ${{ always() && inputs.cache-version-tags == 'true' && inputs.version-tags-cache-ttl != '0' }}

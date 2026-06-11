@@ -34,6 +34,9 @@ jobs:
       - name: Run Reek
         run: bundle exec rake reek
       - name: Run Danger plugin lint
+        working-directory: gems/danger-spm_version_updates
+        env:
+          BUNDLE_GEMFILE: ${{ github.workspace }}/Gemfile
         run: bundle exec danger plugins lint
       - name: Run actionlint
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
@@ -67,6 +70,14 @@ jobs:
         env:
           SIMPLECOV_MINIMUM_COVERAGE: "80"
         run: bundle exec rspec --require ./spec/coverage_helper
+      # Layering guard: the core gem and its specs must load with no danger,
+      # octokit, or other action/plugin dependencies in the bundle.
+      - name: Run core specs in isolation
+        env:
+          BUNDLE_GEMFILE: ${{ github.workspace }}/gems/spm_version_updates/Gemfile
+        run: |
+          bundle install
+          bundle exec rspec spec/core
       - name: Upload coverage report
         if: always()
         # actions/upload-artifact v4.6.2

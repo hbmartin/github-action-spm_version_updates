@@ -2,7 +2,7 @@
 
 require "stringio"
 require "tmpdir"
-require_relative "../../lib/action_reporter"
+require_relative "../../action/lib/action_reporter"
 
 RSpec.describe ActionReporter do
   def with_env(overrides)
