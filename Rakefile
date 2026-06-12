@@ -56,7 +56,7 @@ module ReadmeActionTables
   end
 
   def self.default_cell(spec)
-    default = spec.fetch("default", "").to_s
+    default = cell_text(spec.fetch("default", "").to_s)
     default.empty? ? "" : "`#{default}`"
   end
 
