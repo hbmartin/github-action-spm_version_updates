@@ -16,6 +16,7 @@ class GithubIntegration < ReporterSink
   # Finds, creates, updates, and closes the single tracking issue used to
   # report updates on runs without a pull request context.
   class TrackingIssue
+    # Raised when the tracking issue search reaches the configured page limit.
     LookupExhausted = Class.new(StandardError)
 
     ISSUE_IDENTIFIER = "<!-- spm-version-updates-action:tracking-issue -->"

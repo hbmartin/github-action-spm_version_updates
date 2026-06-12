@@ -502,7 +502,10 @@ RSpec.describe(GithubIntegration) {
           end
         end
 
-        expect(stdout).to(include("Error upserting tracking issue: tracking issue lookup exceeded 10 pages"))
+        pages = described_class::TrackingIssue::MAX_FIND_EXISTING_PAGES
+        expect(stdout).to(
+          include("Error upserting tracking issue: tracking issue lookup exceeded #{pages} pages")
+        )
       end
 
       expect(client).to(

@@ -21,16 +21,16 @@ Gem::Specification.new do |spec|
     "README.md",
     "danger-spm_version_updates.gemspec",
   ]
-  spec.files = Dir.chdir(__dir__) do
+  spec.files = begin
     git_files = begin
-      `git ls-files -z lib #{release_paths.join(" ")} 2>/dev/null`
+      `git -C #{__dir__} ls-files -z lib #{release_paths.join(" ")} 2>/dev/null`
         .split("\x0")
         .reject(&:empty?)
     rescue Errno::ENOENT
       []
     end
-    fallback_files = Dir.glob(["lib/**/*", *release_paths])
-      .select { |path| File.file?(path) }
+    fallback_files = Dir.glob(["lib/**/*", *release_paths], base: __dir__)
+      .select { |path| File.file?(File.join(__dir__, path)) }
     (git_files.empty? ? fallback_files : git_files).sort
   end
   spec.require_paths = ["lib"]
