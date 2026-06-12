@@ -6,6 +6,9 @@ require "spm_version_updates/xcode_project_package_reader"
 require "xcodeproj"
 
 # Legacy Xcode project parser used by the Danger plugin API.
+# @deprecated Use {XcodeProjectPackageReader} and {XcodeParser} from the
+#   +spm_version_updates+ core gem instead. This shim exists only for backward
+#   compatibility with Dangerfiles written against +v0.2.0+.
 module Xcode
   # Find the configured SPM dependencies in the xcodeproj
   # @param   [String] xcodeproj_path

@@ -4,6 +4,7 @@ require "spm_version_updates"
 require_relative "git"
 require_relative "xcode"
 
+# Danger's plugin namespace, reopened to register {DangerSpmVersionUpdates}.
 module Danger
   # A Danger plugin for checking if there are versions upgrades available for SPM dependencies
   #

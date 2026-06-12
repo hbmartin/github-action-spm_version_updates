@@ -4,6 +4,7 @@ require "ipaddr"
 require "uri"
 
 # Extracts and normalizes hostnames from common git remote URL forms.
+# @api private
 module GitHostNormalizer
   HOST_PATTERN = /\A[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\z/i
   BRACKETED_IPV6_PATTERN = /\A\[(?<address>[^\]]+)\](?::\d+)?\z/
