@@ -41,9 +41,14 @@ module ReadmeActionTables
   end
 
   def self.row_for(section, name, spec)
-    cells = ["`#{name}`", spec.fetch("description")]
+    cells = ["`#{name}`", cell_text(spec.fetch("description"))]
     cells << default_cell(spec) if section == "inputs"
     row(cells)
+  end
+
+  # Pipes and newlines in a description would silently corrupt the table.
+  def self.cell_text(text)
+    text.gsub("|", "\\|").tr("\n", " ").strip
   end
 
   def self.row(cells)
