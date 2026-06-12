@@ -177,7 +177,8 @@ This action follows semantic versioning:
      (both gems release in lockstep from this single constant; the pushed tag must match it)
    - **Re-lock the action bundle in the same commit**: `cd action && bundle lock`
      (the frozen install on runners records the path gem's version, so a stale
-     `action/Gemfile.lock` breaks every action run)
+     `action/Gemfile.lock` breaks every action run; CI's "Verify action lockfile
+     matches gem version" step fails until the lockfile is refreshed)
    - Update any version strings in documentation
    - Update README examples to use new version
 

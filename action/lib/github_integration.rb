@@ -16,10 +16,13 @@ class GithubIntegration < ReporterSink
   # Finds, creates, updates, and closes the single tracking issue used to
   # report updates on runs without a pull request context.
   class TrackingIssue
+    LookupExhausted = Class.new(StandardError)
+
     ISSUE_IDENTIFIER = "<!-- spm-version-updates-action:tracking-issue -->"
     LABEL = "spm-version-updates"
     TITLE = "Swift package dependency updates available"
     PAGE_SIZE = 100
+    MAX_FIND_EXISTING_PAGES = 10
 
     def initialize(client, repository)
       @client = client
@@ -33,7 +36,7 @@ class GithubIntegration < ReporterSink
       url = issue[:html_url]
       puts("Tracking issue: #{url}")
       { number: issue[:number], url: }
-    rescue Octokit::Error => error
+    rescue Octokit::Error, LookupExhausted => error
       puts("Error upserting tracking issue: #{error.message}")
       nil
     end
@@ -47,7 +50,7 @@ class GithubIntegration < ReporterSink
       @client.add_comment(@repository, number, comment)
       @client.close_issue(@repository, number)
       puts("Closed resolved tracking issue ##{number}")
-    rescue Octokit::Error => error
+    rescue Octokit::Error, LookupExhausted => error
       puts("Error closing tracking issue: #{error.message}")
     end
 
@@ -72,11 +75,13 @@ class GithubIntegration < ReporterSink
     # Label-squatting issues can push the real tracking issue past the first
     # page, so paging continues until the marker-bearing issue is found.
     def find_existing
-      1.step { |page|
+      1.upto(MAX_FIND_EXISTING_PAGES) { |page|
         issues = open_labeled_issues(page)
         match = matching_tracking_issue(issues)
         return match if match || issues.size < PAGE_SIZE
       }
+
+      raise(LookupExhausted, "tracking issue lookup exceeded #{MAX_FIND_EXISTING_PAGES} pages")
     end
 
     def open_labeled_issues(page)
@@ -275,7 +280,7 @@ class GithubIntegration < ReporterSink
   # (schedule, workflow_dispatch, push) when explicitly enabled. Public so the
   # action can publish tracking issues even when PR commenting is disabled.
   def tracking_issue_run?
-    @open_tracking_issue && !@pr_number && @client && @github_repository ? true : false
+    !!(@open_tracking_issue && !@pr_number && @client && @github_repository)
   end
 
   def publish_updates(warnings, warning_details = nil)

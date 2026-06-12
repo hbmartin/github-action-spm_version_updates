@@ -9,7 +9,7 @@ The version-checking logic lives in the
 [`spm_version_updates`](https://rubygems.org/gems/spm_version_updates) core
 gem; this plugin is a thin Danger wrapper around it. The same checker also
 powers the
-[Swift Package Version Updates GitHub Action](https://github.com/hbmartin/danger-spm_version_updates),
+[Swift Package Version Updates GitHub Action](https://github.com/hbmartin/github-action-spm_version_updates),
 if you'd rather run dependency checks as a standalone action.
 
 ## Installation

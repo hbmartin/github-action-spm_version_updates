@@ -9,7 +9,7 @@ rules:
       form instead.
     paths:
       include:
-        - "credential_redactor.rb"
+        - "**/credential_redactor.rb"
     patterns:
       - pattern-either:
           - pattern-inside: |
@@ -44,6 +44,24 @@ rules:
       - metavariable-regex:
           metavariable: $PATH
           regex: ^/.*
+  - id: semgrep.paths-include.protected-ruby-files-require-recursive-glob
+    languages:
+      - yaml
+    severity: ERROR
+    message: Use recursive globs for protected Ruby file includes so rules keep matching after repo moves.
+    paths:
+      include:
+        - .semgrep.yml
+    patterns:
+      - pattern-inside: |
+          paths:
+            include:
+              ...
+      - pattern: |
+          - $PATH
+      - metavariable-regex:
+          metavariable: $PATH
+          regex: ^(credential_redactor|github_integration|spm_checker)\.rb$
   - id: ruby.gemspec.git-ls-files-requires-enoent-rescue
     languages:
       - ruby
@@ -71,7 +89,7 @@ rules:
       of fetch because Sawyer::Resource does not implement fetch.
     paths:
       include:
-        - "github_integration.rb"
+        - "**/github_integration.rb"
     patterns:
       - pattern-inside: |
           class TrackingIssue
@@ -87,11 +105,50 @@ rules:
       the original error when no handler is configured.
     paths:
       include:
-        - "spm_checker.rb"
+        - "**/spm_checker.rb"
     patterns:
       - pattern-either:
           - pattern: next @lookup_failure_handler.call($PACKAGE, $ERROR) if $ERROR
           - pattern: |
               if $ERROR
                 next @lookup_failure_handler.call($PACKAGE, $ERROR)
+              end
+  - id: ruby.performance.no-array-as-membership-set
+    languages:
+      - ruby
+    severity: ERROR
+    message: Use a Hash or Set when a collection is only used for membership checks and inserts.
+    paths:
+      include:
+        - "**/*.rb"
+    patterns:
+      - pattern: |
+          return if $COLLECTION.include?($KEY)
+          ...
+          $COLLECTION << $KEY
+  - id: ruby.github-integration.no-unbounded-issue-pagination
+    languages:
+      - ruby
+    severity: ERROR
+    message: Bound GitHub issue pagination so API anomalies cannot create unbounded loops.
+    paths:
+      include:
+        - "**/action/lib/github_integration.rb"
+    patterns:
+      - pattern-inside: |
+          class TrackingIssue
+            ...
+          end
+      - pattern-either:
+          - pattern: |
+              1.step { |$PAGE|
+                ...
+                $CLIENT.list_issues(...)
+                ...
+              }
+          - pattern: |
+              loop do
+                ...
+                $CLIENT.list_issues(...)
+                ...
               end

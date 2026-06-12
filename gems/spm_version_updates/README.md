@@ -4,7 +4,7 @@ Core library for detecting available updates to Swift Package Manager
 dependencies. It powers both the
 [`danger-spm_version_updates`](https://rubygems.org/gems/danger-spm_version_updates)
 Danger plugin and the
-[Swift Package Version Updates GitHub Action](https://github.com/hbmartin/danger-spm_version_updates),
+[Swift Package Version Updates GitHub Action](https://github.com/hbmartin/github-action-spm_version_updates),
 and can be used directly from any Ruby program.
 
 ## Installation
