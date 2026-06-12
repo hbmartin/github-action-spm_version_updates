@@ -44,15 +44,46 @@ jobs:
         working-directory: gems/danger-spm_version_updates
         run: bundle install
 
+      # RubyGems forbids re-pushing an existing version, so a retry after a
+      # partial release (e.g. core published, plugin failed) must skip the
+      # gems that already made it.
+      - name: Determine which gems still need publishing
+        id: pending
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          for entry in "core:spm_version_updates" "plugin:danger-spm_version_updates"; do
+            key="${entry%%:*}"
+            gem="${entry#*:}"
+            # A brand-new gem 404s on the versions endpoint; treat as unpublished.
+            if (curl -fsSL "https://rubygems.org/api/v1/versions/${gem}.json" || echo "[]") \
+                | jq -e --arg v "$version" 'any(.[]; .number == $v)' >/dev/null; then
+              echo "${gem} ${version} is already on RubyGems; skipping its release."
+              echo "${key}=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "${key}=true" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
       # Release the core gem first and wait for it to propagate, so the plugin
       # gem's runtime dependency on it is resolvable as soon as it publishes.
       - name: Release spm_version_updates
+        if: ${{ steps.pending.outputs.core == 'true' }}
         uses: rubygems/release-gem@6317d8d1f7e28c24d28f6eff169ea854948bd9f7 # v1.2.0
         with:
           working-directory: gems/spm_version_updates
           await-release: true
 
+      # Each release-gem invocation exchanges its own OIDC token, and
+      # configure-rubygems-credentials refuses to overwrite an existing
+      # ~/.gem/credentials key, so the first invocation's credentials must be
+      # cleared before the second one runs.
+      - name: Reset RubyGems credentials between releases
+        if: ${{ steps.pending.outputs.plugin == 'true' }}
+        run: rm -f ~/.gem/credentials
+
       - name: Release danger-spm_version_updates
+        if: ${{ steps.pending.outputs.plugin == 'true' }}
         uses: rubygems/release-gem@6317d8d1f7e28c24d28f6eff169ea854948bd9f7 # v1.2.0
         with:
           working-directory: gems/danger-spm_version_updates
