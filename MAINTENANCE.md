@@ -172,29 +172,42 @@ This action follows semantic versioning:
 
 ### Pre-Release Checklist
 
-1. **Update version references**:
-   - Bump `SpmVersionUpdates::VERSION` in `gems/spm_version_updates/lib/spm_version_updates/version.rb`
-     (both gems release in lockstep from this single constant; the pushed tag must match it)
-   - **Re-lock the action bundle in the same commit**: `cd action && bundle lock`
-     (the frozen install on runners records the path gem's version, so a stale
-     `action/Gemfile.lock` breaks every action run; CI's "Verify action lockfile
-     matches gem version" step fails until the lockfile is refreshed)
+1. **Update documentation and commit it first**:
    - Update any version strings in documentation
-   - Update README examples to use new version
+   - Update README examples to use the new version
 
-2. **Test thoroughly**:
+   Commit these before bumping — the bump task requires a clean working tree
+   and creates the release tag, so it must be the last commit so the tag
+   contains everything.
+
+2. **Bump the version with the rake task** (do not edit version files by hand):
+
+   ```bash
+   bundle exec rake 'bump[1.2.0]'
+   ```
+
+   This single command keeps everything that must stay in lockstep in sync:
+   - rewrites `SpmVersionUpdates::VERSION` in
+     `gems/spm_version_updates/lib/spm_version_updates/version.rb` (both gems
+     release from this single constant; the pushed tag must match it)
+   - regenerates every `Gemfile.lock` that embeds the path-gem version,
+     including `action/Gemfile.lock` (the frozen install on runners records the
+     path gem's version, so a stale action lockfile breaks every action run)
+   - commits `Bump version to 1.2.0` and creates the `v1.2.0` tag locally
+
+   It refuses to run on a dirty working tree, with a malformed version, or
+   with a version that is not greater than the current one. It does **not**
+   push anything — pushing the tag is the explicit release trigger (see below).
+
+3. **Test thoroughly**:
    - Run full test suite: `bundle exec rspec`
    - Test the composite action in GitHub Actions
    - Test with real Xcode projects
    - Test in actual GitHub Actions environment
 
-3. **Update documentation**:
-   - Update README.md if needed
-   - Update any version-specific documentation
-
 ### Creating a Release
 
-1. **Prepare the release**:
+1. **Prepare the release branch**:
 
    ```bash
    # Ensure you're on main branch
@@ -205,24 +218,25 @@ This action follows semantic versioning:
    git checkout -b release/v1.2.0
    ```
 
-2. **Commit changes**:
+2. **Run the pre-release checklist above**: commit any documentation updates,
+   then run `bundle exec rake 'bump[1.2.0]'` as the final commit. The task
+   creates the bump commit and the `v1.2.0` tag locally.
+
+3. **Push the branch and create a Pull Request** for review — push the branch
+   only, not the tag:
 
    ```bash
-   git add .
-   git commit -m "Prepare release v1.2.0"
    git push origin release/v1.2.0
    ```
 
-3. **Create Pull Request** for review
-
-4. **After PR approval and merge**, create the release:
+4. **After PR approval and merge**, push the tag the bump task created:
 
    ```bash
-   git checkout main
-   git pull origin main
-   git tag v1.2.0
    git push origin v1.2.0
    ```
+
+   Merge the release PR with a merge commit (not a squash) — the tag points at
+   the release branch's bump commit, which must remain reachable from `main`.
 
    Pushing the tag triggers `push_gem.yml`, which verifies the tag against the
    version constant, then publishes `spm_version_updates` followed by
