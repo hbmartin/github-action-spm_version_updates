@@ -57,15 +57,5 @@ jobs:
         with:
           working-directory: gems/danger-spm_version_updates
 
-      # Keep the floating major tag (e.g. v1) on the latest release so the
-      # documented `uses: ...@v1` pinning always resolves.
-      - name: Move floating major tag
-        run: |
-          set -euo pipefail
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Tag ${GITHUB_REF_NAME} is not a stable vX.Y.Z release; leaving the floating major tag alone."
-            exit 0
-          fi
-          major_tag="${GITHUB_REF_NAME%%.*}"
-          git tag -f "$major_tag" "$GITHUB_SHA"
-          git push origin "$major_tag" --force
+      # The floating major tag (e.g. v1) is moved by move_major_tag.yml when
+      # the GitHub release is published, independently of gem publishing.
