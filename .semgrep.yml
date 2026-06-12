@@ -92,8 +92,7 @@ rules:
       include:
         - "**/*.gemspec"
     patterns:
-      - pattern: |
-          git -C #{__dir__}
+      - pattern-regex: 'git\s+-C\s+#\{[^}]+\}'
   - id: ruby.github-integration.tracking-issue-no-resource-fetch
     languages:
       - ruby

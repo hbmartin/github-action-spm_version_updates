@@ -9,10 +9,15 @@ RSpec.describe Gem::Specification do
     FileUtils.mkdir_p(checkout)
     FileUtils.cp_r(File.expand_path("../../gems", __dir__), checkout)
 
-    expect(system("git", "init", checkout, out: File::NULL, err: File::NULL)).to be(true)
-    expect(system("git", "-C", checkout, "add", "gems", out: File::NULL, err: File::NULL)).to be(true)
+    expect_successful_git_commands(["init", checkout], ["-C", checkout, "add", "gems"])
 
     checkout
+  end
+
+  def expect_successful_git_commands(*commands)
+    commands.each do |command|
+      expect(system("git", *command, out: File::NULL, err: File::NULL)).to be(true)
+    end
   end
 
   def load_spec_from(checkout, gem_name)
@@ -32,7 +37,7 @@ RSpec.describe Gem::Specification do
   it "uses git file lists when gem directories are inside paths with spaces" do
     Dir.mktmpdir("gemspec path with spaces") do |root|
       checkout = prepare_checkout_with_spaces(root)
-      untracked_file = "lib/spm_version_updates/untracked fixture.rb"
+      untracked_file = "lib/untracked fixture.rb"
 
       %w(danger-spm_version_updates spm_version_updates).each do |gem_name|
         FileUtils.touch(File.join(checkout, "gems", gem_name, untracked_file))
