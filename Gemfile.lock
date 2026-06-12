@@ -1,15 +1,15 @@
 PATH
   remote: gems/danger-spm_version_updates
   specs:
-    danger-spm_version_updates (1.1.2)
+    danger-spm_version_updates (1.2.0)
       danger-plugin-api (~> 1.0)
-      spm_version_updates (~> 1.1.2)
+      spm_version_updates (~> 1.2.0)
       xcodeproj (~> 1.24)
 
 PATH
   remote: gems/spm_version_updates
   specs:
-    spm_version_updates (1.1.2)
+    spm_version_updates (1.2.0)
       semverify (~> 0.3)
 
 GEM
