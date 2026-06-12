@@ -61,7 +61,7 @@ rules:
           - $PATH
       - metavariable-regex:
           metavariable: $PATH
-          regex: ^(credential_redactor|github_integration|spm_checker)\.rb$
+          regex: ^(?!\*\*/)(?:.+/)?(credential_redactor|github_integration|spm_checker)\.rb$
   - id: ruby.gemspec.git-ls-files-requires-enoent-rescue
     languages:
       - ruby
