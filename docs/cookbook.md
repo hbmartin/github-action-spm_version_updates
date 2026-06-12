@@ -98,9 +98,16 @@ required in branch protection to actually block the merge.
     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
   run: |
     payload="$(jq -n --argjson updates "$UPDATES_JSON" \
-      '{text: ("📦 SPM updates available:\n" + ([$updates[] | "• \(.package): \(.current_version) → \(.available_version)"] | join("\n")))}')"
+      '{text: ("📦 SPM updates available:\n" + ([$updates[]
+          | "• " + (if .package and .available_version
+                    then "\(.package): \(.current_version) → \(.available_version)"
+                    else .message end)
+        ] | join("\n")))}')"
     curl -sS -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL"
 ```
+
+Every update object has a `message`; the structured fields are present "when
+available", so the recipe falls back to `message` for anything unusual.
 
 ## Opening an automatic bump PR
 
@@ -145,7 +152,7 @@ jobs:
               | select(.suggested_command != null and .suggested_requirement == null)
               | [.source, .suggested_command] | @tsv' |
             sort -u |
-            while IFS=$'\t' read -r source command; do
+            while IFS="$(printf '\t')" read -r source command; do
               (cd "$(dirname "$source")" && $command)
             done
 

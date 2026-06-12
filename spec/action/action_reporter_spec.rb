@@ -271,7 +271,7 @@ RSpec.describe ActionReporter do
         }
 
         content = File.read(output_file)
-        expect(content).to include("updates-found=0", "major-updates-found=0", "blocked=true")
+        expect(content).to include("updates-found=0", "major-updates-found=0", "parse-warnings=0", "blocked=true")
         expect(content).to include("error-message<<", "host evil.example is not allowed")
         expect(output_json(output_file)).to eq([])
         expect(File.read(summary_file)).to include("blocked", "host evil.example is not allowed")

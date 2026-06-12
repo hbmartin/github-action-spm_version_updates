@@ -118,15 +118,16 @@ class SpmChecker
     puts("Found resolved versions for #{resolved_versions.size} packages")
 
     manifest_paths.each { |manifest_path|
-      remote_packages = ManifestParser.get_packages(manifest_path) { |skip|
-        record_parse_warning(skip, manifest_path)
-      }
-      check_packages(remote_packages, resolved_versions, manifest_path)
+      check_packages(manifest_packages(manifest_path), resolved_versions, manifest_path)
     }
     @warnings
   end
 
   private
+
+  def manifest_packages(manifest_path)
+    ManifestParser.get_packages(manifest_path) { |skip| record_parse_warning(skip, manifest_path) }
+  end
 
   def normalize_ignore_repos
     @ignore_repos = Array(@ignore_repos).map { |repo| GitOperations.trim_repo_url(repo) }

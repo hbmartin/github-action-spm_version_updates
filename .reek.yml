@@ -51,6 +51,8 @@ detectors:
   LongParameterList:
     enabled: true
     exclude:
+    - Action#publish
+    - Action#report
     - SpmChecker#warning_detail
     - VersionTagFetcher#self.call
     - Danger::DangerSpmVersionUpdates#warn_for_branch
@@ -106,6 +108,7 @@ detectors:
   TooManyMethods:
     enabled: true
     exclude:
+    - ActionReporter
     - GithubIntegration
     - SpmChecker
     max_methods: 15
@@ -115,15 +118,16 @@ detectors:
     - Action#report
     - Action#configure_checker
     - Action#run
+    - ActionReporter#emit_warning_annotations
     - ActionReporter#update_summary_lines
     - ActionReporter::TrackingIssueOutput#self.write
     - GitOperations#self.ls_remote
     - GitOperations#self.version_tags
     - GithubIntegration#initialize
-    - GithubIntegration#build_warnings_message
     - GithubIntegration#extract_pr_number
     - GithubIntegration#find_existing_comment
     - GithubIntegration#publish_updates
+    - GithubIntegration#updates_message
     - GithubIntegration#warning_group
     - GithubIntegration::TrackingIssue#close
     - GithubIntegration::TrackingIssue#upsert
@@ -201,10 +205,12 @@ detectors:
     - GithubIntegration#how_to_update_details
     - GithubIntegration#inline_code
     - GithubIntegration#table_cell
+    - GithubIntegration::ParseWarningsSection#bullet
     - GithubIntegration::TrackingIssue#matching_tracking_issue
     - GithubIntegration::UpgradeHintsSection#command_block
     - GithubIntegration::UpgradeHintsSection#directory_label
     - GithubIntegration::UpgradeHintsSection#value
+    - Danger::DangerSpmVersionUpdates#render_parse_warning
     - Danger::DangerSpmVersionUpdates#warning_links
     - SpmChecker#warning_detail
     - capture_stdout

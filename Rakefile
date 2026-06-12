@@ -27,9 +27,9 @@ module ReadmeActionTables
   def self.updated_readme
     require("yaml")
 
-    action = YAML.safe_load_file(ACTION_DEFINITION_FILE)
+    action = YAML.safe_load_file(ACTION_DEFINITION_FILE) || {}
     HEADERS.keys.reduce(File.read(README_FILE)) { |content, section|
-      replace_section(content, section, table_for(section, action.fetch(section)))
+      replace_section(content, section, table_for(section, action[section] || {}))
     }
   end
 
@@ -41,9 +41,14 @@ module ReadmeActionTables
   end
 
   def self.row_for(section, name, spec)
-    cells = ["`#{name}`", spec.fetch("description")]
+    cells = ["`#{name}`", cell_text(spec.fetch("description"))]
     cells << default_cell(spec) if section == "inputs"
     row(cells)
+  end
+
+  # Pipes and newlines in a description would silently corrupt the table.
+  def self.cell_text(text)
+    text.gsub("|", "\\|").tr("\n", " ").strip
   end
 
   def self.row(cells)
@@ -239,13 +244,20 @@ task :bump, [:version] do |_task, args|
   File.write(VERSION_FILE, source.sub(/VERSION = "[^"]+"/, %(VERSION = "#{version}")))
 
   # The path gems pin each other's exact version, so every lockfile embeds it
-  # and must be regenerated. Drop the root bundle's environment so each
-  # directory resolves against its own Gemfile.
-  Bundler.with_unbundled_env {
-    BUNDLE_DIRS.each { |dir|
-      Dir.chdir(dir) { sh("bundle", "install", "--quiet") }
+  # and must be regenerated. `bundle lock` rewrites the lockfile without
+  # installing anything (and works even where frozen mode is configured).
+  # Drop the root bundle's environment so each directory resolves against its
+  # own Gemfile.
+  begin
+    Bundler.with_unbundled_env {
+      BUNDLE_DIRS.each { |dir|
+        Dir.chdir(dir) { sh("bundle", "lock") }
+      }
     }
-  }
+  rescue StandardError
+    warn("Lockfile regeneration failed; the version file was already rewritten. Run `git checkout .` to reset, then retry.")
+    raise
+  end
 
   sh("git", "add", VERSION_FILE, *COMMITTED_LOCKFILES)
   sh("git", "commit", "-m", "Bump version to #{version}")
@@ -255,9 +267,14 @@ task :bump, [:version] do |_task, args|
 
     Bumped #{current} -> #{version} and tagged v#{version}.
 
-    Next steps (pushing the tag publishes the gems via push_gem.yml):
-      git push origin HEAD v#{version}
-    then publish a GitHub release for v#{version} to move the floating major tag.
+    Next steps:
+      1. Push the branch only and open a PR: git push origin HEAD
+      2. After the PR merges (merge commit, not squash), push the tag to
+         publish the gems via push_gem.yml: git push origin v#{version}
+      3. Publish a GitHub release for v#{version} to move the floating major tag.
+
+    If the PR needs changes after review, re-point the tag at the final commit
+    before pushing it: git tag -f v#{version}
   NEXT_STEPS
 end
 

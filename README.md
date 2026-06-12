@@ -222,7 +222,7 @@ Exactly one of `xcode-project-path` or `package-manifest-paths` is required (see
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | `false` |
 | `open-tracking-issue` | On runs without a pull request context (schedule, workflow_dispatch, push), open or update a single tracking issue with the update report, and close it when everything is up to date. Requires issues: write permission. | `false` |
 | `cache-version-tags` | Cache git tag lookup results with actions/cache to make repeated runs faster | `true` |
-| `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Set 0 to disable persistent cache reads and writes. | `21600` |
+| `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Must be a non-negative integer; set 0 to disable persistent cache reads and writes. | `21600` |
 | `setup-ruby` | Set up Ruby and install this action bundle. Set false only for later invocations in the same job after an earlier invocation has already run setup. | `true` |
 | `github-token` | Token used to create or update pull request comments. Defaults to github.token. | `${{ github.token }}` |
 <!-- inputs-table:end -->

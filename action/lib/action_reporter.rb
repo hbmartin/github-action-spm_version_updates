@@ -55,6 +55,7 @@ class ActionReporter
       "major-updates-found=0",
       "minor-updates-found=0",
       "patch-updates-found=0",
+      "parse-warnings=0",
       "blocked=true",
     ].freeze
 
@@ -252,8 +253,8 @@ class ActionReporter
     ["", "### Parse warnings", ""] + @parse_warnings.flat_map { |record|
       [
         "- #{record['message']}",
-        "  Snippet: `#{record['snippet'].to_s.delete('`')}`",
-        "  [Open an issue](#{ParseWarning.issue_link(record)})",
+        "  - Snippet: `#{record['snippet'].to_s.delete('`')}`",
+        "  - [Open an issue](#{ParseWarning.issue_link(record)})",
       ]
     }
   end
