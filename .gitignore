@@ -144,3 +144,5 @@ triage_decisions.db
 # Per-gem isolation bundles resolve at install time; only the root and action lockfiles are committed.
 gems/*/Gemfile.lock
 .yardoc/
+.yardoc-*/
+/_site/

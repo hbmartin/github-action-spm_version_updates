@@ -1,3 +1,3 @@
 # frozen_string_literal: true
 
-require "spm_version_updates/gem_version"
+require "spm_version_updates/version"
