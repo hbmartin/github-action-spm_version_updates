@@ -152,7 +152,7 @@ jobs:
               | select(.suggested_command != null and .suggested_requirement == null)
               | [.source, .suggested_command] | @tsv' |
             sort -u |
-            while IFS=$'\t' read -r source command; do
+            while IFS="$(printf '\t')" read -r source command; do
               (cd "$(dirname "$source")" && $command)
             done
 

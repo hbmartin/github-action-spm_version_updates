@@ -27,9 +27,9 @@ module ReadmeActionTables
   def self.updated_readme
     require("yaml")
 
-    action = YAML.safe_load_file(ACTION_DEFINITION_FILE)
+    action = YAML.safe_load_file(ACTION_DEFINITION_FILE) || {}
     HEADERS.keys.reduce(File.read(README_FILE)) { |content, section|
-      replace_section(content, section, table_for(section, action.fetch(section)))
+      replace_section(content, section, table_for(section, action[section] || {}))
     }
   end
 

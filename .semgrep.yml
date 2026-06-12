@@ -165,3 +165,18 @@ rules:
                 $CLIENT.list_issues(...)
                 ...
               end
+  - id: html.remote-artifact-requires-sri
+    languages:
+      - generic
+    severity: ERROR
+    message: Remote scripts and stylesheets must include Subresource Integrity.
+    paths:
+      include:
+        - "**/*.erb"
+        - "**/*.html"
+    patterns:
+      - pattern-either:
+          - pattern-regex: |
+              <script\b(?=[^>]*\bsrc=["']https://)(?![^>]*\bintegrity=)[^>]*>
+          - pattern-regex: |
+              <link\b(?=[^>]*\bhref=["']https://)(?=[^>]*\brel=["']stylesheet["'])(?![^>]*\bintegrity=)[^>]*>
