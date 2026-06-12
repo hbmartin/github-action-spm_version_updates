@@ -78,6 +78,11 @@ or the reporting flow.
 
 ## Release flow
 
+`rake 'bump[X.Y.Z]'` performs the version bump: it rewrites the single
+`VERSION` constant (`gems/spm_version_updates/lib/spm_version_updates/version.rb`),
+regenerates every `Gemfile.lock` that embeds the path-gem version, commits, and
+creates the `vX.Y.Z` tag locally. Pushing that tag starts the release.
+
 A `v*.*.*` tag triggers `push_gem.yml`, which releases the core gem first
 (waiting for it to propagate so the plugin gem's dependency resolves), then the
 Danger plugin gem. The floating major tag (e.g. `v1`) is moved only after both
