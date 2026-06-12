@@ -3,6 +3,7 @@
 require_relative "git_operations"
 
 # Fetches git tag versions concurrently for cache-key/repository URL lookup pairs.
+# @api private
 class VersionTagFetcher
   # Thread-safe result/error accumulator shared by fetcher workers.
   FetchState = Struct.new(:mutex, :results, :errors, keyword_init: true) {

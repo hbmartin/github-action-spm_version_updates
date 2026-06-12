@@ -6,6 +6,9 @@ require "spm_version_updates/semver"
 # Legacy git helper used by the Danger plugin API. Delegates to GitOperations,
 # so lookups gain its retry behavior and raise GitOperations::LsRemoteError
 # instead of masking failures as empty results.
+# @deprecated Use {GitOperations} from the +spm_version_updates+ core gem
+#   instead. This shim exists only for backward compatibility with Dangerfiles
+#   written against +v0.2.0+.
 module Git
   ALLOWED_PROTOCOLS = GitOperations::ALLOWED_PROTOCOLS
 

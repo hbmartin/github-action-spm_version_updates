@@ -4,6 +4,7 @@ require_relative "git_host_normalizer"
 require_relative "git_operations"
 
 # Normalizes user-provided allow-host entries into hostnames.
+# @api private
 class AllowHostNormalizer
   MALFORMED_SCHEME_PATTERN = %r{\A[a-z][a-z0-9+\-.]*//}i
 
