@@ -58,4 +58,5 @@ jobs:
           working-directory: gems/danger-spm_version_updates
 
       # The floating major tag (e.g. v1) is moved by move_major_tag.yml when
-      # the GitHub release is published, independently of gem publishing.
+      # the GitHub release is published, after verifying both gems are live
+      # on RubyGems at the release version.

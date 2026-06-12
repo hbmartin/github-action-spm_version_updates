@@ -1,13 +1,21 @@
 name: Move Floating Major Tag
 
 # Keeps the floating major tag (e.g. v1) on the latest published GitHub
-# release so the documented `uses: ...@v1` pinning always resolves. This is
-# driven by the release event rather than the gem-publish workflow so that a
-# RubyGems failure cannot strand action users: the composite action runs from
-# the repository snapshot and is releasable independently of the gems.
+# release so the documented `uses: ...@v1` pinning always resolves. The tag
+# only moves after verifying that both gems are live on RubyGems at the
+# release version, so a failed gem publish can never advertise a release
+# whose gems do not exist. Retry a failed run with workflow_dispatch after
+# fixing the gem release (editing a published release does not re-fire the
+# `published` event).
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to move the floating major tag to (e.g. v1.2.3)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -15,21 +23,50 @@ permissions:
 jobs:
   move-tag:
     # Drafts never fire `published`; prereleases do and must not move the tag.
-    if: ${{ !github.event.release.prerelease }}
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.release.prerelease }}
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: refs/tags/${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+
+      - name: Verify gems are published on RubyGems
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag ${RELEASE_TAG} is not a stable vX.Y.Z release; nothing to verify."
+            exit 0
+          fi
+          version="${RELEASE_TAG#v}"
+          for gem in spm_version_updates danger-spm_version_updates; do
+            found=""
+            for attempt in $(seq 1 10); do
+              if curl -fsSL "https://rubygems.org/api/v1/versions/${gem}.json" \
+                  | jq -e --arg v "$version" 'any(.[]; .number == $v)' >/dev/null; then
+                echo "${gem} ${version} is live on RubyGems."
+                found=1
+                break
+              fi
+              echo "Waiting for ${gem} ${version} on RubyGems (attempt ${attempt}/10)..."
+              sleep 30
+            done
+            if [ -z "$found" ]; then
+              echo "::error::${gem} ${version} is not on RubyGems; not moving the floating tag. Fix the gem release (push_gem.yml), then retry this workflow via workflow_dispatch with tag ${RELEASE_TAG}."
+              exit 1
+            fi
+          done
+
       - name: Move floating major tag
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Release tag ${RELEASE_TAG} is not a stable vX.Y.Z release; leaving the floating major tag alone."
             exit 0
           fi
-          # The release event checks out the release tag, so HEAD is the
-          # tagged commit even in a shallow clone without local tag refs.
+          # The checkout is pinned to the release tag, so HEAD is the tagged
+          # commit even in a shallow clone without local tag refs.
           target="$(git rev-parse HEAD)"
           major_tag="${RELEASE_TAG%%.*}"
           git tag -f "$major_tag" "$target"

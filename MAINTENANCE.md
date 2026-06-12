@@ -241,11 +241,13 @@ This action follows semantic versioning:
      --prerelease=false
    ```
 
-   Publishing the release triggers `move_major_tag.yml`, which moves the
-   floating major tag (e.g. `v1`) to the released commit. This runs off the
-   release event — not the gem-publish workflow — so action users get the
-   release even if RubyGems publishing fails. Prereleases and non-`vX.Y.Z`
-   tags do not move the floating tag.
+   Publishing the release triggers `move_major_tag.yml`, which first verifies
+   that both gems are live on RubyGems at the release version and then moves
+   the floating major tag (e.g. `v1`) to the released commit. If the gem
+   publish failed, the workflow fails and the floating tag does not move —
+   fix the gem release, then retry via the workflow's `workflow_dispatch`
+   with the release tag (editing a published release does not re-fire the
+   event). Prereleases and non-`vX.Y.Z` tags do not move the floating tag.
 
 ### Post-Release Tasks
 
