@@ -37,6 +37,17 @@ jobs:
         env:
           BUNDLE_GEMFILE: ${{ github.workspace }}/Gemfile
         run: bundle exec danger plugins lint
+      # Rehearse the release path: push_gem.yml runs `bundle exec rake release`
+      # per gem directory against each gem's own Gemfile, so a missing dev
+      # dependency or broken gemspec must fail here, not at tag time.
+      - name: Verify gem release tooling
+        run: |
+          set -euo pipefail
+          for dir in gems/spm_version_updates gems/danger-spm_version_updates; do
+            echo "::group::${dir}"
+            (cd "$dir" && BUNDLE_GEMFILE=Gemfile bundle install && BUNDLE_GEMFILE=Gemfile bundle exec rake build)
+            echo "::endgroup::"
+          done
       # The action's frozen install on runners records the path gem's version,
       # so a stale action/Gemfile.lock breaks every action run after a bump.
       - name: Verify action lockfile matches gem version
