@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>
+  Module: Git
+  
+    &mdash; danger-spm_version_updates (Danger plugin)
+  
+</title>
+
+  <link rel="stylesheet" href="css/style.css" type="text/css">
+
+  <link rel="stylesheet" href="css/common.css" type="text/css">
+
+<script type="text/javascript">
+  pathId = "Git";
+  relpath = '';
+</script>
+
+
+  <script type="text/javascript" charset="utf-8" src="js/jquery.js"></script>
+
+  <script type="text/javascript" charset="utf-8" src="js/app.js"></script>
+
+
+  </head>
+  <body>
+    <div id="main_progress" aria-hidden="true"></div>
+
+    <div class="nav_wrap">
+      <iframe id="nav" src="class_list.html?1"></iframe>
+      <div id="resizer"></div>
+    </div>
+
+    <div id="main" tabindex="-1">
+      <div id="header">
+        <div id="menu">
+  
+    <a href="_index.html">Index (G)</a> &raquo;
+    
+    
+    <span class="title">Git</span>
+  
+</div>
+
+        <div id="search">
+  
+    <a class="full_list_link" id="class_list_link"
+        href="class_list.html">
+
+        <svg width="24" height="24">
+          <rect x="0" y="4" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="12" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="20" width="24" height="4" rx="1" ry="1"></rect>
+        </svg>
+    </a>
+  
+</div>
+        <div class="clear"></div>
+      </div>
+
+      <div id="content"><h1>Module: Git
+  
+  <span class="deprecated note title">Deprecated</span>
+  
+</h1>
+<div class="box_info">
+  
+
+  
+  
+  
+  
+  
+
+  
+
+  
+  <dl>
+    <dt>Defined in:</dt>
+    <dd>gems/danger-spm_version_updates/lib/spm_version_updates/git.rb
+</dd>
+  </dl>
+  
+</div>
+
+<h2>Overview</h2><div class="docstring">
+  <div class="discussion">
+    <div class="note deprecated"><strong>Deprecated.</strong> <div class='inline'><p>Use GitOperations from the <code>spm_version_updates</code> core gem
+instead. This shim exists only for backward compatibility with Dangerfiles
+written against <code>v0.2.0</code>.</p></div></div>
+<p>Legacy git helper used by the Danger plugin API. Delegates to GitOperations,
+so lookups gain its retry behavior and raise GitOperations::LsRemoteError
+instead of masking failures as empty results.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+
+</div>
+  
+    <h2>
+      Constant Summary
+      <small><a href="#" class="constants_summary_toggle">collapse</a></small>
+    </h2>
+
+    <dl class="constants">
+      
+        <dt id="ALLOWED_PROTOCOLS-constant" class="">ALLOWED_PROTOCOLS =
+          
+        </dt>
+        <dd><pre class="code"><span class='const'>GitOperations</span><span class='op'>::</span><span class='const'>ALLOWED_PROTOCOLS</span></pre></dd>
+      
+    </dl>
+  
+
+
+
+
+
+
+
+  
+    <h2>
+      Class Method Summary
+      <small><a href="#" class="summary_toggle">collapse</a></small>
+    </h2>
+
+    <ul class="summary">
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#branch_last_commit-class_method" title="branch_last_commit (class method)">.<strong>branch_last_commit</strong>(repo_url, branch_name)  &#x21d2; String<sup>?</sup> </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Call git to find the last commit on a branch.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#repo_name-class_method" title="repo_name (class method)">.<strong>repo_name</strong>(repo_url)  &#x21d2; String </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Extract a readable name for the repo given the url, generally org/repo.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#trim_repo_url-class_method" title="trim_repo_url (class method)">.<strong>trim_repo_url</strong>(repo_url)  &#x21d2; String </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Removes protocol and trailing .git from a repo URL.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#version_tags-class_method" title="version_tags (class method)">.<strong>version_tags</strong>(repo_url)  &#x21d2; Array&lt;SpmVersionUpdates::Semver&gt; </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Call git to list tags.</p></div></span>
+  
+</li>
+
+      
+    </ul>
+    
+  
+
+
+
+  <div id="class_method_details" class="method_details_list">
+    <h2>Class Method Details</h2>
+
+    
+      <div class="method_details first">
+  <h3 class="signature first" id="branch_last_commit-class_method">
+  
+    .<strong>branch_last_commit</strong>(repo_url, branch_name)  &#x21d2; <tt>String</tt><sup>?</sup> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Call git to find the last commit on a branch</p>
+
+  </div>
+</div>
+<div class="tags">
+  <p class="tag_title">Parameters:</p>
+<ul class="param">
+  
+    <li>
+      
+        <span class='name'>repo_url</span>
+      
+      
+        <span class='type'>(<tt>String</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>The URL of the dependency's repository</p></div>
+      
+    </li>
+  
+    <li>
+      
+        <span class='name'>branch_name</span>
+      
+      
+        <span class='type'>(<tt>String</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>The name of the branch on which to find the last commit</p></div>
+      
+    </li>
+  
+</ul>
+
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>String</tt>, <tt>nil</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+<p class="tag_title">Raises:</p>
+<ul class="raise">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>GitOperations::LsRemoteError</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>if the lookup fails after retries</p></div>
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+45
+46
+47</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'gems/danger-spm_version_updates/lib/spm_version_updates/git.rb', line 45</span>
+
+<span class='kw'>def</span> <span class='kw'>self</span><span class='period'>.</span><span class='id identifier rubyid_branch_last_commit'>branch_last_commit</span><span class='lparen'>(</span><span class='id identifier rubyid_repo_url'>repo_url</span><span class='comma'>,</span> <span class='id identifier rubyid_branch_name'>branch_name</span><span class='rparen'>)</span>
+  <span class='const'>GitOperations</span><span class='period'>.</span><span class='id identifier rubyid_branch_last_commit'>branch_last_commit</span><span class='lparen'>(</span><span class='id identifier rubyid_repo_url'>repo_url</span><span class='comma'>,</span> <span class='id identifier rubyid_branch_name'>branch_name</span><span class='rparen'>)</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="repo_name-class_method">
+  
+    .<strong>repo_name</strong>(repo_url)  &#x21d2; <tt>String</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Extract a readable name for the repo given the url, generally org/repo</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>String</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+25
+26
+27</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'gems/danger-spm_version_updates/lib/spm_version_updates/git.rb', line 25</span>
+
+<span class='kw'>def</span> <span class='kw'>self</span><span class='period'>.</span><span class='id identifier rubyid_repo_name'>repo_name</span><span class='lparen'>(</span><span class='id identifier rubyid_repo_url'>repo_url</span><span class='rparen'>)</span>
+  <span class='const'>GitOperations</span><span class='period'>.</span><span class='id identifier rubyid_repo_name'>repo_name</span><span class='lparen'>(</span><span class='id identifier rubyid_repo_url'>repo_url</span><span class='rparen'>)</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="trim_repo_url-class_method">
+  
+    .<strong>trim_repo_url</strong>(repo_url)  &#x21d2; <tt>String</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Removes protocol and trailing .git from a repo URL</p>
+
+  </div>
+</div>
+<div class="tags">
+  <p class="tag_title">Parameters:</p>
+<ul class="param">
+  
+    <li>
+      
+        <span class='name'>repo_url</span>
+      
+      
+        <span class='type'>(<tt>String</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>The URL of the repository</p></div>
+      
+    </li>
+  
+</ul>
+
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>String</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+19
+20
+21</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'gems/danger-spm_version_updates/lib/spm_version_updates/git.rb', line 19</span>
+
+<span class='kw'>def</span> <span class='kw'>self</span><span class='period'>.</span><span class='id identifier rubyid_trim_repo_url'>trim_repo_url</span><span class='lparen'>(</span><span class='id identifier rubyid_repo_url'>repo_url</span><span class='rparen'>)</span>
+  <span class='const'>GitOperations</span><span class='period'>.</span><span class='id identifier rubyid_trim_repo_url'>trim_repo_url</span><span class='lparen'>(</span><span class='id identifier rubyid_repo_url'>repo_url</span><span class='rparen'>)</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="version_tags-class_method">
+  
+    .<strong>version_tags</strong>(repo_url)  &#x21d2; <tt>Array&lt;SpmVersionUpdates::Semver&gt;</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Call git to list tags</p>
+
+  </div>
+</div>
+<div class="tags">
+  <p class="tag_title">Parameters:</p>
+<ul class="param">
+  
+    <li>
+      
+        <span class='name'>repo_url</span>
+      
+      
+        <span class='type'>(<tt>String</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>The URL of the dependency's repository</p></div>
+      
+    </li>
+  
+</ul>
+
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Array&lt;SpmVersionUpdates::Semver&gt;</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+<p class="tag_title">Raises:</p>
+<ul class="raise">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>GitOperations::LsRemoteError</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>if the lookup fails after retries</p></div>
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+34
+35
+36</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'gems/danger-spm_version_updates/lib/spm_version_updates/git.rb', line 34</span>
+
+<span class='kw'>def</span> <span class='kw'>self</span><span class='period'>.</span><span class='id identifier rubyid_version_tags'>version_tags</span><span class='lparen'>(</span><span class='id identifier rubyid_repo_url'>repo_url</span><span class='rparen'>)</span>
+  <span class='const'>GitOperations</span><span class='period'>.</span><span class='id identifier rubyid_version_tags'>version_tags</span><span class='lparen'>(</span><span class='id identifier rubyid_repo_url'>repo_url</span><span class='rparen'>)</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+  </div>
+
+</div>
+
+      <div id="footer">
+  Generated on Fri Jun 12 16:07:01 2026 by
+  <a href="https://yardoc.org" title="Yay! A Ruby Documentation Tool" target="_parent">yard</a>
+  0.9.44 (ruby-3.3.11).
+</div>
+
+    </div>
+  </body>
+</html>

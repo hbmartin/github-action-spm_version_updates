@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>
+  File: migration-v0.2.0-to-v1.0.0
+  
+    &mdash; spm_version_updates (core gem)
+  
+</title>
+
+  <link rel="stylesheet" href="css/style.css" type="text/css">
+
+  <link rel="stylesheet" href="css/common.css" type="text/css">
+
+<script type="text/javascript">
+  pathId = "migration-v0.2.0-to-v1.0.0";
+  relpath = '';
+</script>
+
+
+  <script type="text/javascript" charset="utf-8" src="js/jquery.js"></script>
+
+  <script type="text/javascript" charset="utf-8" src="js/app.js"></script>
+
+
+  </head>
+  <body>
+    <div id="main_progress" aria-hidden="true"></div>
+
+    <div class="nav_wrap">
+      <iframe id="nav" src="file_list.html?1"></iframe>
+      <div id="resizer"></div>
+    </div>
+
+    <div id="main" tabindex="-1">
+      <div id="header">
+        <div id="menu">
+  
+    <a href="_index.html">Index</a> &raquo; 
+    <span class="title">File: migration-v0.2.0-to-v1.0.0</span>
+  
+</div>
+
+        <div id="search">
+  
+    <a class="full_list_link" id="class_list_link"
+        href="class_list.html">
+
+        <svg width="24" height="24">
+          <rect x="0" y="4" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="12" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="20" width="24" height="4" rx="1" ry="1"></rect>
+        </svg>
+    </a>
+  
+</div>
+        <div class="clear"></div>
+      </div>
+
+      <div id="content"><div id='filecontents'><h1 id="Migration_guide___v0_2_0__to__v1_">Migration guide: <code>v0.2.0</code> to <code>v1</code></h1>
+<p>This guide covers the user-facing and maintainer-facing changes between the
+<code>v0.2.0</code> release and the <code>v1</code> action tag.</p>
+<p>The short version: <code>v0.2.0</code> was documented as a Danger plugin. <code>v1</code> adds a
+first-class GitHub Action, a new Swift manifest source mode, structured GitHub
+Actions outputs, stricter git lookup behavior, and a higher Ruby requirement.
+Along the way the project was split into layers: a dependency-checking core
+gem, a thin Danger plugin gem on top of it, and the GitHub Action runner (see
+<a href="architecture.md">architecture.md</a>).</p>
+<h2 id="Who_needs_to_change_something_">Who needs to change something?</h2>
+<table>
+<thead>
+<tr>
+<th>If you are...</th>
+<th>What changed</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Running the old Danger plugin from a <code>Dangerfile</code></td>
+<td>The plugin API still exists, but the project is now centered on the GitHub Action.</td>
+<td>You can keep <code>spm_version_updates.check_for_updates(&quot;App.xcodeproj&quot;)</code>, but update Ruby and dependencies.</td>
+</tr>
+<tr>
+<td>Moving from Danger to the GitHub Action</td>
+<td><code>action.yml</code> is new in <code>v1</code>.</td>
+<td>Replace the Danger invocation with a workflow step using <code>xcode-project-path</code> or <code>package-manifest-paths</code>.</td>
+</tr>
+<tr>
+<td>Checking dependencies from <code>Package.swift</code> files</td>
+<td>Swift manifest mode did not exist in <code>v0.2.0</code>.</td>
+<td>Use <code>package-manifest-paths</code> and make sure each manifest has a matching <code>Package.resolved</code>, or set <code>package-resolved-paths</code>.</td>
+</tr>
+<tr>
+<td>Consuming GitHub Actions outputs</td>
+<td>Outputs did not exist in <code>v0.2.0</code>.</td>
+<td>Read <code>updates-found</code>, severity counts, <code>updates-json</code>, <code>blocked</code>, and <code>error-message</code> from the action step.</td>
+</tr>
+<tr>
+<td>Maintaining this repository locally</td>
+<td>The runtime and quality toolchain changed.</td>
+<td>Use Ruby 3.2 or newer, preferably Ruby 3.3, and run the expanded spec/lint suite.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="Breaking_and_compatibility_notes">Breaking and compatibility notes</h2>
+<h3 id="One_project__two_gems">One project, two gems</h3>
+<p><code>v0.2.0</code> shipped as a single gem, <code>danger-spm_version_updates</code>. The project is
+now layered:</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Where</th>
+<th>Published as</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Core checking logic</td>
+<td><code>gems/spm_version_updates/</code></td>
+<td><a href="https://rubygems.org/gems/spm_version_updates"><code>spm_version_updates</code></a> on RubyGems</td>
+</tr>
+<tr>
+<td>Danger plugin</td>
+<td><code>gems/danger-spm_version_updates/</code></td>
+<td><a href="https://rubygems.org/gems/danger-spm_version_updates"><code>danger-spm_version_updates</code></a> on RubyGems</td>
+</tr>
+<tr>
+<td>GitHub Action runner</td>
+<td><code>action/</code> + <code>action.yml</code></td>
+<td>Not a gem; consumed via the action ref</td>
+</tr>
+</tbody>
+</table>
+<p><code>danger-spm_version_updates</code> declares a runtime dependency on
+<code>spm_version_updates</code>, so Bundler installs both — no Gemfile change is needed
+beyond updating the version. If your own tooling consumes the checking logic
+programmatically (parsers, git lookups, semver classification), depend on the
+core gem directly instead of the Danger plugin gem.</p>
+<p>Per-layer API documentation is published to GitHub Pages on every release:
+<a href="https://hbmartin.github.io/github-action-spm_version_updates/">https://hbmartin.github.io/github-action-spm_version_updates/</a>.</p>
+<h3 id="Removed__v0_2_0__helper_modules">Removed <code>v0.2.0</code> helper modules</h3>
+<p>The <code>Git</code> and <code>Xcode</code> helper modules that <code>v0.2.0</code> exposed from the Danger gem
+have been removed. The Dangerfile API (<code>check_for_updates</code>, <code>check_manifests</code>,
+and the configuration accessors) is unaffected, but code that called the
+helpers directly must switch to the core gem's equivalents:</p>
+<table>
+<thead>
+<tr>
+<th>Removed</th>
+<th>Replacement (core gem)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Git.trim_repo_url</code>, <code>Git.repo_name</code>, <code>Git.version_tags</code>, <code>Git.branch_last_commit</code></td>
+<td><code>GitOperations</code> (same method names)</td>
+</tr>
+<tr>
+<td><code>Xcode.get_packages</code></td>
+<td><code>XcodeProjectPackageReader.package_references</code></td>
+</tr>
+<tr>
+<td><code>Xcode.get_resolved_versions</code></td>
+<td><code>XcodeParser</code> / <code>PackageResolved.versions_from</code></td>
+</tr>
+<tr>
+<td><code>Xcode::XcodeprojPathMustBeSet</code>, <code>Xcode::CouldNotFindResolvedFile</code></td>
+<td><code>XcodeParser::XcodeprojPathMustBeSet</code>, <code>XcodeParser::CouldNotFindResolvedFile</code></td>
+</tr>
+<tr>
+<td><code>require &quot;spm_version_updates/gem_version&quot;</code></td>
+<td><code>require &quot;spm_version_updates/version&quot;</code></td>
+</tr>
+</tbody>
+</table>
+<p>Note that <code>GitOperations</code> lookups raise <code>GitOperations::LsRemoteError</code> after
+bounded retries instead of returning empty results on failure, and return
+<code>SpmVersionUpdates::Semver</code> values rather than <code>Semantic::Version</code>.</p>
+<h3 id="Ruby_requirement">Ruby requirement</h3>
+<p>The gemspec now requires Ruby <code>&gt;= 3.2</code>; <code>v0.2.0</code> required Ruby <code>&gt;= 3.0</code>.
+GitHub Actions runs the composite action with Ruby <code>3.3</code>.</p>
+<p>If your CI still runs Ruby 3.0 or 3.1 for this project, update it before
+upgrading:</p>
+<pre class="code yaml"><code class="yaml">- uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f
+  with:
+    ruby-version: &quot;3.3&quot;
+    bundler-cache: true
+</code></pre>
+<h3 id="Semver_dependency">Semver dependency</h3>
+<p>The Ruby dependency changed from <code>semantic</code> to <code>semverify</code>. If you vendor or pin
+the gem through Bundler, refresh the lockfile after upgrading:</p>
+<pre class="code sh"><code class="sh">bundle update danger-spm_version_updates
+</code></pre>
+<p>If your own <code>Gemfile</code> pinned <code>semantic</code> only for this project, remove that direct
+pin. Add a direct <code>semverify</code> pin only if your own code needs to use it.</p>
+<p>Do not rely on internal <code>Semantic::Version</code> objects from this project. The
+version wrapper in <code>v1</code> returns <code>SpmVersionUpdates::Semver</code> values internally.
+If you consume the code directly from git, pin the git tag explicitly:</p>
+<pre class="code ruby"><code class="ruby"><span class='id identifier rubyid_gem'>gem</span> <span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>danger-spm_version_updates</span><span class='tstring_end'>&quot;</span></span><span class='comma'>,</span>
+    <span class='label'>git:</span> <span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>https://github.com/hbmartin/github-action-spm_version_updates.git</span><span class='tstring_end'>&quot;</span></span><span class='comma'>,</span>
+    <span class='label'>tag:</span> <span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>v1</span><span class='tstring_end'>&quot;</span></span>
+</code></pre>
+<h2 id="Path_1__keep_using_the_Danger_plugin">Path 1: keep using the Danger plugin</h2>
+<p>The existing Dangerfile call remains the same:</p>
+<pre class="code ruby"><code class="ruby"><span class='id identifier rubyid_spm_version_updates'>spm_version_updates</span><span class='period'>.</span><span class='id identifier rubyid_check_for_updates'>check_for_updates</span><span class='lparen'>(</span><span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>Example.xcodeproj</span><span class='tstring_end'>&quot;</span></span><span class='rparen'>)</span>
+</code></pre>
+<p>The existing Danger plugin configuration names are still available:</p>
+<pre class="code ruby"><code class="ruby"><span class='id identifier rubyid_spm_version_updates'>spm_version_updates</span><span class='period'>.</span><span class='id identifier rubyid_check_when_exact'>check_when_exact</span> <span class='op'>=</span> <span class='kw'>true</span>
+<span class='id identifier rubyid_spm_version_updates'>spm_version_updates</span><span class='period'>.</span><span class='id identifier rubyid_report_above_maximum'>report_above_maximum</span> <span class='op'>=</span> <span class='kw'>true</span>
+<span class='id identifier rubyid_spm_version_updates'>spm_version_updates</span><span class='period'>.</span><span class='id identifier rubyid_report_pre_releases'>report_pre_releases</span> <span class='op'>=</span> <span class='kw'>true</span>
+<span class='id identifier rubyid_spm_version_updates'>spm_version_updates</span><span class='period'>.</span><span class='id identifier rubyid_ignore_repos'>ignore_repos</span> <span class='op'>=</span> <span class='lbracket'>[</span>
+  <span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>https://github.com/pointfreeco/swift-snapshot-testing</span><span class='tstring_end'>&quot;</span></span><span class='comma'>,</span>
+<span class='rbracket'>]</span>
+<span class='id identifier rubyid_spm_version_updates'>spm_version_updates</span><span class='period'>.</span><span class='id identifier rubyid_repo_rules_path'>repo_rules_path</span> <span class='op'>=</span> <span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>.github/spm-version-rules.yml</span><span class='tstring_end'>&quot;</span></span>
+</code></pre>
+<p>Important limitations if you stay on the Danger plugin:</p>
+<ul>
+<li>The <code>Git</code> and <code>Xcode</code> helper modules are gone; see
+<a href="#removed-v020-helper-modules">Removed <code>v0.2.0</code> helper modules</a> if your
+Dangerfile called them directly.</li>
+<li>It remains Xcode-project mode only. It does not expose <code>package-manifest-paths</code>.</li>
+<li>It does not expose GitHub Actions outputs, step summaries, annotations,
+<code>fail-on</code>, <code>allow-hosts</code>, or <code>comment-on-success</code>.</li>
+<li>It now uses the safer git lookup path and semver adapter, so some malformed
+version tags or git URLs that previously behaved inconsistently may now be
+ignored or logged instead.</li>
+</ul>
+<h2 id="Path_2__migrate_to_the_GitHub_Action">Path 2: migrate to the GitHub Action</h2>
+<p>Replace the Danger step with the composite action. For a classic Xcode project,
+the minimal workflow is:</p>
+<pre class="code yaml"><code class="yaml">name: Check SPM Dependencies
+
+on:
+  pull_request:
+    paths:
+      - &quot;**/*.xcodeproj/**&quot;
+      - &quot;**/Package.resolved&quot;
+      - &quot;.github/workflows/spm-version-updates.yml&quot;
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  spm-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hbmartin/github-action-spm_version_updates@v1
+        with:
+          xcode-project-path: &quot;MyApp.xcodeproj&quot;
+</code></pre>
+<p>The action reads files from the checked-out workspace, posts or updates one pull
+request comment, writes a step summary, and exposes machine-readable outputs.</p>
+<p>The <code>v1</code> major tag should point at the latest backward-compatible v1 release.
+Pin <code>@v1.0.0</code> or a commit SHA when you need fully reproducible installs.</p>
+<h2 id="Source_mode_migration">Source mode migration</h2>
+<p><code>v1</code> has two source modes. You must provide exactly one of them:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Input</th>
+<th>Use it when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Xcode project mode</td>
+<td><code>xcode-project-path</code></td>
+<td>The <code>.xcodeproj</code> directly owns its <code>XCRemoteSwiftPackageReference</code> objects.</td>
+</tr>
+<tr>
+<td>Swift manifest mode</td>
+<td><code>package-manifest-paths</code></td>
+<td>Dependencies live in one or more <code>Package.swift</code> files.</td>
+</tr>
+</tbody>
+</table>
+<p>Providing both inputs, or neither input, fails with a clear error.</p>
+<h3 id="Xcode_project_mode">Xcode project mode</h3>
+<p>If <code>v0.2.0</code> worked for your Xcode project, use <code>xcode-project-path</code>:</p>
+<pre class="code yaml"><code class="yaml">- uses: hbmartin/github-action-spm_version_updates@v1
+  with:
+    xcode-project-path: &quot;MyApp.xcodeproj&quot;
+</code></pre>
+<p><code>v1</code> still searches the Xcode-adjacent <code>Package.resolved</code> locations:</p>
+<pre class="code text"><code class="text">MyApp.xcworkspace/xcshareddata/swiftpm/Package.resolved
+MyApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+</code></pre>
+<p>When both files exist, pins are merged. Blank repository URLs are ignored.</p>
+<h3 id="Swift_manifest_mode">Swift manifest mode</h3>
+<p>Use this mode when the source of truth is <code>Package.swift</code>:</p>
+<pre class="code yaml"><code class="yaml">- uses: hbmartin/github-action-spm_version_updates@v1
+  with:
+    package-manifest-paths: |
+      Modules/Package.swift
+      BuildTools/Package.swift
+</code></pre>
+<p>By default, each manifest must have a <code>Package.resolved</code> next to it:</p>
+<table>
+<thead>
+<tr>
+<th>Manifest</th>
+<th>Default resolved file</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Modules/Package.swift</code></td>
+<td><code>Modules/Package.resolved</code></td>
+</tr>
+<tr>
+<td><code>BuildTools/Package.swift</code></td>
+<td><code>BuildTools/Package.resolved</code></td>
+</tr>
+</tbody>
+</table>
+<p>If your resolved files live somewhere else, list them explicitly:</p>
+<pre class="code yaml"><code class="yaml">- uses: hbmartin/github-action-spm_version_updates@v1
+  with:
+    package-manifest-paths: |
+      Modules/Package.swift
+      BuildTools/Package.swift
+    package-resolved-paths: |
+      .swiftpm/modules/Package.resolved
+      .swiftpm/build-tools/Package.resolved
+</code></pre>
+<p>Every expected resolved file must exist. Missing files fail the action instead
+of silently reporting incomplete results.</p>
+<h3 id="Migrating_away_from_a_generated_Xcode_project">Migrating away from a generated Xcode project</h3>
+<p>If you previously generated a temporary <code>.xcodeproj</code> only so <code>v0.2.0</code> could read
+SPM dependencies, delete that workaround:</p>
+<pre class="code diff"><code class="diff"> - uses: hbmartin/github-action-spm_version_updates@v1
+   with:
+-    xcode-project-path: .spm-version-updates/PackageChecks.xcodeproj
++    package-manifest-paths: |
++      Modules/Package.swift
++      BuildTools/Package.swift
+</code></pre>
+<p>Then remove the generator step, remove any generated <code>.spm-version-updates/</code>
+output from the repository, and update your workflow <code>paths:</code> filters to watch
+the real <code>Package.swift</code> and <code>Package.resolved</code> files.</p>
+<h2 id="Configuration_mapping">Configuration mapping</h2>
+<table>
+<thead>
+<tr>
+<th><code>v0.2.0</code> Danger config</th>
+<th><code>v1</code> action input</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>check_when_exact = true</code></td>
+<td><code>check-when-exact: true</code></td>
+<td>Exact pins are skipped by default.</td>
+</tr>
+<tr>
+<td><code>report_above_maximum = true</code></td>
+<td><code>report-above-maximum: true</code></td>
+<td>Reports releases above the configured range, such as a new major version.</td>
+</tr>
+<tr>
+<td><code>report_pre_releases = true</code></td>
+<td><code>report-pre-releases: true</code></td>
+<td>Pre-release tags are ignored by default.</td>
+</tr>
+<tr>
+<td><code>ignore_repos = [&quot;url&quot;]</code></td>
+<td><code>ignore-repos: &quot;url&quot;</code></td>
+<td>Use a comma-separated list for multiple repositories.</td>
+</tr>
+<tr>
+<td><code>repo_rules_path = &quot;path&quot;</code></td>
+<td><code>repo-rules-path: &quot;path&quot;</code></td>
+<td>YAML rules can suppress semantic reports per repository without skipping lookups.</td>
+</tr>
+<tr>
+<td>No equivalent</td>
+<td><code>xcode-project-path</code></td>
+<td>Required for Xcode project mode.</td>
+</tr>
+<tr>
+<td>No equivalent</td>
+<td><code>package-manifest-paths</code></td>
+<td>Required for Swift manifest mode.</td>
+</tr>
+<tr>
+<td>No equivalent</td>
+<td><code>package-resolved-paths</code></td>
+<td>Optional override for manifest mode.</td>
+</tr>
+<tr>
+<td>No equivalent</td>
+<td><code>check-branches</code></td>
+<td>Defaults to <code>true</code>.</td>
+</tr>
+<tr>
+<td>No equivalent</td>
+<td><code>check-revisions</code></td>
+<td>Defaults to <code>false</code>.</td>
+</tr>
+<tr>
+<td>No equivalent</td>
+<td><code>allow-hosts</code></td>
+<td>Restricts git remotes contacted during enabled lookups.</td>
+</tr>
+<tr>
+<td>No equivalent</td>
+<td><code>fail-on-updates</code></td>
+<td>Legacy action failure behavior: <code>true</code> means fail on any reported update.</td>
+</tr>
+<tr>
+<td>No equivalent</td>
+<td><code>fail-on</code></td>
+<td>Preferred semantic threshold: <code>major</code>, <code>minor</code>, or <code>patch</code>.</td>
+</tr>
+<tr>
+<td>No equivalent</td>
+<td><code>comment-on-success</code></td>
+<td>Defaults to <code>false</code>; clean runs delete the previous generated comment.</td>
+</tr>
+<tr>
+<td>No equivalent</td>
+<td><code>github-token</code></td>
+<td>Defaults to <code>${{ github.token }}</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>Example with most options enabled:</p>
+<pre class="code yaml"><code class="yaml">- id: spm-updates
+  uses: hbmartin/github-action-spm_version_updates@v1
+  with:
+    package-manifest-paths: |
+      Modules/Package.swift
+      BuildTools/Package.swift
+    check-when-exact: true
+    check-branches: true
+    check-revisions: false
+    report-above-maximum: true
+    report-pre-releases: false
+    ignore-repos: &quot;https://github.com/pointfreeco/swift-snapshot-testing&quot;
+    repo-rules-path: &quot;.github/spm-version-rules.yml&quot;
+    allow-hosts: &quot;github.com,gitlab.com&quot;
+    fail-on: major
+</code></pre>
+<h2 id="Reporting_changes">Reporting changes</h2>
+<p><code>v1</code> writes results in several places:</p>
+<table>
+<thead>
+<tr>
+<th>Destination</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pull request comment</td>
+<td>Updates one generated comment when updates are found.</td>
+</tr>
+<tr>
+<td>Clean pull request run</td>
+<td>Deletes the previous generated comment by default. Set <code>comment-on-success: true</code> to keep an up-to-date success comment.</td>
+</tr>
+<tr>
+<td>Step summary</td>
+<td>Always writes a human-readable summary.</td>
+</tr>
+<tr>
+<td>Workflow annotations</td>
+<td>Emits <code>warning</code> annotations for updates and an <code>error</code> annotation for blocked runs.</td>
+</tr>
+<tr>
+<td>Step outputs</td>
+<td>Always writes machine-readable outputs when <code>GITHUB_OUTPUT</code> is available.</td>
+</tr>
+</tbody>
+</table>
+<p>The outputs are:</p>
+<table>
+<thead>
+<tr>
+<th>Output</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>updates-found</code></td>
+<td>Total reported updates.</td>
+</tr>
+<tr>
+<td><code>major-updates-found</code></td>
+<td>Count of semantic version updates classified as major.</td>
+</tr>
+<tr>
+<td><code>minor-updates-found</code></td>
+<td>Count of semantic version updates classified as minor.</td>
+</tr>
+<tr>
+<td><code>patch-updates-found</code></td>
+<td>Count of semantic version updates classified as patch.</td>
+</tr>
+<tr>
+<td><code>updates-json</code></td>
+<td>JSON array of update records.</td>
+</tr>
+<tr>
+<td><code>blocked</code></td>
+<td><code>true</code> when a security gate such as <code>allow-hosts</code> stops the run before lookup.</td>
+</tr>
+<tr>
+<td><code>error-message</code></td>
+<td>Failure message for blocked runs.</td>
+</tr>
+</tbody>
+</table>
+<p><code>updates-json</code> records include a <code>message</code> field and, when structured details
+are available, fields such as <code>type</code>, <code>package</code>, <code>repository_url</code>,
+<code>current_version</code>, <code>available_version</code>, <code>severity</code>, <code>note</code>, and <code>source</code>.
+Credentials embedded in <code>repository_url</code> are redacted.</p>
+<p>If you use a fail option, read outputs from later steps with <code>always()</code> because
+the action can intentionally fail after reporting:</p>
+<pre class="code yaml"><code class="yaml">- id: spm-updates
+  uses: hbmartin/github-action-spm_version_updates@v1
+  with:
+    xcode-project-path: &quot;MyApp.xcodeproj&quot;
+    fail-on: major
+
+- name: Print update JSON
+  if: ${{ always() &amp;&amp; steps.spm-updates.outputs.updates-found != &#39;0&#39; }}
+  run: echo &#39;${{ steps.spm-updates.outputs.updates-json }}&#39;
+</code></pre>
+<h2 id="Failure_behavior">Failure behavior</h2>
+<p><code>fail-on-updates: true</code> fails the job when any update is reported, including
+branch and revision reports.</p>
+<p>Prefer <code>fail-on</code> for semantic version thresholds:</p>
+<table>
+<thead>
+<tr>
+<th>Input</th>
+<th>Fails on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fail-on: major</code></td>
+<td>Major semantic updates only.</td>
+</tr>
+<tr>
+<td><code>fail-on: minor</code></td>
+<td>Major or minor semantic updates.</td>
+</tr>
+<tr>
+<td><code>fail-on: patch</code></td>
+<td>Major, minor, or patch semantic updates.</td>
+</tr>
+</tbody>
+</table>
+<p>The action writes outputs, the step summary, annotations, and any PR comment
+before it exits with failure for a matching threshold.</p>
+<h2 id="Security_and_git_remote_changes">Security and git remote changes</h2>
+<p>Version checks still use <code>git ls-remote</code>, but <code>v1</code> hardens how git is called:</p>
+<ul>
+<li>Git is invoked without a shell and with <code>--</code> before the repository URL.</li>
+<li><code>GIT_ALLOW_PROTOCOL</code> is set to <code>https:ssh:git</code>.</li>
+<li><code>file</code>, <code>ext</code>, and remote-helper transports are blocked by git protocol policy.</li>
+<li>In the GitHub Action checker path, git lookup failures are logged and fail
+the action after bounded retries instead of being silently treated as a
+successful empty result.</li>
+<li>Credentials embedded in URLs are redacted in logs and JSON output.</li>
+</ul>
+<p>Private dependencies still work if the runner is already authenticated for those
+git remotes. The action does not install SSH keys or credentials for you.</p>
+<h3 id="Using__allow_hosts_">Using <code>allow-hosts</code></h3>
+<p>Set <code>allow-hosts</code> when the dependency files are untrusted, especially in
+<code>pull_request_target</code> workflows:</p>
+<pre class="code yaml"><code class="yaml">on:
+  pull_request_target:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  spm-version-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: hbmartin/github-action-spm_version_updates@v1
+        with:
+          package-manifest-paths: Modules/Package.swift
+          allow-hosts: github.com
+</code></pre>
+<p>Host matching is exact and case-insensitive. Schemes, credentials, paths, and
+ports are ignored during normalization. If every configured <code>allow-hosts</code> entry
+is malformed, the action fails closed. A dependency on a disallowed host fails
+before git is contacted and writes:</p>
+<pre class="code text"><code class="text">blocked=true
+updates-found=0
+updates-json=[]
+</code></pre>
+<p><code>allow-hosts</code> is enforced only for enabled lookups. For example, an off-list
+exact dependency does not block the run while <code>check-when-exact</code> is <code>false</code>.</p>
+<h2 id="Dependency_constraint_behavior">Dependency constraint behavior</h2>
+<p>The defaults in <code>v1</code> are:</p>
+<table>
+<thead>
+<tr>
+<th>Constraint type</th>
+<th>Default behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>from:</code> / up-to-next-major</td>
+<td>Check versions within the same major version.</td>
+</tr>
+<tr>
+<td>up-to-next-minor</td>
+<td>Check versions within the same major and minor version.</td>
+</tr>
+<tr>
+<td>version range</td>
+<td>Check versions below the maximum.</td>
+</tr>
+<tr>
+<td>exact version</td>
+<td>Skip unless <code>check-when-exact: true</code>.</td>
+</tr>
+<tr>
+<td>branch</td>
+<td>Check newer branch commits unless <code>check-branches: false</code>.</td>
+</tr>
+<tr>
+<td>revision</td>
+<td>Skip unless <code>check-revisions: true</code>.</td>
+</tr>
+<tr>
+<td>pre-release tags</td>
+<td>Ignore unless <code>report-pre-releases: true</code>.</td>
+</tr>
+<tr>
+<td>above-maximum versions</td>
+<td>Ignore unless <code>report-above-maximum: true</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>Behavioral fixes and additions since <code>v0.2.0</code>:</p>
+<ul>
+<li>Swift manifest mode supports common <code>.package(...)</code> forms, including <code>from:</code>,
+<code>exact:</code>, <code>branch:</code>, <code>revision:</code>, <code>.upToNextMajor</code>, <code>.upToNextMinor</code>,
+<code>.exact</code>, <code>.branch</code>, <code>.revision</code>, and open or closed version ranges.</li>
+<li>Closed manifest ranges such as <code>&quot;1.0.0&quot;...&quot;2.0.0&quot;</code> are normalized to preserve
+the inclusive upper bound.</li>
+<li>Local manifest packages declared with <code>.package(path: ...)</code> are ignored.</li>
+<li>Declarations inside Swift line comments and nested block comments are ignored.</li>
+<li><code>Package.resolved</code> v1 and v2 formats are both supported.</li>
+<li>Up-to-next-minor checks now require the same major and minor version, avoiding
+false matches such as <code>2.5.0</code> for a dependency resolved at <code>1.5.0</code>.</li>
+<li>Two-component tags such as <code>1.0</code> are normalized to <code>1.0.0</code> before parsing.</li>
+<li>Range and above-maximum reporting respect the pre-release filter.</li>
+<li>Revision pins are opt-in through <code>check-revisions</code>; when enabled, the action
+reports the latest tagged version for reference rather than claiming an
+arbitrary commit is definitely behind.</li>
+<li>Malformed package entries, nil requirements, nil repository URLs, and
+unparsable semver values are skipped or logged instead of crashing common
+runs.</li>
+</ul>
+<h2 id="PR_comment_changes">PR comment changes</h2>
+<p>The built-in action comment is generated through the GitHub-backed reporter
+sink. It updates an existing generated comment instead of creating duplicates.
+Additional sinks can implement <code>publish_updates</code>, <code>publish_success</code>, and
+<code>clear</code> without changing the checker or action reporting flow.</p>
+<p>When structured details are available, the comment groups duplicate package
+updates and includes current and available versions, source manifests, and links
+for supported hosts:</p>
+<table>
+<thead>
+<tr>
+<th>Host</th>
+<th>Links</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GitHub</td>
+<td>Compare and Releases</td>
+</tr>
+<tr>
+<td>GitLab</td>
+<td>Compare and Releases</td>
+</tr>
+<tr>
+<td>Bitbucket</td>
+<td>Compare and Tags</td>
+</tr>
+<tr>
+<td>Other hosts</td>
+<td><code>N/A</code></td>
+</tr>
+</tbody>
+</table>
+<p>For non-PR runs, or when the token cannot write comments, the step summary,
+annotations, and outputs are still the reliable places to read results.</p>
+<h2 id="Maintainer_migration_notes">Maintainer migration notes</h2>
+<p>Local development changed along with the action runtime:</p>
+<ul>
+<li>Use Ruby 3.2 or newer. The maintenance docs recommend Ruby 3.3+.</li>
+<li>Runtime dependencies are listed directly in <code>Gemfile</code>; development and test
+dependencies are grouped.</li>
+<li><code>bundle exec rake spec</code> now includes Reek in addition to specs, RuboCop, and
+docs checks.</li>
+<li>CI now has separate lint and action-spec jobs.</li>
+<li>CI runs RuboCop, Reek, Danger plugin lint, and a pinned Semgrep rule.</li>
+<li>GitHub workflow actions are pinned by commit SHA and checkout uses
+<code>persist-credentials: false</code>.</li>
+<li>Coverage is uploaded as a workflow artifact instead of through Codecov.</li>
+</ul>
+<p>Useful local checks:</p>
+<pre class="code sh"><code class="sh">bundle exec rspec
+bundle exec rubocop
+bundle exec rake reek
+bundle exec danger plugins lint
+bundle exec rake docs docs:check  # build the docs site, gate on coverage
+</code></pre>
+<p>API documentation builds per layer (core gem, Danger plugin, action runner)
+into <code>_site/</code> via <code>rake docs</code>, and <code>docs.yml</code> publishes it to GitHub Pages
+under a versioned path (<code>/&lt;tag&gt;/</code> plus <code>/latest/</code>) on every release tag.</p>
+<p>To exercise the action entrypoint locally:</p>
+<pre class="code sh"><code class="sh">GITHUB_WORKSPACE=&quot;$(pwd)&quot; \
+  INPUT_XCODE_PROJECT_PATH=spec/support/fixtures/UpToNextMajor.xcodeproj \
+  bundle exec ruby lib/action.rb
+</code></pre>
+<p>For manifest mode:</p>
+<pre class="code sh"><code class="sh">GITHUB_WORKSPACE=&quot;$(pwd)&quot; \
+  INPUT_PACKAGE_MANIFEST_PATHS=&quot;spec/support/manifests/Modules/Package.swift&quot; \
+  bundle exec ruby lib/action.rb
+</code></pre>
+<h2 id="Upgrade_checklist">Upgrade checklist</h2>
+<ol>
+<li>Update CI to Ruby 3.2 or newer.</li>
+<li>Decide whether to keep the Danger plugin or move to the GitHub Action.</li>
+<li>If using the action, add <code>permissions: contents: read</code> and
+<code>pull-requests: write</code>.</li>
+<li>Configure exactly one source mode: <code>xcode-project-path</code> or
+<code>package-manifest-paths</code>.</li>
+<li>Translate old Danger settings to action inputs if you moved to the action.</li>
+<li>Add <code>allow-hosts</code> for untrusted PR workflows or locked-down runners.</li>
+<li>Update downstream workflow logic to read the new step outputs.</li>
+<li>Use <code>always()</code> on downstream output-reading steps when <code>fail-on</code> or
+<code>fail-on-updates</code> can fail the action.</li>
+<li>Run the workflow once on a branch and confirm the PR comment, step summary,
+annotations, and outputs match your expectations.</li>
+</ol></div></div>
+
+      <div id="footer">
+  Generated on Fri Jun 12 16:06:59 2026 by
+  <a href="https://yardoc.org" title="Yay! A Ruby Documentation Tool" target="_parent">yard</a>
+  0.9.44 (ruby-3.3.11).
+</div>
+
+    </div>
+  </body>
+</html>

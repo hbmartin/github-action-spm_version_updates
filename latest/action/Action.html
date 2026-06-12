@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>
+  Class: Action
+  
+    &mdash; spm_version_updates (GitHub Action runner)
+  
+</title>
+
+  <link rel="stylesheet" href="css/style.css" type="text/css">
+
+  <link rel="stylesheet" href="css/common.css" type="text/css">
+
+<script type="text/javascript">
+  pathId = "Action";
+  relpath = '';
+</script>
+
+
+  <script type="text/javascript" charset="utf-8" src="js/jquery.js"></script>
+
+  <script type="text/javascript" charset="utf-8" src="js/app.js"></script>
+
+
+  </head>
+  <body>
+    <div id="main_progress" aria-hidden="true"></div>
+
+    <div class="nav_wrap">
+      <iframe id="nav" src="class_list.html?1"></iframe>
+      <div id="resizer"></div>
+    </div>
+
+    <div id="main" tabindex="-1">
+      <div id="header">
+        <div id="menu">
+  
+    <a href="_index.html">Index (A)</a> &raquo;
+    
+    
+    <span class="title">Action</span>
+  
+</div>
+
+        <div id="search">
+  
+    <a class="full_list_link" id="class_list_link"
+        href="class_list.html">
+
+        <svg width="24" height="24">
+          <rect x="0" y="4" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="12" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="20" width="24" height="4" rx="1" ry="1"></rect>
+        </svg>
+    </a>
+  
+</div>
+        <div class="clear"></div>
+      </div>
+
+      <div id="content"><h1>Class: Action
+  
+  
+  
+</h1>
+<div class="box_info">
+  
+  <dl>
+    <dt>Inherits:</dt>
+    <dd>
+      <span class="inheritName">Object</span>
+      
+        <ul class="fullTree">
+          <li>Object</li>
+          
+            <li class="next">Action</li>
+          
+        </ul>
+        <a href="#" class="inheritanceTree">show all</a>
+      
+    </dd>
+  </dl>
+  
+
+  
+  
+  
+  
+  
+
+  
+
+  
+  <dl>
+    <dt>Defined in:</dt>
+    <dd>action/lib/action.rb
+</dd>
+  </dl>
+  
+</div>
+
+<h2>Overview</h2><div class="docstring">
+  <div class="discussion">
+    <p>Main GitHub Action entry point.</p>
+<p>Inputs are read from the environment (see <code>action.yml</code>). The action runs in
+one of two mutually exclusive source modes:</p>
+<pre class="code ruby"><code class="ruby">* Xcode project mode    - `xcode-project-path`
+* Swift manifest mode    - `package-manifest-paths` (+ optional
+                         `package-resolved-paths`)</code></pre>
+
+  </div>
+</div>
+<div class="tags">
+  
+
+</div><h2>Defined Under Namespace</h2>
+<p class="children">
+  
+    
+  
+    
+      <strong class="classes">Classes:</strong> <span class='object_link'><a href="Action/ModeError.html" title="Action::ModeError (class)">ModeError</a></span>
+    
+  
+</p>
+
+
+
+
+
+
+
+  
+    <h2>
+      Instance Method Summary
+      <small><a href="#" class="summary_toggle">collapse</a></small>
+    </h2>
+
+    <ul class="summary">
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#initialize-instance_method" title="#initialize (instance method)">#<strong>initialize</strong>(reporter_sink: nil, checker_factory: SpmChecker, github_integration: nil)  &#x21d2; Action </a>
+    
+
+    
+  </span>
+  
+  
+    <span class="note title constructor">constructor</span>
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>A new instance of Action.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#run-instance_method" title="#run (instance method)">#<strong>run</strong>  &#x21d2; Object </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'></div></span>
+  
+</li>
+
+      
+    </ul>
+    
+  
+
+<div id="constructor_details" class="method_details_list">
+  <h2>Constructor Details</h2>
+  
+    <div class="method_details first">
+  <h3 class="signature first" id="initialize-instance_method">
+  
+    #<strong>initialize</strong>(reporter_sink: nil, checker_factory: SpmChecker, github_integration: nil)  &#x21d2; <tt><span class='object_link'><a href="" title="Action (class)">Action</a></span></tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Returns a new instance of Action.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+109
+110
+111
+112</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'action/lib/action.rb', line 109</span>
+
+<span class='kw'>def</span> <span class='id identifier rubyid_initialize'>initialize</span><span class='lparen'>(</span><span class='label'>reporter_sink:</span> <span class='kw'>nil</span><span class='comma'>,</span> <span class='label'>checker_factory:</span> <span class='const'>SpmChecker</span><span class='comma'>,</span> <span class='label'>github_integration:</span> <span class='kw'>nil</span><span class='rparen'>)</span>
+  <span class='ivar'>@reporter_sink</span> <span class='op'>=</span> <span class='lbracket'>[</span><span class='id identifier rubyid_reporter_sink'>reporter_sink</span><span class='comma'>,</span> <span class='id identifier rubyid_github_integration'>github_integration</span><span class='rbracket'>]</span><span class='period'>.</span><span class='id identifier rubyid_find'>find</span> <span class='lbrace'>{</span> <span class='op'>|</span><span class='id identifier rubyid_sink'>sink</span><span class='op'>|</span> <span class='id identifier rubyid_sink'>sink</span> <span class='rbrace'>}</span> <span class='op'>||</span> <span class='const'><span class='object_link'><a href="GithubIntegration.html" title="GithubIntegration (class)">GithubIntegration</a></span></span><span class='period'>.</span><span class='id identifier rubyid_new'><span class='object_link'><a href="GithubIntegration.html#initialize-instance_method" title="GithubIntegration#initialize (method)">new</a></span></span>
+  <span class='ivar'>@checker_factory</span> <span class='op'>=</span> <span class='id identifier rubyid_checker_factory'>checker_factory</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+  
+</div>
+
+
+  <div id="instance_method_details" class="method_details_list">
+    <h2>Instance Method Details</h2>
+
+    
+      <div class="method_details first">
+  <h3 class="signature first" id="run-instance_method">
+  
+    #<strong>run</strong>  &#x21d2; <tt>Object</tt> 
+  
+
+  
+
+  
+</h3><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+114
+115
+116
+117
+118
+119
+120
+121
+122
+123
+124
+125
+126
+127
+128
+129
+130
+131
+132
+133
+134
+135
+136
+137
+138
+139
+140
+141
+142
+143
+144
+145
+146
+147
+148
+149</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'action/lib/action.rb', line 114</span>
+
+<span class='kw'>def</span> <span class='id identifier rubyid_run'>run</span>
+  <span class='id identifier rubyid_inputs'>inputs</span> <span class='op'>=</span> <span class='id identifier rubyid_read_inputs'>read_inputs</span>
+  <span class='const'>ConfigPrinter</span><span class='period'>.</span><span class='id identifier rubyid_new'>new</span><span class='lparen'>(</span><span class='id identifier rubyid_inputs'>inputs</span><span class='rparen'>)</span><span class='period'>.</span><span class='id identifier rubyid_print'>print</span>
+  <span class='ivar'>@reporter_sink</span><span class='period'>.</span><span class='id identifier rubyid_configure'>configure</span><span class='lparen'>(</span><span class='id identifier rubyid_inputs'>inputs</span><span class='rparen'>)</span>
+  <span class='id identifier rubyid_move_to_workspace'>move_to_workspace</span>
+
+  <span class='id identifier rubyid_checker'>checker</span> <span class='op'>=</span> <span class='id identifier rubyid_configure_checker'>configure_checker</span><span class='lparen'>(</span><span class='id identifier rubyid_inputs'>inputs</span><span class='rparen'>)</span>
+  <span class='id identifier rubyid_warnings'>warnings</span> <span class='op'>=</span> <span class='id identifier rubyid_run_checks'>run_checks</span><span class='lparen'>(</span><span class='id identifier rubyid_checker'>checker</span><span class='comma'>,</span> <span class='id identifier rubyid_inputs'>inputs</span><span class='rparen'>)</span>
+  <span class='id identifier rubyid_warning_details'>warning_details</span> <span class='op'>=</span> <span class='id identifier rubyid_checker'>checker</span><span class='period'>.</span><span class='id identifier rubyid_warning_details'>warning_details</span>
+  <span class='id identifier rubyid_reporter'>reporter</span> <span class='op'>=</span> <span class='id identifier rubyid_report'>report</span><span class='lparen'>(</span><span class='id identifier rubyid_warnings'>warnings</span><span class='comma'>,</span> <span class='id identifier rubyid_warning_details'>warning_details</span><span class='comma'>,</span> <span class='label'>comment:</span> <span class='id identifier rubyid_inputs'>inputs</span><span class='lbracket'>[</span><span class='symbol'>:comment</span><span class='rbracket'>]</span><span class='comma'>,</span> <span class='label'>comment_on_success:</span> <span class='id identifier rubyid_inputs'>inputs</span><span class='lbracket'>[</span><span class='symbol'>:comment_on_success</span><span class='rbracket'>]</span><span class='rparen'>)</span>
+  <span class='id identifier rubyid_failure_message'>failure_message</span> <span class='op'>=</span> <span class='const'>FailOnThreshold</span><span class='period'>.</span><span class='id identifier rubyid_failure_message'>failure_message</span><span class='lparen'>(</span><span class='id identifier rubyid_inputs'>inputs</span><span class='lbracket'>[</span><span class='symbol'>:fail_on</span><span class='rbracket'>]</span><span class='comma'>,</span> <span class='id identifier rubyid_reporter'>reporter</span><span class='rparen'>)</span>
+  <span class='id identifier rubyid_fail_with'>fail_with</span><span class='lparen'>(</span><span class='id identifier rubyid_failure_message'>failure_message</span><span class='rparen'>)</span> <span class='kw'>if</span> <span class='id identifier rubyid_failure_message'>failure_message</span>
+
+  <span class='id identifier rubyid_puts'>puts</span><span class='lparen'>(</span><span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>SPM version check completed successfully!</span><span class='tstring_end'>&quot;</span></span><span class='rparen'>)</span>
+<span class='kw'>rescue</span> <span class='const'><span class='object_link'><a href="Action/ModeError.html" title="Action::ModeError (class)">ModeError</a></span></span> <span class='op'>=&gt;</span> <span class='id identifier rubyid_error'>error</span>
+  <span class='id identifier rubyid_fail_with_error'>fail_with_error</span><span class='lparen'>(</span><span class='id identifier rubyid_error'>error</span><span class='rparen'>)</span>
+<span class='kw'>rescue</span> <span class='const'>XcodeParser</span><span class='op'>::</span><span class='const'>XcodeprojPathMustBeSet</span>
+  <span class='id identifier rubyid_fail_with'>fail_with</span><span class='lparen'>(</span><span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>Invalid Xcode project path</span><span class='tstring_end'>&quot;</span></span><span class='rparen'>)</span>
+<span class='kw'>rescue</span> <span class='const'>XcodeParser</span><span class='op'>::</span><span class='const'>CouldNotFindResolvedFile</span>
+  <span class='id identifier rubyid_fail_with'>fail_with</span><span class='lparen'>(</span><span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>Could not find a Package.resolved file for the Xcode project</span><span class='tstring_end'>&quot;</span></span><span class='rparen'>)</span>
+<span class='kw'>rescue</span> <span class='const'>ManifestParser</span><span class='op'>::</span><span class='const'>CouldNotFindManifest</span> <span class='op'>=&gt;</span> <span class='id identifier rubyid_error'>error</span>
+  <span class='id identifier rubyid_fail_with'>fail_with</span><span class='lparen'>(</span><span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>Could not find Package.swift manifest: </span><span class='embexpr_beg'>#{</span><span class='id identifier rubyid_error'>error</span><span class='period'>.</span><span class='id identifier rubyid_message'>message</span><span class='embexpr_end'>}</span><span class='tstring_end'>&quot;</span></span><span class='rparen'>)</span>
+<span class='kw'>rescue</span> <span class='const'>ManifestParser</span><span class='op'>::</span><span class='const'>CouldNotFindResolvedFile</span> <span class='op'>=&gt;</span> <span class='id identifier rubyid_error'>error</span>
+  <span class='id identifier rubyid_fail_with'>fail_with</span><span class='lparen'>(</span>
+    <span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>Could not find any Package.resolved file (looked in: </span><span class='embexpr_beg'>#{</span><span class='id identifier rubyid_error'>error</span><span class='period'>.</span><span class='id identifier rubyid_message'>message</span><span class='embexpr_end'>}</span><span class='tstring_content'>). </span><span class='tstring_end'>&quot;</span></span> \
+    <span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>Commit a Package.resolved next to each manifest or set package-resolved-paths.</span><span class='tstring_end'>&quot;</span></span>
+  <span class='rparen'>)</span>
+<span class='kw'>rescue</span> <span class='const'>PackageResolved</span><span class='op'>::</span><span class='const'>MalformedFileError</span> <span class='op'>=&gt;</span> <span class='id identifier rubyid_error'>error</span>
+  <span class='id identifier rubyid_fail_with'>fail_with</span><span class='lparen'>(</span><span class='tstring'><span class='tstring_beg'>&quot;</span><span class='embexpr_beg'>#{</span><span class='id identifier rubyid_error'>error</span><span class='period'>.</span><span class='id identifier rubyid_message'>message</span><span class='embexpr_end'>}</span><span class='tstring_content'>. Fix or regenerate this Package.resolved file.</span><span class='tstring_end'>&quot;</span></span><span class='rparen'>)</span>
+<span class='kw'>rescue</span> <span class='const'>SpmChecker</span><span class='op'>::</span><span class='const'>DisallowedRepositoryHost</span> <span class='op'>=&gt;</span> <span class='id identifier rubyid_error'>error</span>
+  <span class='const'><span class='object_link'><a href="ActionReporter.html" title="ActionReporter (class)">ActionReporter</a></span></span><span class='op'>::</span><span class='const'><span class='object_link'><a href="ActionReporter/BlockedReport.html" title="ActionReporter::BlockedReport (class)">BlockedReport</a></span></span><span class='period'>.</span><span class='id identifier rubyid_write'><span class='object_link'><a href="ActionReporter/BlockedReport.html#write-class_method" title="ActionReporter::BlockedReport.write (method)">write</a></span></span><span class='lparen'>(</span><span class='id identifier rubyid_error'>error</span><span class='period'>.</span><span class='id identifier rubyid_message'>message</span><span class='rparen'>)</span>
+  <span class='id identifier rubyid_fail_with_error'>fail_with_error</span><span class='lparen'>(</span><span class='id identifier rubyid_error'>error</span><span class='rparen'>)</span>
+<span class='kw'>rescue</span> <span class='const'>StandardError</span> <span class='op'>=&gt;</span> <span class='id identifier rubyid_error'>error</span>
+  <span class='id identifier rubyid_puts'>puts</span><span class='lparen'>(</span><span class='id identifier rubyid_error'>error</span><span class='period'>.</span><span class='id identifier rubyid_backtrace'>backtrace</span><span class='rparen'>)</span> <span class='kw'>if</span> <span class='const'>ENV</span><span class='period'>.</span><span class='id identifier rubyid_fetch'>fetch</span><span class='lparen'>(</span><span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>DEBUG</span><span class='tstring_end'>&quot;</span></span><span class='comma'>,</span> <span class='kw'>nil</span><span class='rparen'>)</span>
+  <span class='id identifier rubyid_fail_with_error'>fail_with_error</span><span class='lparen'>(</span><span class='id identifier rubyid_error'>error</span><span class='rparen'>)</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+  </div>
+
+</div>
+
+      <div id="footer">
+  Generated on Fri Jun 12 16:07:02 2026 by
+  <a href="https://yardoc.org" title="Yay! A Ruby Documentation Tool" target="_parent">yard</a>
+  0.9.44 (ruby-3.3.11).
+</div>
+
+    </div>
+  </body>
+</html>

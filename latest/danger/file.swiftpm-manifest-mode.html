@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>
+  File: swiftpm-manifest-mode
+  
+    &mdash; danger-spm_version_updates (Danger plugin)
+  
+</title>
+
+  <link rel="stylesheet" href="css/style.css" type="text/css">
+
+  <link rel="stylesheet" href="css/common.css" type="text/css">
+
+<script type="text/javascript">
+  pathId = "swiftpm-manifest-mode";
+  relpath = '';
+</script>
+
+
+  <script type="text/javascript" charset="utf-8" src="js/jquery.js"></script>
+
+  <script type="text/javascript" charset="utf-8" src="js/app.js"></script>
+
+
+  </head>
+  <body>
+    <div id="main_progress" aria-hidden="true"></div>
+
+    <div class="nav_wrap">
+      <iframe id="nav" src="file_list.html?1"></iframe>
+      <div id="resizer"></div>
+    </div>
+
+    <div id="main" tabindex="-1">
+      <div id="header">
+        <div id="menu">
+  
+    <a href="_index.html">Index</a> &raquo; 
+    <span class="title">File: swiftpm-manifest-mode</span>
+  
+</div>
+
+        <div id="search">
+  
+    <a class="full_list_link" id="class_list_link"
+        href="class_list.html">
+
+        <svg width="24" height="24">
+          <rect x="0" y="4" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="12" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="20" width="24" height="4" rx="1" ry="1"></rect>
+        </svg>
+    </a>
+  
+</div>
+        <div class="clear"></div>
+      </div>
+
+      <div id="content"><div id='filecontents'><h1 id="SwiftPM_first_projects__Swift_package_manifest_mode">SwiftPM-first projects: Swift package manifest mode</h1>
+<p>A usage and migration guide for repositories whose Swift Package Manager
+dependencies live in <code>Package.swift</code> manifests rather than as
+<code>XCRemoteSwiftPackageReference</code> objects inside an <code>.xcodeproj</code>.</p>
+<p>If your app still builds through an Xcode project but the <strong>source of truth for
+dependencies</strong> is one or more <code>Package.swift</code> files, this guide is for you.</p>
+<h2 id="The_scenario">The scenario</h2>
+<p>A typical modular iOS repo looks like this:</p>
+<pre class="code text"><code class="text">podcasts.xcodeproj/
+Modules/Package.swift
+Modules/Package.resolved
+BuildTools/Package.swift
+BuildTools/Package.resolved
+</code></pre>
+<p>The main <code>podcasts.xcodeproj</code> has an empty <code>packageReferences</code> section — the real
+dependencies are declared in <code>Modules/Package.swift</code> and <code>BuildTools/Package.swift</code>,
+and the resolved pins live in the <code>Package.resolved</code> file next to each manifest.</p>
+<p>Pointing the action at <code>podcasts.xcodeproj</code> in this layout doesn't work well: the
+<code>.xcodeproj</code> owns no remote package references, so the action finds nothing to
+check. If an Xcode-adjacent <code>Package.resolved</code> exists, the action logs a warning
+that the project may need manifest mode; otherwise <code>Package.resolved</code> is not in
+any Xcode-adjacent workspace location.</p>
+<h2 id="TL_DR___the_workflow_you_want">TL;DR — the workflow you want</h2>
+<pre class="code yaml"><code class="yaml">name: Swift Package Version Updates
+
+on:
+  pull_request:
+    paths:
+      - &quot;Modules/Package.swift&quot;
+      - &quot;Modules/Package.resolved&quot;
+      - &quot;BuildTools/Package.swift&quot;
+      - &quot;BuildTools/Package.resolved&quot;
+      - &quot;.github/workflows/spm-version-updates.yml&quot;
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  spm-version-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hbmartin/github-action-spm_version_updates@v1
+        with:
+          package-manifest-paths: |
+            Modules/Package.swift
+            BuildTools/Package.swift
+          report-above-maximum: true
+</code></pre>
+<p>No temporary Xcode project. No synthetic <code>Package.resolved</code>. No repo-specific
+parser. No macOS runner — manifest parsing is pure Ruby and runs on
+<code>ubuntu-latest</code> without a Swift or Xcode toolchain. Manifest mode also skips the
+<code>xcodeproj</code> runtime dependency during action setup.</p>
+<h3 id="Fork_pull_requests">Fork pull requests</h3>
+<p>Fork PRs need extra care if you switch the trigger to <code>pull_request_target</code> so
+the action can write a summary comment. With that trigger, checking out the PR
+head makes <code>Package.swift</code> untrusted input: a malicious fork can change package
+URLs, and this action will ask <code>git ls-remote</code> to contact those remotes over
+Git's <code>https</code>, <code>ssh</code>, or <code>git</code> transports. <code>file</code>, <code>ext</code>, and remote-helper
+transports are blocked. Keep checkout credentials off, avoid extra secrets or
+SSH keys, and set <code>allow-hosts</code> to the git hosts your manifests are expected to
+use:</p>
+<pre class="code yaml"><code class="yaml">on:
+  pull_request_target:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  spm-version-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: hbmartin/github-action-spm_version_updates@v1
+        with:
+          package-manifest-paths: Modules/Package.swift
+          allow-hosts: github.com
+</code></pre>
+<h2 id="Migrating_from_the_synthetic___xcodeproj__workaround">Migrating from the synthetic-<code>.xcodeproj</code> workaround</h2>
+<p>Before manifest mode existed, repos in this layout had to bridge the gap with a CI
+helper that would:</p>
+<ol>
+<li>read <code>Modules/Package.swift</code> and <code>BuildTools/Package.swift</code>,</li>
+<li>extract the <code>.package(...)</code> declarations,</li>
+<li>generate a temporary <code>.xcodeproj</code>,</li>
+<li>inject synthetic <code>XCRemoteSwiftPackageReference</code> objects,</li>
+<li>merge both <code>Package.resolved</code> files, and</li>
+<li>write the merged file to a path the action understood, e.g.
+<code>.spm-version-updates/PackageChecks.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved</code>.</li>
+</ol>
+<p>The action now does all of this natively, so that adapter can be deleted.</p>
+<p><strong>Migration steps:</strong></p>
+<ol>
+<li>
+<p><strong>Switch the action inputs.</strong> Replace <code>xcode-project-path:</code> (pointed at the
+generated project) with <code>package-manifest-paths:</code> listing your real manifests:</p>
+<pre class="code diff"><code class="diff">     - uses: hbmartin/github-action-spm_version_updates@v1
+       with:
+-        xcode-project-path: .spm-version-updates/PackageChecks.xcodeproj
++        package-manifest-paths: |
++          Modules/Package.swift
++          BuildTools/Package.swift
+</code></pre>
+</li>
+<li>
+<p><strong>Delete the generator step</strong> from your workflow (the step that built the
+synthetic project before invoking the action).</p>
+</li>
+<li>
+<p><strong>Delete the helper script and its output</strong> from the repo, e.g. the
+<code>.spm-version-updates/</code> directory and any committed <code>PackageChecks.xcodeproj</code>.
+Add <code>.spm-version-updates/</code> to <code>.gitignore</code> if it was ever generated locally.</p>
+</li>
+<li>
+<p><strong>Update the <code>on.pull_request.paths</code> filter</strong> to watch the manifests and
+resolved files directly (see the workflow above) instead of the generated
+project.</p>
+</li>
+</ol>
+<p>That's the whole migration — everything else (constraint handling, PR comment
+formatting) behaves the same.</p>
+<h2 id="How__Package_resolved__is_located">How <code>Package.resolved</code> is located</h2>
+<p>By default, the action reads the <code>Package.resolved</code> that sits <strong>next to each
+manifest</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Manifest</th>
+<th>Inferred resolved file</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Modules/Package.swift</code></td>
+<td><code>Modules/Package.resolved</code></td>
+</tr>
+<tr>
+<td><code>BuildTools/Package.swift</code></td>
+<td><code>BuildTools/Package.resolved</code></td>
+</tr>
+</tbody>
+</table>
+<p>Every expected resolved file <strong>must exist</strong> — if one is missing the action fails
+and names the missing file, rather than silently producing incomplete results.</p>
+<p>If your resolved files live elsewhere, list them explicitly with
+<code>package-resolved-paths</code>:</p>
+<pre class="code yaml"><code class="yaml">        with:
+          package-manifest-paths: |
+            Modules/Package.swift
+            BuildTools/Package.swift
+          package-resolved-paths: |
+            Modules/Package.resolved
+            BuildTools/Package.resolved
+</code></pre>
+<p>Pins from every resolved file are merged into a single lookup keyed by normalized
+repository URL, so a dependency declared in one manifest will match its pin
+wherever it is recorded.</p>
+<h2 id="Supported___package_______declaration_forms">Supported <code>.package(...)</code> declaration forms</h2>
+<p>Manifests are parsed with a lightweight scanner that understands the common
+SwiftPM forms:</p>
+<pre class="code swift"><code class="swift">.package(url: &quot;https://github.com/foo/bar&quot;, from: &quot;1.2.3&quot;)
+.package(url: &quot;https://github.com/foo/bar&quot;, exact: &quot;1.2.3&quot;)
+.package(url: &quot;https://github.com/foo/bar&quot;, branch: &quot;main&quot;)
+.package(url: &quot;https://github.com/foo/bar&quot;, revision: &quot;abcdef&quot;)
+.package(url: &quot;https://github.com/foo/bar&quot;, &quot;1.0.0&quot;..&lt;&quot;2.0.0&quot;)
+.package(url: &quot;https://github.com/foo/bar&quot;, &quot;1.0.0&quot;...&quot;2.0.0&quot;)
+.package(url: &quot;https://github.com/foo/bar&quot;, .upToNextMajor(from: &quot;1.2.3&quot;))
+.package(url: &quot;https://github.com/foo/bar&quot;, .upToNextMinor(from: &quot;1.2.3&quot;))
+.package(url: &quot;https://github.com/foo/bar&quot;, .exact(&quot;1.2.3&quot;))
+</code></pre>
+<p>Notes:</p>
+<ul>
+<li>Local packages (<code>.package(path: ...)</code>) and any declarations inside <code>//</code> or
+<code>/* */</code> comments (including nested block comments) are ignored.</li>
+<li>A closed range <code>&quot;1.0.0&quot;...&quot;2.0.0&quot;</code> is normalized the same way SwiftPM does — to
+the half-open range <code>&quot;1.0.0&quot;..&lt;&quot;2.0.1&quot;</code> — so the inclusive upper bound is
+preserved.</li>
+</ul>
+<h2 id="How_each_constraint_is_handled">How each constraint is handled</h2>
+<table>
+<thead>
+<tr>
+<th>Constraint</th>
+<th>Manifest form</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Up to next major</td>
+<td><code>from:</code> / <code>.upToNextMajor(from:)</code></td>
+<td>Reports newer versions within the same major version.</td>
+</tr>
+<tr>
+<td>Up to next minor</td>
+<td><code>.upToNextMinor(from:)</code></td>
+<td>Reports newer versions within the same major <strong>and</strong> minor version.</td>
+</tr>
+<tr>
+<td>Version range</td>
+<td><code>&quot;1.0.0&quot;..&lt;&quot;2.0.0&quot;</code></td>
+<td>Reports newer versions below the maximum.</td>
+</tr>
+<tr>
+<td>Exact</td>
+<td><code>exact:</code> / <code>.exact(...)</code></td>
+<td>Skipped unless <code>check-when-exact: true</code>.</td>
+</tr>
+<tr>
+<td>Branch</td>
+<td><code>branch:</code> / <code>.branch(...)</code></td>
+<td>Reports newer commits on the branch unless <code>check-branches: false</code>.</td>
+</tr>
+<tr>
+<td>Revision</td>
+<td><code>revision:</code> / <code>.revision(...)</code></td>
+<td>Skipped unless <code>check-revisions: true</code>. A pinned commit has no general &quot;newer&quot; version, so when enabled the action only reports the latest tagged release for reference.</td>
+</tr>
+</tbody>
+</table>
+<p>A mix of <code>from</code>, <code>branch</code>, <code>revision</code>, and <code>exact</code> constraints in the same repo is
+fully supported. Toggle the relevant behaviors explicitly:</p>
+<pre class="code yaml"><code class="yaml">        with:
+          package-manifest-paths: |
+            Modules/Package.swift
+            BuildTools/Package.swift
+          check-when-exact: false
+          check-branches: true
+          check-revisions: false
+</code></pre>
+<p>When <code>report-above-maximum: true</code>, the action additionally surfaces the newest
+version that exists <em>above</em> your constraint (for example a new major release your
+<code>from:</code>/range would not pick up). Pre-release versions are excluded from reports
+unless you set <code>report-pre-releases: true</code>.</p>
+<h2 id="Multiple_manifests_and_source_attribution">Multiple manifests and source attribution</h2>
+<p>When you pass more than one manifest, every warning is annotated with the manifest
+it came from, so you know exactly where to make the change:</p>
+<pre class="code text"><code class="text">⚠️ Found 2 potential dependency updates:
+
+1. Newer version of onevcat/Kingfisher: 8.0.0
+   Source: Modules/Package.swift
+2. Newer version of SwiftGen/SwiftGenPlugin: 6.7.0
+   Source: BuildTools/Package.swift
+</code></pre>
+<p>(The <code>Source:</code> line appears only in manifest mode.)</p>
+<h2 id="Configuration_reference">Configuration reference</h2>
+<table>
+<thead>
+<tr>
+<th>Input</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>package-manifest-paths</code></td>
+<td>Newline-separated list of <code>Package.swift</code> paths. Provide this <strong>or</strong> <code>xcode-project-path</code>.</td>
+<td></td>
+</tr>
+<tr>
+<td><code>package-resolved-paths</code></td>
+<td>Optional newline-separated list of <code>Package.resolved</code> paths. Defaults to a <code>Package.resolved</code> next to each manifest.</td>
+<td>inferred</td>
+</tr>
+<tr>
+<td><code>xcode-project-path</code></td>
+<td>Path to an <code>.xcodeproj</code> (classic mode). Provide this <strong>or</strong> <code>package-manifest-paths</code>.</td>
+<td></td>
+</tr>
+<tr>
+<td><code>check-when-exact</code></td>
+<td>Check for updates even when using <code>exact</code> constraints.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>check-branches</code></td>
+<td>Check for newer commits on branch-pinned dependencies.</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>check-revisions</code></td>
+<td>Report the latest tagged version for revision-pinned dependencies.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>report-above-maximum</code></td>
+<td>Report versions above the maximum constraint range.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>report-pre-releases</code></td>
+<td>Include pre-release versions in update reports.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>ignore-repos</code></td>
+<td>Comma-separated list of repository URLs to ignore.</td>
+<td><code>''</code></td>
+</tr>
+<tr>
+<td><code>repo-rules-path</code></td>
+<td>Path to a YAML file with per-repository semantic update suppression rules.</td>
+<td><code>''</code></td>
+</tr>
+<tr>
+<td><code>allow-hosts</code></td>
+<td>Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. A blocked lookup fails the action and writes <code>blocked=true</code> plus <code>error-message</code>.</td>
+<td><code>''</code></td>
+</tr>
+<tr>
+<td><code>comment</code></td>
+<td>Post or update the pull request comment. Set <code>false</code> to disable all PR commenting while keeping outputs, the step summary, and annotations.</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>comment-on-success</code></td>
+<td>Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>open-tracking-issue</code></td>
+<td>On runs without a pull request context, open or update one tracking issue with the update report, and close it once dependencies are up to date. Requires <code>issues: write</code>.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>cache-version-tags</code></td>
+<td>Persist successful git tag lookups between runs with <code>actions/cache</code>.</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>version-tags-cache-ttl</code></td>
+<td>Freshness window, in seconds, for persisted git tag lookups. Set <code>0</code> to disable persistent cache reads and writes.</td>
+<td><code>21600</code></td>
+</tr>
+<tr>
+<td><code>setup-ruby</code></td>
+<td>Set up Ruby and install this action's bundle. Set to <code>false</code> only for later invocations in the same job after an earlier invocation has already run setup.</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>github-token</code></td>
+<td>GitHub token for posting the PR comment.</td>
+<td><code>${{ github.token }}</code></td>
+</tr>
+</tbody>
+</table>
+<p>Provide <strong>exactly one</strong> of <code>package-manifest-paths</code> or <code>xcode-project-path</code>.
+Supplying both (or neither) fails with a clear error.</p>
+<p>When invoking the action more than once in a job, keep <code>setup-ruby</code> enabled on
+the first invocation and use <code>setup-ruby: false</code> on later manifest-mode
+invocations to avoid repeating Ruby setup and Bundler cache work.</p>
+<h3 id="Per_repository_rules">Per-repository rules</h3>
+<p><code>ignore-repos</code> still skips a dependency entirely before lookup. For dependencies
+that should still be checked but should not report selected semantic updates, set
+<code>repo-rules-path</code> to a YAML file:</p>
+<pre class="code yaml"><code class="yaml">repositories:
+  - url: &quot;https://github.com/example/noise&quot;
+    ignore-until: &quot;2.0.0&quot;
+
+  - url: &quot;https://github.com/example/no-major&quot;
+    allowed-updates: &quot;minor&quot;
+</code></pre>
+<p><code>ignore-until</code> reports version X and newer, while suppressing lower available
+versions. <code>allowed-updates: minor</code> allows patch and minor reports but suppresses
+major reports. Rules apply only to semantic <code>version</code> and <code>above_maximum</code>
+reports; branch and revision reports use their existing controls.</p>
+<h2 id="Using_the_Danger_plugin">Using the Danger plugin</h2>
+<p>Manifest mode is also available in the <a href="https://rubygems.org/gems/danger-spm_version_updates"><code>danger-spm_version_updates</code></a>
+plugin for repos that already run <a href="https://danger.systems/ruby/">Danger</a>:</p>
+<pre class="code ruby"><code class="ruby"><span class='id identifier rubyid_spm_version_updates'>spm_version_updates</span><span class='period'>.</span><span class='id identifier rubyid_check_manifests'>check_manifests</span><span class='lparen'>(</span><span class='lbracket'>[</span><span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>Modules/Package.swift</span><span class='tstring_end'>&quot;</span></span><span class='comma'>,</span> <span class='tstring'><span class='tstring_beg'>&quot;</span><span class='tstring_content'>BuildTools/Package.swift</span><span class='tstring_end'>&quot;</span></span><span class='rbracket'>]</span><span class='rparen'>)</span>
+</code></pre>
+<p><code>check_manifests</code> accepts a single path or a list, plus an optional second
+argument with explicit <code>Package.resolved</code> paths (by default a <code>Package.resolved</code>
+next to each manifest is used). Warnings include Compare/Releases links, the
+originating manifest, and a ready-to-run <code>swift package update</code> command. The
+plugin accessors mirror the action inputs of the same name; see the
+<a href="../README.md#danger-plugin">README</a>.</p>
+<h2 id="A_note_on_versioning">A note on versioning</h2>
+<p>Examples above pin to <code>@v1</code>. Pinning to the major tag means you automatically
+receive backward-compatible updates. You can also pin to an exact release (e.g.
+<code>@v1.0.0</code>) or to a commit SHA for maximum reproducibility.</p>
+<h2 id="Still_using_a_classic_Xcode_project_">Still using a classic Xcode project?</h2>
+<p>Manifest mode is purely additive. If your <code>.xcodeproj</code> directly owns its remote
+package references, keep using <code>xcode-project-path</code> — that mode is unchanged. See
+the main <a href="../README.md">README</a> for details on both modes.</p></div></div>
+
+      <div id="footer">
+  Generated on Fri Jun 12 16:07:01 2026 by
+  <a href="https://yardoc.org" title="Yay! A Ruby Documentation Tool" target="_parent">yard</a>
+  0.9.44 (ruby-3.3.11).
+</div>
+
+    </div>
+  </body>
+</html>

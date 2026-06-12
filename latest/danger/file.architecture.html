@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>
+  File: architecture
+  
+    &mdash; danger-spm_version_updates (Danger plugin)
+  
+</title>
+
+  <link rel="stylesheet" href="css/style.css" type="text/css">
+
+  <link rel="stylesheet" href="css/common.css" type="text/css">
+
+<script type="text/javascript">
+  pathId = "architecture";
+  relpath = '';
+</script>
+
+
+  <script type="text/javascript" charset="utf-8" src="js/jquery.js"></script>
+
+  <script type="text/javascript" charset="utf-8" src="js/app.js"></script>
+
+
+  </head>
+  <body>
+    <div id="main_progress" aria-hidden="true"></div>
+
+    <div class="nav_wrap">
+      <iframe id="nav" src="file_list.html?1"></iframe>
+      <div id="resizer"></div>
+    </div>
+
+    <div id="main" tabindex="-1">
+      <div id="header">
+        <div id="menu">
+  
+    <a href="_index.html">Index</a> &raquo; 
+    <span class="title">File: architecture</span>
+  
+</div>
+
+        <div id="search">
+  
+    <a class="full_list_link" id="class_list_link"
+        href="class_list.html">
+
+        <svg width="24" height="24">
+          <rect x="0" y="4" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="12" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="20" width="24" height="4" rx="1" ry="1"></rect>
+        </svg>
+    </a>
+  
+</div>
+        <div class="clear"></div>
+      </div>
+
+      <div id="content"><div id='filecontents'><h1 id="Architecture">Architecture</h1>
+<p>This repository ships one tool through two front ends, built on a shared core.
+It is organized as three layers, published as two gems plus a composite GitHub
+Action:</p>
+<pre class="code text"><code class="text">                ┌─────────────────────────────┐
+                │  GitHub Action (action/)    │
+                │  action.yml + action/lib    │
+                └──────────────┬──────────────┘
+                               │ depends on
+┌──────────────────────────┐   ▼
+│  Danger plugin gem       │  ┌──────────────────────────────┐
+│  danger-spm_version_     │─▶│  Core gem                    │
+│  updates (gems/danger-…) │  │  spm_version_updates         │
+└──────────────────────────┘  │  (gems/spm_version_updates)  │
+                              └──────────────────────────────┘
+</code></pre>
+<h2 id="Core_gem___spm_version_updates_">Core gem: <code>spm_version_updates</code></h2>
+<p>Location: <code>gems/spm_version_updates/</code>. Published to RubyGems as
+<a href="https://rubygems.org/gems/spm_version_updates"><code>spm_version_updates</code></a>.</p>
+<p>Pure dependency-checking logic with no Danger, Octokit, or GitHub Actions
+dependencies. CI enforces this layering: the core specs run in an isolated
+bundle that must load without any action or plugin gems present.</p>
+<p>Key components:</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SpmChecker</code></td>
+<td>Orchestrates a check run: reads packages, applies rules, fetches tags, classifies updates.</td>
+</tr>
+<tr>
+<td><code>ManifestParser</code></td>
+<td>Parses <code>.package(...)</code> declarations from <code>Package.swift</code> manifests.</td>
+</tr>
+<tr>
+<td><code>XcodeParser</code> / <code>XcodeProjectPackageReader</code></td>
+<td>Reads <code>XCRemoteSwiftPackageReference</code> dependencies from an <code>.xcodeproj</code> (loads <code>xcodeproj</code> lazily; it is optional).</td>
+</tr>
+<tr>
+<td><code>PackageResolved</code></td>
+<td>Reads pinned versions from <code>Package.resolved</code> (v1 and v2 formats).</td>
+</tr>
+<tr>
+<td><code>GitOperations</code></td>
+<td>Hardened <code>git ls-remote</code> lookups: no shell, protocol allow-list, bounded retries, credential redaction.</td>
+</tr>
+<tr>
+<td><code>SpmVersionUpdates::Semver</code></td>
+<td>Semver value object wrapping <code>semverify</code>.</td>
+</tr>
+<tr>
+<td><code>UpdateSeverity</code> / <code>FailOnThreshold</code></td>
+<td>Classifies updates as major/minor/patch and evaluates <code>fail-on</code> thresholds.</td>
+</tr>
+<tr>
+<td><code>RepositoryUpdateRules</code></td>
+<td>Per-repository YAML rules (<code>repo-rules-path</code>).</td>
+</tr>
+<tr>
+<td><code>RepositoryLink</code></td>
+<td>Compare/release links for GitHub, GitLab, and Bitbucket.</td>
+</tr>
+<tr>
+<td><code>VersionTagsPersistentCache</code></td>
+<td>Optional on-disk cache of tag lookups.</td>
+</tr>
+</tbody>
+</table>
+<p>Internal collaborators (<code>AllowHostNormalizer</code>, <code>GitHostNormalizer</code>,
+<code>VersionTagFetcher</code>) are tagged <code>@api private</code> and hidden from the published
+API docs.</p>
+<h2 id="Danger_plugin_gem___danger_spm_version_updates_">Danger plugin gem: <code>danger-spm_version_updates</code></h2>
+<p>Location: <code>gems/danger-spm_version_updates/</code>. Published to RubyGems as
+<a href="https://rubygems.org/gems/danger-spm_version_updates"><code>danger-spm_version_updates</code></a>,
+with a runtime dependency on the core gem.</p>
+<p><code>Danger::DangerSpmVersionUpdates</code> (<code>lib/spm_version_updates/plugin.rb</code>) exposes
+the Dangerfile API (<code>check_for_updates</code>, <code>check_manifests</code>, and the
+<code>check_when_exact</code>-style accessors) and delegates the actual checking to the
+core gem. Reporting goes through Danger's <code>warn</code>/<code>fail</code> messaging. The gem
+contains no checking logic of its own — the <code>Git</code>/<code>Xcode</code> helper modules from
+<code>v0.2.0</code> were removed in favor of the core gem's <code>GitOperations</code>,
+<code>XcodeParser</code>, and <code>XcodeProjectPackageReader</code>.</p>
+<h2 id="GitHub_Action_layer___action__">GitHub Action layer: <code>action/</code></h2>
+<p>Location: <code>action/lib/</code>, wired up by the repository-root <code>action.yml</code>
+(composite action). Not published as a gem — it is consumed by pinning the
+action ref, and its bundle installs the core gem from the in-repo path.</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Action</code> (<code>action.rb</code>)</td>
+<td>Entry point. Reads <code>INPUT_*</code> environment variables, validates the source mode (Xcode project vs Swift manifest), runs the core checker.</td>
+</tr>
+<tr>
+<td><code>ActionReporter</code></td>
+<td>Writes step outputs (<code>updates-found</code>, <code>updates-json</code>, …), the step summary, and workflow annotations.</td>
+</tr>
+<tr>
+<td><code>ReporterSink</code></td>
+<td>Interface for external report destinations (<code>publish_updates</code>, <code>publish_success</code>, <code>clear</code>, optional tracking-issue support).</td>
+</tr>
+<tr>
+<td><code>GithubIntegration</code></td>
+<td><code>ReporterSink</code> implementation that posts/updates/deletes the single generated PR comment via Octokit.</td>
+</tr>
+</tbody>
+</table>
+<p>New report destinations implement <code>ReporterSink</code> without touching the checker
+or the reporting flow.</p>
+<h2 id="Release_flow">Release flow</h2>
+<p>A <code>v*.*.*</code> tag triggers <code>push_gem.yml</code>, which releases the core gem first
+(waiting for it to propagate so the plugin gem's dependency resolves), then the
+Danger plugin gem. The floating major tag (e.g. <code>v1</code>) is moved only after both
+gems are live on RubyGems. The same tag also triggers <code>docs.yml</code>, which
+publishes per-layer API documentation to GitHub Pages.</p></div></div>
+
+      <div id="footer">
+  Generated on Fri Jun 12 16:07:01 2026 by
+  <a href="https://yardoc.org" title="Yay! A Ruby Documentation Tool" target="_parent">yard</a>
+  0.9.44 (ruby-3.3.11).
+</div>
+
+    </div>
+  </body>
+</html>
