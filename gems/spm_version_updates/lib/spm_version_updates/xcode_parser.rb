@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "errors"
 require_relative "git_operations"
 require_relative "package_resolved"
 require_relative "xcode_project_package_reader"
@@ -62,10 +63,16 @@ module XcodeParser
   private_class_method :find_packages_resolved_file
 
   # Raised when Xcode project mode is invoked without a project path.
-  class XcodeprojPathMustBeSet < StandardError
+  class XcodeprojPathMustBeSet < SpmVersionUpdates::ConfigurationError
+    def initialize(message = "Invalid Xcode project path")
+      super
+    end
   end
 
   # Raised when an Xcode project does not have a Package.resolved file.
-  class CouldNotFindResolvedFile < StandardError
+  class CouldNotFindResolvedFile < SpmVersionUpdates::FileNotFoundError
+    def initialize(message = "Could not find a Package.resolved file for the Xcode project")
+      super
+    end
   end
 end

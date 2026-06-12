@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "errors"
 require_relative "update_severity"
 
 # Parses fail-on inputs and evaluates whether reported updates should fail.
@@ -34,7 +35,7 @@ module FailOnThreshold
     return ANY if normalized == "true"
     return normalized if UpdateSeverity.threshold?(normalized)
 
-    raise(ArgumentError, "#{input_name} must be false, true, major, minor, or patch")
+    raise(SpmVersionUpdates::ConfigurationError, "#{input_name} must be false, true, major, minor, or patch")
   end
 
   def self.build_message(threshold, count)

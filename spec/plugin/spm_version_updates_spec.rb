@@ -189,6 +189,28 @@ module Danger
         expect_warnings
       end
 
+      it "Warns about declarations the manifest parser had to skip", :aggregate_failures do
+        stub_versions("1.5.0")
+
+        Dir.mktmpdir do |dir|
+          File.write(
+            File.join(dir, "Package.swift"),
+            '.package(url: "https://github.com/a/odd", futureRequirement: "1.0.0")'
+          )
+          File.write(File.join(dir, "Package.resolved"), '{ "pins" : [], "version" : 2 }')
+
+          @my_plugin.check_manifests(File.join(dir, "Package.swift"))
+        end
+
+        warnings = @dangerfile.status_report[:warnings]
+        expect(warnings.size).to eq(1)
+        expect(warnings.first).to include(
+          "Could not parse a `.package(...)` declaration",
+          "version requirement was not recognized",
+          "[open an issue](#{ParseWarning::ISSUE_URL}?"
+        )
+      end
+
       it "Reports new versions for ranges" do
         stub_versions("13.0.0", "12.1.6", "12.1.7")
 

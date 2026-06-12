@@ -2,9 +2,11 @@
 
 require_relative "allow_host_normalizer"
 require_relative "credential_redactor"
+require_relative "errors"
 require_relative "git_operations"
 require_relative "manifest_parser"
 require_relative "package_resolved"
+require_relative "parse_warning"
 require_relative "repository_update_rules"
 require_relative "semver"
 require_relative "spm_package_context"
@@ -18,12 +20,17 @@ class SpmChecker
   VERSION_TAG_WORKER_COUNT = 8
 
   # Raised when allow-hosts blocks a repository before git is contacted.
-  class DisallowedRepositoryHost < StandardError; end
+  class DisallowedRepositoryHost < SpmVersionUpdates::PolicyError; end
 
   # Structured facts about each warning, used by the GitHub Action comment
   # renderer. `check_for_updates` and `check_manifests` still return the legacy
   # string warnings for compatibility with existing plugin-style callers.
   attr_reader :warning_details
+
+  # ParseWarning records for `.package(...)` declarations the manifest parser
+  # had to skip. Kept separate from update warnings so reported update counts
+  # and fail-on thresholds are unaffected.
+  attr_reader :parse_warnings
 
   attr_accessor :allow_hosts,
                 :check_branches,
@@ -60,6 +67,7 @@ class SpmChecker
     @allow_hosts = []
     @warnings = []
     @warning_details = []
+    @parse_warnings = []
     @version_tags_cache = {}
     @version_tag_lookup_errors = {}
     @reported_lookup_failures = {}
@@ -110,7 +118,9 @@ class SpmChecker
     puts("Found resolved versions for #{resolved_versions.size} packages")
 
     manifest_paths.each { |manifest_path|
-      remote_packages = ManifestParser.get_packages(manifest_path)
+      remote_packages = ManifestParser.get_packages(manifest_path) { |skip|
+        record_parse_warning(skip, manifest_path)
+      }
       check_packages(remote_packages, resolved_versions, manifest_path)
     }
     @warnings
@@ -127,7 +137,7 @@ class SpmChecker
     @allow_hosts = raw_allow_hosts.filter_map { |host| AllowHostNormalizer.normalize(host) }
     return unless invalid_allow_hosts_configuration?(raw_allow_hosts)
 
-    raise(ArgumentError, "allow-hosts was configured, but no entries could be parsed as hostnames")
+    raise(SpmVersionUpdates::ConfigurationError, "allow-hosts was configured, but no entries could be parsed as hostnames")
   end
 
   def configured_allow_hosts
@@ -141,6 +151,13 @@ class SpmChecker
   def clear_warnings
     @warnings.clear
     @warning_details.clear
+    @parse_warnings.clear
+  end
+
+  def record_parse_warning(skip, manifest_path)
+    record = ParseWarning.record(**skip, source: manifest_path)
+    @parse_warnings << record
+    puts("WARNING: #{record['message']}")
   end
 
   def warn_for_empty_xcode_project(remote_packages, resolved_versions, xcodeproj_path)

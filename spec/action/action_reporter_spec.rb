@@ -176,6 +176,62 @@ RSpec.describe ActionReporter do
     end
   end
 
+  describe "parse warnings" do
+    let(:parse_warning) {
+      ParseWarning.record(
+        reason: "unrecognized_requirement",
+        source: "Modules/Package.swift",
+        snippet: 'url: "https://github.com/a/odd", futureRequirement: "1.0.0"'
+      )
+    }
+
+    it "counts parse warnings in GITHUB_OUTPUT without inflating update counts", :aggregate_failures do
+      Dir.mktmpdir do |dir|
+        output_file = File.join(dir, "output.txt")
+        reporter = described_class.new([], nil, [parse_warning])
+
+        quiet_write(reporter, "GITHUB_OUTPUT" => output_file, "GITHUB_STEP_SUMMARY" => nil)
+
+        content = File.read(output_file)
+        expect(content).to include("parse-warnings=1", "updates-found=0")
+        expect(output_json(output_file)).to eq([])
+      end
+    end
+
+    it "writes parse-warnings=0 when nothing was skipped" do
+      Dir.mktmpdir do |dir|
+        output_file = File.join(dir, "output.txt")
+
+        quiet_write(described_class.new([]), "GITHUB_OUTPUT" => output_file, "GITHUB_STEP_SUMMARY" => nil)
+
+        expect(File.read(output_file)).to include("parse-warnings=0")
+      end
+    end
+
+    it "renders a parse warnings section in the step summary", :aggregate_failures do
+      Dir.mktmpdir do |dir|
+        summary_file = File.join(dir, "summary.md")
+        reporter = described_class.new([], nil, [parse_warning])
+
+        quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
+
+        content = File.read(summary_file)
+        expect(content).to include("### Parse warnings")
+        expect(content).to include("Could not parse a `.package(...)` declaration in Modules/Package.swift")
+        expect(content).to include("Snippet: `url: \"https://github.com/a/odd\", futureRequirement: \"1.0.0\"`")
+        expect(content).to include("[Open an issue](#{ParseWarning::ISSUE_URL}?")
+      end
+    end
+
+    it "emits a ::warning annotation per parse warning" do
+      reporter = described_class.new([], nil, [parse_warning])
+
+      output = quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => nil)
+
+      expect(output).to include("::warning title=SPM manifest parse warning,file=Modules/Package.swift::")
+    end
+  end
+
   describe "#records" do
     it "merges structured detail over the parsed warning, with detail source winning", :aggregate_failures do
       reporter = described_class.new(

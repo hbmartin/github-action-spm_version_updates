@@ -2,6 +2,7 @@
 
 require "open3"
 require_relative "credential_redactor"
+require_relative "errors"
 require_relative "git_host_normalizer"
 require_relative "semver"
 
@@ -16,7 +17,7 @@ module GitOperations
   TAG_REF_PATTERNS = ["[0-9]*.[0-9]*", "v[0-9]*.[0-9]*"].freeze
 
   # Raised when git cannot complete a remote reference lookup.
-  class LsRemoteError < StandardError; end
+  class LsRemoteError < SpmVersionUpdates::NetworkError; end
 
   # Removes protocol and trailing .git from a repo URL
   # @param   [String] repo_url The URL of the repository

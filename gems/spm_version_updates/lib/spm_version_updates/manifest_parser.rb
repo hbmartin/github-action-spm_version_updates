@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "errors"
 require_relative "git_operations"
 require_relative "package_resolved"
 
@@ -31,20 +32,26 @@ module ManifestParser
   # scheme-bearing `repository_url` is retained for git operations.
   #
   # @param  [String] manifest_path The path to a `Package.swift` file
+  # @yield  [Hash] optionally receives `{ reason:, snippet: }` for each
+  #         `.package(...)` declaration that had to be skipped, so callers can
+  #         surface parse warnings instead of dropping dependencies silently
   # @raise  [ManifestPathMustBeSet] if the manifest_path is blank
   # @raise  [CouldNotFindManifest] if the file does not exist
   # @return [Hash<String, Hash>] normalized URL => { "repository_url", "requirement" }
-  def self.get_packages(manifest_path)
+  def self.get_packages(manifest_path, &on_skip)
     raise(ManifestPathMustBeSet) if manifest_path.nil? || manifest_path.empty?
     raise(CouldNotFindManifest, manifest_path) unless File.exist?(manifest_path)
 
     content = strip_comments(File.read(manifest_path))
-    package_calls(content).each_with_object({}) { |call, packages|
+    package_calls(content, &on_skip).each_with_object({}) { |call, packages|
       url = call[/\burl\s*:\s*"([^"]+)"/, 1]
       next if url.nil? # local package (path:) or otherwise unrecognized
 
       requirement = requirement_for(call)
-      next if requirement.nil?
+      if requirement.nil?
+        on_skip&.call({ reason: "unrecognized_requirement", snippet: call })
+        next
+      end
 
       packages[GitOperations.trim_repo_url(url)] = { "repository_url" => url, "requirement" => requirement }
     }
@@ -69,15 +76,21 @@ module ManifestParser
   # Extract the argument body of each `.package( ... )` call, honoring nested
   # parentheses (e.g. `.upToNextMajor(from: "1.0.0")`) and string literals.
   #
+  # An unclosed call cannot be skipped safely (there is no closing paren to
+  # resume after), so scanning stops there; the skip callback says so.
+  #
   # @param  [String] content The (comment-stripped) manifest source
   # @return [Array<String>]
-  def self.package_calls(content)
+  def self.package_calls(content, &on_skip)
     calls = []
     search_start = 0
     while (marker_index = content.index(PACKAGE_CALL, search_start))
       open_index = marker_index + PACKAGE_CALL.length - 1
       close_index = matching_paren(content, open_index)
-      break if close_index.nil?
+      if close_index.nil?
+        on_skip&.call({ reason: "unbalanced_parentheses", snippet: content[marker_index, 300] })
+        break
+      end
 
       calls << content[(open_index + 1)...close_index]
       search_start = close_index + 1
@@ -245,14 +258,26 @@ module ManifestParser
                        :skip_block_comment
 
   # Raised when manifest mode is invoked without a manifest path.
-  class ManifestPathMustBeSet < StandardError
+  class ManifestPathMustBeSet < SpmVersionUpdates::ConfigurationError
+    def initialize(message = "package-manifest-paths must be set")
+      super
+    end
   end
 
   # Raised when a configured Package.swift manifest is missing.
-  class CouldNotFindManifest < StandardError
+  class CouldNotFindManifest < SpmVersionUpdates::FileNotFoundError
+    def initialize(path)
+      super("Could not find Package.swift manifest: #{path}")
+    end
   end
 
   # Raised when manifest mode cannot find an expected Package.resolved file.
-  class CouldNotFindResolvedFile < StandardError
+  class CouldNotFindResolvedFile < SpmVersionUpdates::FileNotFoundError
+    def initialize(paths)
+      super(
+        "Could not find any Package.resolved file (looked in: #{paths}). " \
+        "Commit a Package.resolved next to each manifest or set package-resolved-paths."
+      )
+    end
   end
 end

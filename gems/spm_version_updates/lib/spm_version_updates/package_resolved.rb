@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "errors"
 require_relative "git_operations"
 
 # Parsing for `Package.resolved` files.
@@ -10,7 +11,7 @@ require_relative "git_operations"
 # and the Swift package manifest source mode.
 module PackageResolved
   # Raised when a `Package.resolved` file exists but is not valid JSON.
-  class MalformedFileError < StandardError
+  class MalformedFileError < SpmVersionUpdates::ParseError
     attr_reader :path
 
     def initialize(path, parse_message)

@@ -9,11 +9,11 @@ require "tempfile"
 RSpec.describe ManifestParser do
   let(:manifest_dir) { File.expand_path("../support/manifests", __dir__) }
 
-  def parse(content)
+  def parse(content, &on_skip)
     Tempfile.create(["Package", ".swift"]) do |file|
       file.write(content)
       file.flush
-      return described_class.get_packages(file.path)
+      return described_class.get_packages(file.path, &on_skip)
     end
   end
 
@@ -139,6 +139,55 @@ RSpec.describe ManifestParser do
       SWIFT
 
       expect(parse(content)).to eq("github.com/a/multiline" => declared("https://github.com/a/multiline", { "kind" => "upToNextMajorVersion", "minimumVersion" => "3.2.1" }))
+    end
+
+    it "reports a skip for declarations with an unrecognized requirement", :aggregate_failures do
+      content = <<~SWIFT
+        dependencies: [
+          .package(url: "https://github.com/a/future", futureRequirement: "1.0.0"),
+          .package(url: "https://github.com/a/active", from: "1.0.0"),
+        ]
+      SWIFT
+      skips = []
+
+      packages = parse(content) { |skip| skips << skip }
+
+      expect(packages.keys).to eq(["github.com/a/active"])
+      expect(skips).to eq([{ reason: "unrecognized_requirement", snippet: 'url: "https://github.com/a/future", futureRequirement: "1.0.0"' }])
+    end
+
+    it "reports a skip and stops scanning at unbalanced parentheses", :aggregate_failures do
+      content = <<~SWIFT
+        dependencies: [
+          .package(url: "https://github.com/a/before", from: "1.0.0"),
+          .package(url: "https://github.com/a/broken", from: "1.0.0",
+          .package(url: "https://github.com/a/after", from: "1.0.0"
+      SWIFT
+      skips = []
+
+      packages = parse(content) { |skip| skips << skip }
+
+      expect(packages.keys).to eq(["github.com/a/before"])
+      expect(skips.size).to eq(1)
+      expect(skips.first[:reason]).to eq("unbalanced_parentheses")
+      expect(skips.first[:snippet]).to start_with('.package(url: "https://github.com/a/broken"')
+    end
+
+    it "does not report local path packages as skips", :aggregate_failures do
+      skips = []
+
+      packages = parse('.package(path: "../LocalOnly")') { |skip| skips << skip }
+
+      expect(packages).to be_empty
+      expect(skips).to be_empty
+    end
+
+    it "does not report skips for fully parseable manifests" do
+      skips = []
+
+      parse('.package(url: "https://github.com/a/b", from: "1.0.0")') { |skip| skips << skip }
+
+      expect(skips).to be_empty
     end
 
     it "raises when the manifest path is blank" do

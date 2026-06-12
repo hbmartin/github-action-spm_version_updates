@@ -285,6 +285,7 @@ The action always writes machine-readable outputs, appends a GitHub step summary
 | `major-updates-found` | Number of major semantic-version updates found. |
 | `minor-updates-found` | Number of minor semantic-version updates found. |
 | `patch-updates-found` | Number of patch semantic-version updates found. |
+| `parse-warnings` | Number of `.package(...)` declarations that could not be parsed and were skipped. Not counted in `updates-found` and never fails the run, but skipped declarations are listed in the step summary and PR comment with a link to open an issue — a PR comment is posted even when no updates were found so skips are never silent. |
 | `updates-json` | JSON array of update objects. Each object has a `message` field and, when available, structured fields such as `type`, `package`, `repository_url`, `current_version`, `available_version`, `severity`, `note`, `source`, `requirement_kind`, `package_identity`, `suggested_command`, and `suggested_requirement`. |
 | `blocked` | `true` when the action stopped before a version lookup because a security gate such as `allow-hosts` blocked it; otherwise `false`. |
 | `error-message` | Failure message when `blocked` is `true`. |
@@ -444,6 +445,7 @@ spm_version_updates.check_manifests(["Modules/Package.swift", "BuildTools/Packag
   - For untrusted PRs or locked-down runners, set `allow-hosts`. Matching is exact, case-insensitive, and ignores schemes, credentials, paths, and ports; an off-list dependency fails the action and writes `blocked=true` plus `error-message`.
 - **Updates are detected from semver tags.** A dependency that doesn't publish semver-style version tags won't produce version updates. Successful tag lookups are cached briefly across runs by default; branch- and revision-pinned dependencies are handled separately via `check-branches` / `check-revisions`.
 - **Local packages are skipped.** `.package(path: ...)` dependencies and commented-out declarations are ignored.
+- **Unparseable declarations are reported, not checked.** A `.package(...)` declaration whose version requirement the parser doesn't recognize (or that has unbalanced parentheses) is skipped, counted in the `parse-warnings` output, and listed in the step summary and PR comment with a link to open an issue here.
 
 ## Troubleshooting
 
