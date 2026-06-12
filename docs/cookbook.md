@@ -99,7 +99,7 @@ required in branch protection to actually block the merge.
   run: |
     payload="$(jq -n --argjson updates "$UPDATES_JSON" \
       '{text: ("📦 SPM updates available:\n" + ([$updates[]
-          | "• " + (if .package and .available_version
+          | "• " + (if .package and .current_version and .available_version
                     then "\(.package): \(.current_version) → \(.available_version)"
                     else .message end)
         ] | join("\n")))}')"

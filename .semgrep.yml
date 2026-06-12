@@ -176,7 +176,5 @@ rules:
         - "**/*.html"
     patterns:
       - pattern-either:
-          - pattern-regex: |
-              <script\b(?=[^>]*\bsrc=["']https://)(?![^>]*\bintegrity=)[^>]*>
-          - pattern-regex: |
-              <link\b(?=[^>]*\bhref=["']https://)(?=[^>]*\brel=["']stylesheet["'])(?![^>]*\bintegrity=)[^>]*>
+          - pattern-regex: '<script\b(?=[^>]*\bsrc\s*=\s*["''](?:https?:)?//)(?![^>]*\bintegrity\s*=)[^>]*>'
+          - pattern-regex: '<link\b(?=[^>]*\bhref\s*=\s*["''](?:https?:)?//)(?=[^>]*\brel\s*=\s*["'']stylesheet["''])(?![^>]*\bintegrity\s*=)[^>]*>'

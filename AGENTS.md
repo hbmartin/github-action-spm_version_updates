@@ -4,7 +4,7 @@ After completing a task, always run `bundle exec rubocop --format simple; bundle
 
 ## Code Style and Structure
 
-If there is any conflict between the below guidelines amd the rubocop or reek checks, stop and ask the user which style they prefer. Then Update either AGENTS.md or the tool configuration to reflect the user's preference.
+If there is any conflict between the below guidelines and the rubocop or reek checks, stop and ask the user which style they prefer. Then Update either AGENTS.md or the tool configuration to reflect the user's preference.
 
 ### Ruby Conventions
 
