@@ -29,7 +29,7 @@ RSpec.describe "action.yml wiring" do # rubocop:disable RSpec/DescribeClass
 
   it "declares an input for every INPUT_* env var the action reads" do
     declared = action.fetch("inputs").keys.map { |name| input_env_name(name) }
-    read = Dir.glob(File.join(root, "lib/**/*.{rb,sh}"))
+    read = Dir.glob(File.join(root, "action/**/*.{rb,sh}"))
       .flat_map { |path| File.read(path).scan(/INPUT_[A-Z0-9_]+/) }
       .uniq
 

@@ -1,0 +1,9 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gemspec
+
+# Resolve the core gem from this repository so release-time installs never
+# depend on the just-pushed spm_version_updates being visible on RubyGems.
+gem "spm_version_updates", path: "../spm_version_updates"

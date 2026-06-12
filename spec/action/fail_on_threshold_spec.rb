@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require_relative "../../lib/action_reporter"
-require_relative "../../lib/fail_on_threshold"
+require_relative "../../action/lib/action_reporter"
+require "spm_version_updates/fail_on_threshold"
 
 RSpec.describe FailOnThreshold do
   def reporter_double(records: [], severity_counts: UpdateSeverity.zero_counts)

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../../lib/reporter_sink"
+require_relative "../../action/lib/reporter_sink"
 
 RSpec.describe(ReporterSink) {
   subject(:sink) { described_class.new }

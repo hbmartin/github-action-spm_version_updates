@@ -473,18 +473,26 @@ You can also pin to an exact release (e.g. `@v1.0.0`) or to a commit SHA for max
 
 ## Development
 
-To work on this action locally:
+This repository hosts three layered components:
+
+- [`gems/spm_version_updates`](gems/spm_version_updates) — the core version-checker gem (no Danger or GitHub API dependencies)
+- [`gems/danger-spm_version_updates`](gems/danger-spm_version_updates) — the Danger plugin gem, a thin wrapper over the core
+- [`action/`](action) + `action.yml` — this composite GitHub Action, which drives the core gem directly
+
+To work on the action locally:
 
 1. Clone this repository
-2. Make your changes to the Ruby files in `lib/`
-3. Run the action specs: `bundle exec ruby -e "require 'rspec/core'; exit RSpec::Core::Runner.run(['spec/action'])"`
+2. Make your changes to the Ruby files in `action/lib/` (or `gems/*/lib/` for checker logic)
+3. Run the action specs: `bundle exec rspec spec/action spec/core`
 4. Test against a sample project:
 
    ```bash
    GITHUB_WORKSPACE="$(pwd)" \
      INPUT_XCODE_PROJECT_PATH=path/to/project.xcodeproj \
-     bundle exec ruby lib/action.rb
+     bundle exec ruby action/lib/action.rb
    ```
+
+See [MAINTENANCE.md](MAINTENANCE.md) for the full development and release guide.
 
 ## Authors
 

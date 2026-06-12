@@ -1,9 +1,14 @@
 # frozen_string_literal: true
 
-require "bundler/gem_tasks"
 require "reek/rake/task"
 require "rspec/core/rake_task"
 require "rubocop/rake_task"
+
+RUBY_SOURCE_PATTERNS = [
+  "action/lib/**/*.rb",
+  "gems/*/lib/**/*.rb",
+  "spec/**/*.rb",
+].freeze
 
 RSpec::Core::RakeTask.new(:specs)
 
@@ -17,20 +22,22 @@ task :spec do
   Rake::Task["spec_docs"].invoke
 end
 
-desc "Run RuboCop on the lib/specs directory"
+desc "Run RuboCop on the gems/action/spec directories"
 RuboCop::RakeTask.new(:rubocop) { |task|
   task.requires << "rubocop-rspec"
   task.requires << "rubocop-rake"
   task.requires << "rubocop-performance"
-  task.patterns = ["lib/**/*.rb", "spec/**/*.rb"]
+  task.patterns = RUBY_SOURCE_PATTERNS
 }
 
-desc "Run Reek on the lib/specs directory"
+desc "Run Reek on the gems/action/spec directories"
 Reek::Rake::Task.new(:reek) { |task|
-  task.source_files = FileList["lib/**/*.rb", "spec/**/*.rb"]
+  task.source_files = FileList[*RUBY_SOURCE_PATTERNS]
 }
 
 desc "Ensure that the plugin passes `danger plugins lint`"
 task :spec_docs do
-  sh "bundle exec danger plugins lint"
+  Dir.chdir("gems/danger-spm_version_updates") {
+    sh({ "BUNDLE_GEMFILE" => File.expand_path("Gemfile", __dir__) }, "bundle exec danger plugins lint")
+  }
 end

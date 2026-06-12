@@ -6,7 +6,7 @@ require "tmpdir"
 
 # Test target descriptor for the shell runtime preflight.
 module ActionRuntimePreflight
-  SCRIPT = File.expand_path("../../lib/action_runtime_preflight.sh", __dir__)
+  SCRIPT = File.expand_path("../../action/action_runtime_preflight.sh", __dir__)
 end
 
 RSpec.describe ActionRuntimePreflight do

@@ -9,7 +9,7 @@ rules:
       form instead.
     paths:
       include:
-        - "**/lib/credential_redactor.rb"
+        - "credential_redactor.rb"
     patterns:
       - pattern-either:
           - pattern-inside: |
@@ -51,7 +51,7 @@ rules:
     message: Wrap gemspec git ls-files shell calls in an Errno::ENOENT rescue so packaging works when git is unavailable.
     paths:
       include:
-        - "*.gemspec"
+        - "**/*.gemspec"
     patterns:
       - pattern-either:
           - pattern: "`git ls-files ...`"
@@ -71,7 +71,7 @@ rules:
       of fetch because Sawyer::Resource does not implement fetch.
     paths:
       include:
-        - "**/lib/github_integration.rb"
+        - "github_integration.rb"
     patterns:
       - pattern-inside: |
           class TrackingIssue
@@ -87,7 +87,7 @@ rules:
       the original error when no handler is configured.
     paths:
       include:
-        - "**/lib/spm_checker.rb"
+        - "spm_checker.rb"
     patterns:
       - pattern-either:
           - pattern: next @lookup_failure_handler.call($PACKAGE, $ERROR) if $ERROR

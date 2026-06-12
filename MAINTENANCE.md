@@ -36,23 +36,39 @@ This document provides instructions for maintaining, developing, and releasing t
    ```bash
    GITHUB_WORKSPACE="$(pwd)" \
      INPUT_XCODE_PROJECT_PATH=spec/support/fixtures/UpToNextMajor.xcodeproj \
-     bundle exec ruby lib/action.rb
+     bundle exec ruby action/lib/action.rb
    ```
 
 ## Code Structure
 
-### Core Files
+The repository hosts three layered components: the core checker gem, the
+Danger plugin gem that wraps it, and the composite GitHub Action that drives
+it directly. Both gems are released from this repository in lockstep.
 
-- **`lib/action.rb`** - Main entry point and argument parsing
-- **`lib/spm_checker.rb`** - Core SPM version checking logic
-- **`lib/git_operations.rb`** - Git operations for version discovery
-- **`lib/xcode_parser.rb`** - Xcode project and Package.resolved parsing
-- **`lib/github_integration.rb`** - GitHub API integration and PR comments
-- **`action.yml`** - GitHub Action metadata and configuration
+### Core gem (`gems/spm_version_updates/`)
+
+- **`lib/spm_version_updates/spm_checker.rb`** - Core SPM version checking logic
+- **`lib/spm_version_updates/git_operations.rb`** - Git operations for version discovery
+- **`lib/spm_version_updates/xcode_parser.rb`** - Xcode project and Package.resolved parsing
+- **`lib/spm_version_updates/version.rb`** - The single version constant for both gems
+
+### Danger plugin gem (`gems/danger-spm_version_updates/`)
+
+- **`lib/spm_version_updates/plugin.rb`** - The `Danger::DangerSpmVersionUpdates` plugin
+- **`lib/danger_plugin.rb`** - Danger's plugin discovery entry point
+
+### GitHub Action (`action/` + `action.yml`)
+
+- **`action.yml`** - GitHub Action metadata and configuration (must stay at the repo root)
+- **`action/lib/action.rb`** - Main entry point and argument parsing
+- **`action/lib/github_integration.rb`** - GitHub API integration and PR comments
+- **`action/Gemfile`** - Action runtime bundle; depends on the core gem by path
 
 ### Test Files
 
-- **`spec/spm_version_updates_spec.rb`** - Main test suite
+- **`spec/core/`** - Core checker specs (must pass with only the core gem's isolation bundle)
+- **`spec/action/`** - Action, reporter, and GitHub integration specs
+- **`spec/plugin/spm_version_updates_spec.rb`** - Danger plugin test suite
 - **`spec/support/fixtures/`** - Test Xcode projects and Package.resolved files
 
 ## Making Changes
@@ -65,7 +81,7 @@ This document provides instructions for maintaining, developing, and releasing t
    git checkout -b feature/your-feature-name
    ```
 
-2. **Make your changes** to the Ruby files in `lib/`
+2. **Make your changes** to the Ruby files in `gems/*/lib/` or `action/lib/`
 
 3. **Update tests** in `spec/` if needed
 
@@ -73,7 +89,7 @@ This document provides instructions for maintaining, developing, and releasing t
 
    ```bash
    bundle exec rspec
-   GITHUB_WORKSPACE="$(pwd)" INPUT_XCODE_PROJECT_PATH=spec/support/fixtures/UpToNextMajor.xcodeproj bundle exec ruby lib/action.rb
+   GITHUB_WORKSPACE="$(pwd)" INPUT_XCODE_PROJECT_PATH=spec/support/fixtures/UpToNextMajor.xcodeproj bundle exec ruby action/lib/action.rb
    ```
 
 5. **Update documentation** if adding new features or changing behavior
@@ -81,15 +97,17 @@ This document provides instructions for maintaining, developing, and releasing t
 ### Adding New Features
 
 1. **Update `action.yml`** if adding new input parameters
-2. **Update `lib/action.rb`** to handle new arguments
+2. **Update `action/lib/action.rb`** to handle new arguments
 3. **Add appropriate logic** to core modules
 4. **Add tests** for new functionality
 5. **Update README.md** with new configuration options
 
 ### Runtime Dependency Changes
 
-1. **Update `Gemfile`** for Ruby gem changes
-2. **Run `bundle install`** to refresh `Gemfile.lock`
+1. **Update the right Gemfile/gemspec**: `gems/*/​*.gemspec` for gem runtime
+   dependencies, `action/Gemfile` for action runtime dependencies (mirror any
+   action runtime change in the root `Gemfile`, which is the dev bundle)
+2. **Run `bundle install`** at the root and `bundle lock` in `action/` to refresh both committed lockfiles
 3. **Verify the manifest fast path** with `BUNDLE_WITHOUT=development:test:xcode`
 4. **Verify the composite action** in a real GitHub Actions workflow so `ruby/setup-ruby` caching is exercised
 5. **Verify `setup-ruby: false`** only after an earlier invocation has installed the same or a superset of runtime dependencies
@@ -103,7 +121,11 @@ This document provides instructions for maintaining, developing, and releasing t
 bundle exec rspec
 
 # Run specific test file
-bundle exec rspec spec/spm_version_updates_spec.rb
+bundle exec rspec spec/plugin/spm_version_updates_spec.rb
+
+# Prove the core gem stays free of danger/octokit dependencies
+BUNDLE_GEMFILE=gems/spm_version_updates/Gemfile bundle install
+BUNDLE_GEMFILE=gems/spm_version_updates/Gemfile bundle exec rspec spec/core
 
 # Run with coverage
 bundle exec rspec --format documentation
@@ -115,7 +137,7 @@ bundle exec rspec --format documentation
 # Test with real Xcode project
 GITHUB_WORKSPACE=/path/to/real/project \
   INPUT_XCODE_PROJECT_PATH=MyApp.xcodeproj \
-  bundle exec ruby lib/action.rb
+  bundle exec ruby action/lib/action.rb
 ```
 
 ### GitHub Actions Testing
@@ -151,6 +173,11 @@ This action follows semantic versioning:
 ### Pre-Release Checklist
 
 1. **Update version references**:
+   - Bump `SpmVersionUpdates::VERSION` in `gems/spm_version_updates/lib/spm_version_updates/version.rb`
+     (both gems release in lockstep from this single constant; the pushed tag must match it)
+   - **Re-lock the action bundle in the same commit**: `cd action && bundle lock`
+     (the frozen install on runners records the path gem's version, so a stale
+     `action/Gemfile.lock` breaks every action run)
    - Update any version strings in documentation
    - Update README examples to use new version
 
@@ -195,6 +222,13 @@ This action follows semantic versioning:
    git tag v1.2.0
    git push origin v1.2.0
    ```
+
+   Pushing the tag triggers `push_gem.yml`, which verifies the tag against the
+   version constant, then publishes `spm_version_updates` followed by
+   `danger-spm_version_updates` to RubyGems via trusted publishing. Both gems
+   need a trusted publisher registered on rubygems.org for this repository and
+   workflow (a *pending* publisher must be registered before the first release
+   of a new gem).
 
 5. **Create GitHub Release**:
 
@@ -277,7 +311,7 @@ The marketplace automatically updates when you create new releases, but you may 
 Enable debug output by setting environment variables:
 
 ```bash
-DEBUG=true GITHUB_WORKSPACE="$(pwd)" INPUT_XCODE_PROJECT_PATH=MyApp.xcodeproj bundle exec ruby lib/action.rb
+DEBUG=true GITHUB_WORKSPACE="$(pwd)" INPUT_XCODE_PROJECT_PATH=MyApp.xcodeproj bundle exec ruby action/lib/action.rb
 ```
 
 ## Security Considerations

@@ -2,7 +2,7 @@
 
 require "stringio"
 require "tmpdir"
-require_relative("../../lib/github_integration")
+require_relative "../../action/lib/github_integration"
 
 TRACKING_ISSUE_URL = "https://github.com/owner/repo/issues/7"
 
