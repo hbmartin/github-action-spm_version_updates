@@ -80,6 +80,20 @@ rules:
           rescue Errno::ENOENT
             ...
           end
+  - id: ruby.gemspec.no-shell-interpolated-git-c
+    languages:
+      - generic
+    severity: ERROR
+    message: >-
+      Use argv-style process execution or Shellwords.escape for gemspec git -C
+      calls; interpolated shell commands split paths with spaces and can
+      misparse metacharacters.
+    paths:
+      include:
+        - "**/*.gemspec"
+    patterns:
+      - pattern: |
+          git -C #{__dir__}
   - id: ruby.github-integration.tracking-issue-no-resource-fetch
     languages:
       - ruby

@@ -121,7 +121,7 @@ runs:
   steps:
     - name: Set up action runtime
       if: ${{ inputs.setup-ruby == 'true' }}
-      uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f
+      uses: ruby/setup-ruby@89f90524b88a01fe6e0b732220432cc6142926af # v1.313.0
       env:
         BUNDLE_WITHOUT: development:test${{ inputs.package-manifest-paths != '' && ':xcode' || '' }}
       with:
