@@ -62,7 +62,7 @@ class SpmChecker
     @warning_details = []
     @version_tags_cache = {}
     @version_tag_lookup_errors = {}
-    @reported_lookup_failures = []
+    @reported_lookup_failures = {}
     @version_tags_cache_dir = nil
     @version_tags_cache_ttl_seconds = VersionTagsPersistentCache::DEFAULT_TTL_SECONDS
   end
@@ -156,7 +156,7 @@ class SpmChecker
   def reset_version_tags_cache
     @version_tags_cache = {}
     @version_tag_lookup_errors = {}
-    @reported_lookup_failures = []
+    @reported_lookup_failures = {}
   end
 
   # Merge the resolved pins of every relevant `Package.resolved` file.
@@ -226,9 +226,9 @@ class SpmChecker
   # only the first time it is seen.
   def report_lookup_failure(package, error)
     key = package.cache_key
-    return if @reported_lookup_failures.include?(key)
+    return if @reported_lookup_failures.key?(key)
 
-    @reported_lookup_failures << key
+    @reported_lookup_failures[key] = true
     @lookup_failure_handler.call(package, error)
   end
 

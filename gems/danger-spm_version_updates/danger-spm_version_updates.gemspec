@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+# This sibling-directory require only resolves inside the repository checkout.
+# `gem build` serializes the literal version into the packaged metadata, so
+# the shipped .gemspec is not meant to be evaluated standalone.
 require_relative "../spm_version_updates/lib/spm_version_updates/version"
 
 Gem::Specification.new do |spec|
@@ -18,20 +21,22 @@ Gem::Specification.new do |spec|
     "README.md",
     "danger-spm_version_updates.gemspec",
   ]
-  git_files = begin
-    `git ls-files -z lib #{release_paths.join(" ")} 2>/dev/null`
-      .split("\x0")
-      .reject(&:empty?)
-  rescue Errno::ENOENT
-    []
+  spec.files = Dir.chdir(__dir__) do
+    git_files = begin
+      `git ls-files -z lib #{release_paths.join(" ")} 2>/dev/null`
+        .split("\x0")
+        .reject(&:empty?)
+    rescue Errno::ENOENT
+      []
+    end
+    fallback_files = Dir.glob(["lib/**/*", *release_paths])
+      .select { |path| File.file?(path) }
+    (git_files.empty? ? fallback_files : git_files).sort
   end
-  fallback_files = Dir.glob(["lib/**/*", *release_paths])
-    .select { |path| File.file?(path) }
-  spec.files         = (git_files.empty? ? fallback_files : git_files).sort
   spec.require_paths = ["lib"]
   spec.metadata["rubygems_mfa_required"] = "true"
 
   spec.add_runtime_dependency("danger-plugin-api", "~> 1.0")
-  spec.add_runtime_dependency("spm_version_updates", "~> #{SpmVersionUpdates::VERSION.split(".").first(2).join(".")}")
+  spec.add_runtime_dependency("spm_version_updates", "~> #{SpmVersionUpdates::VERSION}")
   spec.add_runtime_dependency("xcodeproj", "~> 1.24")
 end

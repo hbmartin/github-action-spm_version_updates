@@ -3,7 +3,7 @@ PATH
   specs:
     danger-spm_version_updates (1.1.0)
       danger-plugin-api (~> 1.0)
-      spm_version_updates (~> 1.1)
+      spm_version_updates (~> 1.1.0)
       xcodeproj (~> 1.24)
 
 PATH

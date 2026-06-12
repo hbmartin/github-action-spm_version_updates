@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.description   = "Detect available updates to Swift Package Manager dependencies " \
                        "from Package.swift manifests or Xcode projects."
   spec.summary       = "Core library for checking Swift Package Manager dependency updates."
-  spec.homepage      = "https://github.com/hbmartin/danger-spm_version_updates"
+  spec.homepage      = "https://github.com/hbmartin/github-action-spm_version_updates"
   spec.license       = "MIT"
   spec.required_ruby_version = ">= 3.2"
 
@@ -21,16 +21,18 @@ Gem::Specification.new do |spec|
     "README.md",
     "spm_version_updates.gemspec",
   ]
-  git_files = begin
-    `git ls-files -z lib #{release_paths.join(" ")} 2>/dev/null`
-      .split("\x0")
-      .reject(&:empty?)
-  rescue Errno::ENOENT
-    []
+  spec.files = Dir.chdir(__dir__) do
+    git_files = begin
+      `git ls-files -z lib #{release_paths.join(" ")} 2>/dev/null`
+        .split("\x0")
+        .reject(&:empty?)
+    rescue Errno::ENOENT
+      []
+    end
+    fallback_files = Dir.glob(["lib/**/*", *release_paths])
+      .select { |path| File.file?(path) }
+    (git_files.empty? ? fallback_files : git_files).sort
   end
-  fallback_files = Dir.glob(["lib/**/*", *release_paths])
-    .select { |path| File.file?(path) }
-  spec.files         = (git_files.empty? ? fallback_files : git_files).sort
   spec.require_paths = ["lib"]
   spec.metadata["rubygems_mfa_required"] = "true"
 

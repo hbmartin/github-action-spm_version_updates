@@ -38,6 +38,17 @@ jobs:
         env:
           BUNDLE_GEMFILE: ${{ github.workspace }}/Gemfile
         run: bundle exec danger plugins lint
+      # The action's frozen install on runners records the path gem's version,
+      # so a stale action/Gemfile.lock breaks every action run after a bump.
+      - name: Verify action lockfile matches gem version
+        run: |
+          set -euo pipefail
+          version="$(ruby -e 'require "./gems/spm_version_updates/lib/spm_version_updates/version"; print SpmVersionUpdates::VERSION')"
+          expected="    spm_version_updates (${version})"
+          if ! grep -qxF "$expected" action/Gemfile.lock; then
+            echo "::error file=action/Gemfile.lock::action/Gemfile.lock does not record spm_version_updates ${version}; run 'cd action && bundle lock'"
+            exit 1
+          fi
       - name: Run actionlint
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
         with:
@@ -78,6 +89,14 @@ jobs:
         run: |
           bundle install
           bundle exec rspec spec/core
+      # xcodeproj is documented as optional (Xcode-project mode only, loaded
+      # lazily); requiring the umbrella file must succeed with xcodeproj
+      # excluded from the load path.
+      - name: Verify core gem loads without xcodeproj
+        env:
+          BUNDLE_GEMFILE: ${{ github.workspace }}/gems/spm_version_updates/Gemfile
+          BUNDLE_WITHOUT: development:test
+        run: bundle exec ruby -e 'require "spm_version_updates"'
       - name: Upload coverage report
         if: always()
         # actions/upload-artifact v4.6.2

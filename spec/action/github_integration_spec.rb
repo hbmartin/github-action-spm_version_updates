@@ -485,6 +485,33 @@ RSpec.describe(GithubIntegration) {
       expect(integration.tracking_issue_result).to(eq(number: 7, url: TRACKING_ISSUE_URL))
     end
 
+    it("fails closed when tracking issue lookup exhausts the pagination limit", :aggregate_failures) do
+      client = stubbed_client
+      label_squatters = Array.new(described_class::TrackingIssue::PAGE_SIZE) { |index|
+        { number: index + 100, body: "human issue reusing the label", pull_request: nil }
+      }
+      allow(client).to(receive(:list_issues).and_return(label_squatters))
+      allow(client).to(receive(:create_issue))
+
+      integration = nil
+      Dir.mktmpdir do |dir|
+        stdout = capture_stdout do
+          with_env(github_env(write_schedule_event_file(dir))) do
+            integration = tracking_integration
+            integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+          end
+        end
+
+        expect(stdout).to(include("Error upserting tracking issue: tracking issue lookup exceeded 10 pages"))
+      end
+
+      expect(client).to(
+        have_received(:list_issues).exactly(described_class::TrackingIssue::MAX_FIND_EXISTING_PAGES).times
+      )
+      expect(client).not_to(have_received(:create_issue))
+      expect(integration.tracking_issue_result).to(be_nil)
+    end
+
     it("does not create a duplicate tracking issue when listing existing issues fails", :aggregate_failures) do
       client = stubbed_client
       allow(client).to(receive(:list_issues).and_raise(Octokit::Error.new))
