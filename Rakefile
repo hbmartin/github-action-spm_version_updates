@@ -13,9 +13,66 @@ RUBY_SOURCE_PATTERNS = [
 DOCS_SITE_DIR = "_site"
 DOCS_GUIDES = [
   "docs/architecture.md",
+  "docs/cookbook.md",
   "docs/migration-v0.2.0-to-v1.0.0.md",
+  "docs/repo-rules.md",
+  "docs/security.md",
   "docs/swiftpm-manifest-mode.md",
+  "docs/troubleshooting.md",
 ].freeze
+
+# Renders the README input/output tables from action.yml, between
+# `<!-- <section>-table:begin -->` / `<!-- <section>-table:end -->` markers.
+# `rake docs:tables` regenerates them; `rake docs:tables:check` fails CI when
+# they drift. Descriptions are edited in action.yml, not in the README.
+module ReadmeActionTables
+  ACTION_DEFINITION_FILE = "action.yml"
+  README_FILE = "README.md"
+  HEADERS = {
+    "inputs" => ["Input", "Description", "Default"],
+    "outputs" => ["Output", "Description"]
+  }.freeze
+
+  def self.updated_readme
+    require("yaml")
+
+    action = YAML.safe_load_file(ACTION_DEFINITION_FILE)
+    HEADERS.keys.reduce(File.read(README_FILE)) { |content, section|
+      replace_section(content, section, table_for(section, action.fetch(section)))
+    }
+  end
+
+  def self.table_for(section, entries)
+    header = HEADERS.fetch(section)
+    divider = header.map { |title| "-" * title.length }
+    rows = entries.map { |name, spec| row_for(section, name, spec) }
+    [row(header), row(divider), *rows].join("\n")
+  end
+
+  def self.row_for(section, name, spec)
+    cells = ["`#{name}`", spec.fetch("description")]
+    cells << default_cell(spec) if section == "inputs"
+    row(cells)
+  end
+
+  def self.row(cells)
+    "| #{cells.join(' | ')} |"
+  end
+
+  def self.default_cell(spec)
+    default = spec.fetch("default", "").to_s
+    default.empty? ? "" : "`#{default}`"
+  end
+
+  def self.replace_section(content, section, table)
+    begin_marker = "<!-- #{section}-table:begin (generated from action.yml by `rake docs:tables`; edit descriptions there) -->"
+    end_marker = "<!-- #{section}-table:end -->"
+    pattern = /#{Regexp.escape(begin_marker)}\n.*?#{Regexp.escape(end_marker)}/m
+    abort("#{README_FILE} is missing the #{section}-table:begin/end markers") unless content.match?(pattern)
+
+    content.sub(pattern, "#{begin_marker}\n#{table}\n#{end_marker}")
+  end
+end
 DOCS_LAYERS = {
   "core" => {
     title: "spm_version_updates (core gem)",
@@ -59,6 +116,7 @@ task :spec do
   Rake::Task["rubocop"].invoke
   Rake::Task["reek"].invoke
   Rake::Task["spec_docs"].invoke
+  Rake::Task["docs:tables:check"].invoke
 end
 
 desc "Run RuboCop on the gems/action/spec directories"
@@ -110,6 +168,20 @@ namespace :docs do
   task build: DOCS_LAYERS.keys.map { |layer| "docs:#{layer}" } do
     cp("docs/pages/index.html", "#{DOCS_SITE_DIR}/index.html")
     touch("#{DOCS_SITE_DIR}/.nojekyll")
+  end
+
+  desc "Regenerate the README input/output tables from action.yml"
+  task :tables do
+    File.write(ReadmeActionTables::README_FILE, ReadmeActionTables.updated_readme)
+  end
+
+  namespace :tables do
+    desc "Fail when the README input/output tables are out of sync with action.yml"
+    task :check do
+      next if File.read(ReadmeActionTables::README_FILE) == ReadmeActionTables.updated_readme
+
+      abort("README.md input/output tables are out of sync with action.yml; run `bundle exec rake docs:tables`")
+    end
   end
 
   desc "Fail on YARD warnings, undocumented classes/modules, or coverage regressions"
