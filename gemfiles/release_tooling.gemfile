@@ -1,0 +1,9 @@
+# frozen_string_literal: true
+
+# Shared release tooling for every gem in gems/*. Each gem's Gemfile pulls
+# this in via eval_gemfile so the dependencies that push_gem.yml needs
+# (release-gem runs `bundle exec rake release` against each gem's own
+# Gemfile) are declared exactly once and cannot drift between gems.
+group(:development) {
+  gem "rake", "~> 13.2"
+}
