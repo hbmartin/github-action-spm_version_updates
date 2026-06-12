@@ -23,7 +23,11 @@ Gem::Specification.new do |spec|
   ]
   spec.files = begin
     git_files = begin
-      `git -C #{__dir__} ls-files -z lib #{release_paths.join(" ")} 2>/dev/null`
+      IO.popen(
+        ["git", "-C", __dir__, "ls-files", "-z", "lib", *release_paths],
+        err: File::NULL,
+        &:read
+      )
         .split("\x0")
         .reject(&:empty?)
     rescue Errno::ENOENT
