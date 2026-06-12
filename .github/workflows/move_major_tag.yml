@@ -1,0 +1,36 @@
+name: Move Floating Major Tag
+
+# Keeps the floating major tag (e.g. v1) on the latest published GitHub
+# release so the documented `uses: ...@v1` pinning always resolves. This is
+# driven by the release event rather than the gem-publish workflow so that a
+# RubyGems failure cannot strand action users: the composite action runs from
+# the repository snapshot and is releasable independently of the gems.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  move-tag:
+    # Drafts never fire `published`; prereleases do and must not move the tag.
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Move floating major tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag ${RELEASE_TAG} is not a stable vX.Y.Z release; leaving the floating major tag alone."
+            exit 0
+          fi
+          # The release event checks out the release tag, so HEAD is the
+          # tagged commit even in a shallow clone without local tag refs.
+          target="$(git rev-parse HEAD)"
+          major_tag="${RELEASE_TAG%%.*}"
+          git tag -f "$major_tag" "$target"
+          git push origin "$major_tag" --force
