@@ -7,3 +7,8 @@ gemspec
 # Resolve the core gem from this repository so release-time installs never
 # depend on the just-pushed spm_version_updates being visible on RubyGems.
 gem "spm_version_updates", path: "../spm_version_updates"
+
+group(:development) {
+  # release-gem runs `bundle exec rake release` against this Gemfile.
+  gem "rake", "~> 13.2"
+}
