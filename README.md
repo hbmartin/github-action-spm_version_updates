@@ -479,6 +479,12 @@ This repository hosts three layered components:
 - [`gems/danger-spm_version_updates`](gems/danger-spm_version_updates) — the Danger plugin gem, a thin wrapper over the core
 - [`action/`](action) + `action.yml` — this composite GitHub Action, which drives the core gem directly
 
+Per-layer API documentation is published to
+[GitHub Pages](https://hbmartin.github.io/github-action-spm_version_updates/)
+on each release; see [docs/architecture.md](docs/architecture.md) for how the
+layers fit together. Build the site locally with `bundle exec rake docs`
+(output in `_site/`).
+
 To work on the action locally:
 
 1. Clone this repository

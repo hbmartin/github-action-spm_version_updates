@@ -1,3 +1,9 @@
+--tag tags:Tags
+--hide-api private
 gems/danger-spm_version_updates/lib/**/*.rb
 gems/spm_version_updates/lib/**/*.rb
 action/lib/**/*.rb
+-
+docs/architecture.md
+docs/migration-v0.2.0-to-v1.0.0.md
+docs/swiftpm-manifest-mode.md

@@ -6,22 +6,91 @@ on:
       - v*
   workflow_dispatch:
 
+# Serialize Pages publishes: a queued run rebuilds from the latest gh-pages
+# state, so cancelling in-progress runs would risk losing a version directory.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # contents: write is needed to push the assembled site history to the
+    # gh-pages branch, which acts as the content store for versioned docs.
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
       - name: Set up Ruby
         uses: ruby/setup-ruby@89f90524b88a01fe6e0b732220432cc6142926af # v1.313.0
         with:
-          ruby-version: 3.2
+          ruby-version: "3.3"
           bundler-cache: true
-      - name: Build HTML docs
-        run: bundle exec yard
+      - name: Build per-layer HTML docs
+        run: bundle exec rake docs
+
+      # Tag pushes publish to /<tag>/ and refresh /latest/; manual dispatches
+      # publish to /dev/ only. Existing version directories are preserved by
+      # extracting the current gh-pages content first.
+      - name: Assemble versioned site
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$REF_TYPE" = "tag" ]; then
+            version="$REF_NAME"
+          else
+            version="dev"
+          fi
+          echo "DOCS_VERSION=$version" >> "$GITHUB_ENV"
+          mkdir public
+          if git fetch origin gh-pages; then
+            git archive FETCH_HEAD | tar -x -C public
+          fi
+          rm -rf "public/$version"
+          cp -R _site "public/$version"
+          if [ "$REF_TYPE" = "tag" ] || [ ! -d public/latest ]; then
+            rm -rf public/latest
+            cp -R _site public/latest
+          fi
+          touch public/.nojekyll
+          {
+            echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+            echo '<meta http-equiv="refresh" content="0; url=latest/">'
+            echo '<title>Swift Package Version Updates documentation</title></head><body>'
+            echo '<p>Redirecting to the <a href="latest/">latest documentation</a>. All versions:</p><ul>'
+            for dir in public/*/; do
+              basename "$dir"
+            done | sort -rV | while IFS= read -r name; do
+              echo "<li><a href=\"${name}/\">${name}</a></li>"
+            done
+            echo '</ul></body></html>'
+          } > public/index.html
+
+      # The branch stores only the latest content snapshot (single forced
+      # commit); older versions survive as directories, not git history.
+      - name: Push site snapshot to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd public
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish docs for ${DOCS_VERSION}"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: ./doc
+          path: ./public
   deploy:
     needs: build
 
