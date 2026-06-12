@@ -37,7 +37,7 @@ RSpec.describe Gem::Specification do
   it "uses git file lists when gem directories are inside paths with spaces" do
     Dir.mktmpdir("gemspec path with spaces") do |root|
       checkout = prepare_checkout_with_spaces(root)
-      untracked_file = "lib/spm_version_updates/untracked fixture.rb"
+      untracked_file = "lib/untracked fixture.rb"
 
       %w(danger-spm_version_updates spm_version_updates).each do |gem_name|
         FileUtils.touch(File.join(checkout, "gems", gem_name, untracked_file))
