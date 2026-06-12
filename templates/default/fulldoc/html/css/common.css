@@ -1,0 +1,281 @@
+/* Project stylesheet for the YARD docs site.
+ *
+ * YARD's default layout links css/common.css (an empty placeholder in the
+ * gem) after css/style.css on every page, including the sidebar list pages.
+ * Shadowing it via --template-path lets us restyle the whole site without
+ * forking the template. Scope: typography, tables, code blocks, the
+ * cross-layer banner, and a prefers-color-scheme dark theme. */
+
+:root {
+  color-scheme: light dark;
+  --spm-accent: #c9510c;
+  --spm-bg: #ffffff;
+  --spm-fg: #24292f;
+  --spm-muted: #57606a;
+  --spm-border: #d0d7de;
+  --spm-surface: #f6f8fa;
+  --spm-code-bg: #f6f8fa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --spm-accent: #ff7b54;
+    --spm-bg: #0d1117;
+    --spm-fg: #c9d1d9;
+    --spm-muted: #8b949e;
+    --spm-border: #30363d;
+    --spm-surface: #161b22;
+    --spm-code-bg: #161b22;
+  }
+}
+
+/* ---- Typography and page chrome ------------------------------------- */
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--spm-fg);
+  background: var(--spm-bg);
+}
+
+#main {
+  background: var(--spm-bg);
+}
+
+#content {
+  max-width: 64rem;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--spm-fg);
+  font-weight: 600;
+}
+
+h1.title, h1.noborder {
+  color: var(--spm-fg);
+}
+
+#filecontents h1, #filecontents h2,
+.docstring h1, .docstring h2 {
+  border-bottom: 1px solid var(--spm-border);
+  padding-bottom: 0.25em;
+}
+
+a, #filecontents a, .docstring a {
+  color: var(--spm-accent);
+  text-decoration: none;
+}
+
+a:hover, #filecontents a:hover, .docstring a:hover {
+  text-decoration: underline;
+}
+
+#menu, #menu a, #footer, #footer a {
+  color: var(--spm-muted);
+}
+
+#header, .fixed_header {
+  background: var(--spm-bg);
+}
+
+/* ---- Code ------------------------------------------------------------ */
+
+tt, code, pre {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+#filecontents code, .docstring code, .summary_desc tt, .docstring tt {
+  background: var(--spm-code-bg);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.92em;
+}
+
+pre.code, #filecontents pre, .docstring pre, .tags .examples .example_code {
+  background: var(--spm-code-bg);
+  border: 1px solid var(--spm-border);
+  border-radius: 6px;
+  padding: 0.75em 1em;
+  line-height: 1.45;
+  overflow-x: auto;
+}
+
+pre code, #filecontents pre code, .docstring pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 1em;
+}
+
+/* highlight.js injects its own background; let the pre's win so light and
+ * dark stay consistent with the rest of the page. */
+pre.code code.hljs {
+  background: transparent;
+  padding: 0;
+}
+
+/* ---- Tables (guides and docstrings) ---------------------------------- */
+
+#filecontents table, .docstring table {
+  border-collapse: collapse;
+  margin: 1em 0;
+}
+
+#filecontents table th, #filecontents table td,
+.docstring table th, .docstring table td {
+  border: 1px solid var(--spm-border);
+  padding: 0.4em 0.75em;
+  text-align: left;
+}
+
+#filecontents table th, .docstring table th {
+  background: var(--spm-surface);
+}
+
+#filecontents table tr:nth-child(even) td,
+.docstring table tr:nth-child(even) td {
+  background: var(--spm-surface);
+}
+
+#filecontents blockquote, .docstring blockquote {
+  border-left: 4px solid var(--spm-accent);
+  margin-left: 0;
+  padding: 0.25em 1em;
+  color: var(--spm-muted);
+  background: var(--spm-surface);
+}
+
+/* ---- Cross-layer banner ----------------------------------------------- */
+
+#spm-layer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25em 1em;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.55em 0.25em;
+  margin-bottom: 0.5em;
+  border-bottom: 1px solid var(--spm-border);
+  font-size: 0.95em;
+}
+
+#spm-layer-nav a {
+  text-decoration: none;
+}
+
+#spm-layer-nav .spm-site {
+  font-weight: 600;
+  color: var(--spm-fg);
+}
+
+#spm-layer-nav .spm-layers a {
+  color: var(--spm-muted);
+  margin-left: 0.9em;
+}
+
+#spm-layer-nav .spm-layers a:first-child {
+  margin-left: 0;
+}
+
+#spm-layer-nav .spm-layers a.current {
+  color: var(--spm-accent);
+  font-weight: 600;
+}
+
+#spm-layer-nav a:hover {
+  color: var(--spm-accent);
+}
+
+/* ---- Dark theme for YARD's hardcoded chrome --------------------------- */
+
+@media (prefers-color-scheme: dark) {
+  /* Search tabs above the sidebar */
+  #search a {
+    background: var(--spm-surface);
+    border-color: var(--spm-border);
+    color: var(--spm-fg);
+  }
+
+  #search a.active {
+    background: var(--spm-border);
+  }
+
+  /* Method/attribute summaries and the class info box */
+  .summary_signature {
+    background: var(--spm-surface);
+    border-color: var(--spm-border);
+  }
+
+  .summary_signature:hover {
+    background: #1f2630;
+    border-color: var(--spm-border);
+  }
+
+  .box_info dl dt {
+    background: var(--spm-surface);
+    border-color: var(--spm-border);
+  }
+
+  .box_info dl dd {
+    border-color: var(--spm-border);
+  }
+
+  /* Note boxes (deprecated/private/todo/...) keep their meaning via the
+   * border; flatten the pastel backgrounds that fight the dark page. */
+  .note {
+    background: var(--spm-surface);
+    border-color: var(--spm-border);
+    color: var(--spm-fg);
+  }
+
+  .note.title {
+    background: var(--spm-border);
+    color: var(--spm-fg);
+  }
+
+  .tags .overload .overload_item .signature,
+  dl.constants dt {
+    background: var(--spm-surface);
+    border-color: var(--spm-border);
+  }
+
+  /* "View source" blocks */
+  .source_code {
+    background: var(--spm-surface);
+  }
+
+  .source_code .lines {
+    color: var(--spm-muted);
+  }
+
+  #toc {
+    background: var(--spm-surface);
+    border-color: var(--spm-border);
+  }
+
+  /* YARD's server-side Ruby token colors, tuned for dark (GitHub-dark-ish) */
+  pre.code .kw { color: #ff7b72; }
+  pre.code .const { color: #ffa657; }
+  pre.code .ivar, pre.code .gvar, pre.code .cvar { color: #ffa657; }
+  pre.code .symbol, pre.code .label { color: #79c0ff; }
+  pre.code .int, pre.code .float { color: #79c0ff; }
+  pre.code .tstring, pre.code .tstring_content,
+  pre.code .tstring_beg, pre.code .tstring_end,
+  pre.code .heredoc_beg, pre.code .heredoc_end,
+  pre.code .regexp { color: #a5d6ff; }
+  pre.code .comment { color: var(--spm-muted); }
+  pre.code .val { color: #79c0ff; }
+  pre.code .object_link a { color: var(--spm-accent); }
+
+  /* Sidebar list pages (class_list.html etc. load full_list.css + this) */
+  #full_list li.odd { background: var(--spm-surface); }
+  #full_list li.even { background: var(--spm-bg); }
+  #full_list li.clicked > .item { background: var(--spm-border); }
+  #full_list .item:hover { background: #1f2630; }
+  #search input {
+    background: var(--spm-surface);
+    border: 1px solid var(--spm-border);
+    color: var(--spm-fg);
+  }
+}

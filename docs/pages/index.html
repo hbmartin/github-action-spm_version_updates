@@ -4,8 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Swift Package Version Updates — Documentation</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <style>
-    :root { color-scheme: light dark; }
+    :root { color-scheme: light dark; --accent: #c9510c; }
+    @media (prefers-color-scheme: dark) {
+      :root { --accent: #ff7b54; }
+    }
+    a { color: var(--accent); }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
       max-width: 56rem;
@@ -61,15 +66,15 @@
     </div>
   </div>
 
-  <h2>Guides</h2>
+  <h2 id="guides">Guides</h2>
   <ul class="guides">
     <li><a href="core/file.architecture.html">Architecture</a> — how the three layers fit together.</li>
-    <li><a href="core/file.cookbook.html">Cookbook</a> — complete workflows: scheduled reports, fork-safe runs, merge gating, auto-bump PRs.</li>
-    <li><a href="core/file.swiftpm-manifest-mode.html">Swift manifest mode</a> — setup for SwiftPM-first repositories.</li>
-    <li><a href="core/file.security.html">Security</a> — threat model, transport restrictions, <code>allow-hosts</code>.</li>
-    <li><a href="core/file.repo-rules.html">Repository rules reference</a> — the <code>repo-rules-path</code> YAML schema.</li>
-    <li><a href="core/file.troubleshooting.html">Troubleshooting</a> — common failure modes and what they mean.</li>
-    <li><a href="core/file.migration-v0.2.0-to-v1.0.0.html">Migration guide: v0.2.0 to v1</a></li>
+    <li><a href="action/file.cookbook.html">Cookbook</a> — complete workflows: scheduled reports, fork-safe runs, merge gating, auto-bump PRs.</li>
+    <li><a href="action/file.swiftpm-manifest-mode.html">Swift manifest mode</a> — setup for SwiftPM-first repositories.</li>
+    <li><a href="action/file.security.html">Security</a> — threat model, transport restrictions, <code>allow-hosts</code>.</li>
+    <li><a href="action/file.repo-rules.html">Repository rules reference</a> — the <code>repo-rules-path</code> YAML schema.</li>
+    <li><a href="action/file.troubleshooting.html">Troubleshooting</a> — common failure modes and what they mean.</li>
+    <li><a href="danger/file.migration-v0.2.0-to-v1.0.0.html">Migration guide: v0.2.0 to v1</a></li>
   </ul>
 
   <footer>

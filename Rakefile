@@ -11,15 +11,6 @@ RUBY_SOURCE_PATTERNS = [
 ].freeze
 
 DOCS_SITE_DIR = "_site"
-DOCS_GUIDES = [
-  "docs/architecture.md",
-  "docs/cookbook.md",
-  "docs/migration-v0.2.0-to-v1.0.0.md",
-  "docs/repo-rules.md",
-  "docs/security.md",
-  "docs/swiftpm-manifest-mode.md",
-  "docs/troubleshooting.md",
-].freeze
 
 # Renders the README input/output tables from action.yml, between
 # `<!-- <section>-table:begin -->` / `<!-- <section>-table:end -->` markers.
@@ -73,18 +64,43 @@ module ReadmeActionTables
     content.sub(pattern, "#{begin_marker}\n#{table}\n#{end_marker}")
   end
 end
+# Each layer opens on its own README and carries only the guides relevant to
+# its audience; docs/architecture.md is shared because it explains the
+# layering itself.
 DOCS_LAYERS = {
   "core" => {
     title: "spm_version_updates (core gem)",
-    sources: ["gems/spm_version_updates/lib/**/*.rb"]
+    sources: ["gems/spm_version_updates/lib/**/*.rb"],
+    main: "gems/spm_version_updates/README.md",
+    guides: [
+      "docs/architecture.md",
+      "docs/repo-rules.md",
+      "docs/migration-v0.2.0-to-v1.0.0.md",
+    ]
   },
   "danger" => {
     title: "danger-spm_version_updates (Danger plugin)",
-    sources: ["gems/danger-spm_version_updates/lib/**/*.rb"]
+    sources: ["gems/danger-spm_version_updates/lib/**/*.rb"],
+    main: "gems/danger-spm_version_updates/README.md",
+    guides: [
+      "docs/architecture.md",
+      "docs/swiftpm-manifest-mode.md",
+      "docs/repo-rules.md",
+      "docs/migration-v0.2.0-to-v1.0.0.md",
+    ]
   },
   "action" => {
     title: "spm_version_updates (GitHub Action runner)",
-    sources: ["action/lib/**/*.rb"]
+    sources: ["action/lib/**/*.rb"],
+    main: "README.md",
+    guides: [
+      "docs/architecture.md",
+      "docs/swiftpm-manifest-mode.md",
+      "docs/cookbook.md",
+      "docs/security.md",
+      "docs/troubleshooting.md",
+      "docs/repo-rules.md",
+    ]
   }
 }.freeze
 # Documented-object floor enforced by docs:check; raise it as coverage improves.
@@ -139,6 +155,9 @@ namespace :docs do
     # singleton, so sharing a process would leak objects across layers.
     task layer.to_sym do
       sh(
+        # The custom template reads the layer name to render the cross-layer
+        # banner with the right links and active item.
+        { "SPM_DOCS_LAYER" => layer },
         "bundle",
         "exec",
         "yard",
@@ -148,18 +167,20 @@ namespace :docs do
         "#{DOCS_SITE_DIR}/#{layer}",
         "--db",
         ".yardoc-#{layer}",
+        "--template-path",
+        "templates",
         "--title",
         config[:title],
         "--main",
-        "README.md",
+        config[:main],
         "--hide-api",
         "private",
         "--tag",
         "tags:Tags",
         *config[:sources],
         "-",
-        "README.md",
-        *DOCS_GUIDES
+        config[:main],
+        *config[:guides]
       )
     end
   end
@@ -167,6 +188,7 @@ namespace :docs do
   desc "Build the per-layer documentation site into #{DOCS_SITE_DIR}/"
   task build: DOCS_LAYERS.keys.map { |layer| "docs:#{layer}" } do
     cp("docs/pages/index.html", "#{DOCS_SITE_DIR}/index.html")
+    cp("docs/pages/favicon.svg", "#{DOCS_SITE_DIR}/favicon.svg")
     touch("#{DOCS_SITE_DIR}/.nojekyll")
   end
 
