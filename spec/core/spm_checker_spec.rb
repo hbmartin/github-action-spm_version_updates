@@ -125,6 +125,41 @@ RSpec.describe SpmChecker do
       expect(warnings).not_to include(a_string_matching(/swift-argument-parser/))
     end
 
+    it "records parse warnings for skipped declarations without affecting update warnings", :aggregate_failures do
+      stub_default_versions
+
+      Dir.mktmpdir do |dir|
+        manifest = ManifestPackageFixture.write_version(dir)
+        File.write(manifest, <<~SWIFT, mode: "a")
+          .package(url: "https://github.com/a/odd", futureRequirement: "1.0.0")
+        SWIFT
+
+        warnings = checker.check_manifests([manifest])
+
+        expect(warnings).to eq(["Newer version of a/b: 1.1.0\nSource: #{manifest}"])
+        expect(checker.warning_details.size).to eq(1)
+        expect(checker.parse_warnings.size).to eq(1)
+        record = checker.parse_warnings.first
+        expect(record["reason"]).to eq("unrecognized_requirement")
+        expect(record["source"]).to eq(manifest)
+        expect(record["snippet"]).to include("github.com/a/odd")
+      end
+    end
+
+    it "clears parse warnings between runs", :aggregate_failures do
+      Dir.mktmpdir do |dir|
+        manifest = ManifestPackageFixture.write_version(dir)
+        File.write(manifest, '.package(url: "https://github.com/a/odd", futureRequirement: "1.0.0")', mode: "a")
+        checker.check_manifests([manifest])
+        expect(checker.parse_warnings).not_to be_empty
+
+        File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
+        checker.check_manifests([manifest])
+
+        expect(checker.parse_warnings).to be_empty
+      end
+    end
+
     it "queries git with the original scheme-bearing URL, not the normalized match key" do
       received = []
       allow(GitOperations).to receive(:version_tags) { |url|

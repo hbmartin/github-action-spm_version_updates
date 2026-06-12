@@ -15,7 +15,7 @@ require_relative "reporter_sink"
 #                              `package-resolved-paths`)
 class Action
   # Raised when the configured combination of source inputs is invalid.
-  class ModeError < StandardError; end
+  class ModeError < SpmVersionUpdates::ConfigurationError; end
 
   # Prints the resolved action configuration in the same order as the action log.
   class ConfigPrinter
@@ -120,27 +120,23 @@ class Action
     checker = configure_checker(inputs)
     warnings = run_checks(checker, inputs)
     warning_details = checker.warning_details
-    reporter = report(warnings, warning_details, comment: inputs[:comment], comment_on_success: inputs[:comment_on_success])
+    parse_warnings = checker.parse_warnings
+    reporter = report(
+      warnings,
+      warning_details,
+      parse_warnings,
+      comment: inputs[:comment],
+      comment_on_success: inputs[:comment_on_success]
+    )
     failure_message = FailOnThreshold.failure_message(inputs[:fail_on], reporter)
     fail_with(failure_message) if failure_message
 
     puts("SPM version check completed successfully!")
-  rescue ModeError => error
+  rescue SpmVersionUpdates::ConfigurationError, SpmVersionUpdates::FileNotFoundError => error
     fail_with_error(error)
-  rescue XcodeParser::XcodeprojPathMustBeSet
-    fail_with("Invalid Xcode project path")
-  rescue XcodeParser::CouldNotFindResolvedFile
-    fail_with("Could not find a Package.resolved file for the Xcode project")
-  rescue ManifestParser::CouldNotFindManifest => error
-    fail_with("Could not find Package.swift manifest: #{error.message}")
-  rescue ManifestParser::CouldNotFindResolvedFile => error
-    fail_with(
-      "Could not find any Package.resolved file (looked in: #{error.message}). " \
-      "Commit a Package.resolved next to each manifest or set package-resolved-paths."
-    )
-  rescue PackageResolved::MalformedFileError => error
+  rescue SpmVersionUpdates::ParseError => error
     fail_with("#{error.message}. Fix or regenerate this Package.resolved file.")
-  rescue SpmChecker::DisallowedRepositoryHost => error
+  rescue SpmVersionUpdates::PolicyError => error
     ActionReporter::BlockedReport.write(error.message)
     fail_with_error(error)
   rescue StandardError => error
@@ -153,7 +149,7 @@ class Action
   def read_inputs
     cache_ttl_value = env_value("INPUT_VERSION_TAGS_CACHE_TTL")
     cache_ttl = Integer(cache_ttl_value || VersionTagsPersistentCache::DEFAULT_TTL_SECONDS.to_s, 10, exception: false)
-    raise(ArgumentError, "INPUT_VERSION_TAGS_CACHE_TTL must be an integer") unless cache_ttl
+    raise(SpmVersionUpdates::ConfigurationError, "INPUT_VERSION_TAGS_CACHE_TTL must be a non-negative integer") unless cache_ttl && cache_ttl >= 0
 
     {
       xcode_project_path: env_value("INPUT_XCODE_PROJECT_PATH"),
@@ -211,8 +207,8 @@ class Action
     end
   end
 
-  def report(warnings, warning_details = nil, **options)
-    reporter = ActionReporter.new(warnings, warning_details)
+  def report(warnings, warning_details = nil, parse_warnings = nil, **options)
+    reporter = ActionReporter.new(warnings, warning_details, parse_warnings)
     reporter.write
 
     if warnings.empty?
@@ -222,15 +218,17 @@ class Action
     end
     # The comment input only controls PR commenting; tracking-issue runs
     # (open-tracking-issue on a non-PR run) still publish their report.
-    publish(warnings, warning_details, options) if options.fetch(:comment, true) || @reporter_sink.tracking_issue_run?
+    publish(warnings, warning_details, parse_warnings, options) if options.fetch(:comment, true) || @reporter_sink.tracking_issue_run?
     ActionReporter::TrackingIssueOutput.write(@reporter_sink.tracking_issue_result)
 
     reporter
   end
 
-  def publish(warnings, warning_details, options)
-    if warnings.any?
-      @reporter_sink.publish_updates(warnings, warning_details)
+  # Parse warnings force a publish even with zero updates: a silently skipped
+  # declaration must not read as "all dependencies are up to date".
+  def publish(warnings, warning_details, parse_warnings, options)
+    if warnings.any? || Array(parse_warnings).any?
+      @reporter_sink.publish_updates(warnings, warning_details, parse_warnings)
     elsif options.fetch(:comment_on_success, false)
       @reporter_sink.publish_success
     else

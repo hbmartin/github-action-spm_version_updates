@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "yaml"
+require_relative "errors"
 require_relative "git_operations"
 require_relative "semver"
 require_relative "update_severity"
@@ -63,13 +64,13 @@ class RepositoryUpdateRules
     yaml_config = YAML.safe_load_file(path, permitted_classes: [], permitted_symbols: [], aliases: false) || {}
     from_hash(yaml_config, source: path)
   rescue Psych::Exception => error
-    raise(ArgumentError, "repo-rules YAML is invalid in #{path}: #{error.message}")
+    raise(SpmVersionUpdates::ConfigurationError, "repo-rules YAML is invalid in #{path}: #{error.message}")
   end
 
   def self.from_hash(config = {}, source: "repo rules", **keyword_config)
     effective_config = keyword_config.empty? ? config : keyword_config
     effective_config ||= {}
-    raise(ArgumentError, "#{source} must contain a YAML mapping") unless effective_config.kind_of?(Hash)
+    raise(SpmVersionUpdates::ConfigurationError, "#{source} must contain a YAML mapping") unless effective_config.kind_of?(Hash)
 
     new(parse_repositories(repositories_from(effective_config, source), source))
   end
@@ -84,7 +85,7 @@ class RepositoryUpdateRules
     repositories.each_with_object({}).with_index(1) { |(entry, rules), index|
       rule = parse_entry(entry, "#{source} repositories[#{index}]")
       normalized_url = rule.normalized_url
-      raise(ArgumentError, "duplicate repo-rules entry for #{normalized_url}") if rules.key?(normalized_url)
+      raise(SpmVersionUpdates::ConfigurationError, "duplicate repo-rules entry for #{normalized_url}") if rules.key?(normalized_url)
 
       rules[normalized_url] = rule
     }
@@ -99,8 +100,8 @@ class RepositoryUpdateRules
 
   def self.validated_file_path(path)
     path = path.to_s.strip
-    raise(ArgumentError, "repo-rules-path was set but no file path was provided") if path.empty?
-    raise(ArgumentError, "repo-rules-path file does not exist: #{path}") unless File.file?(path)
+    raise(SpmVersionUpdates::ConfigurationError, "repo-rules-path was set but no file path was provided") if path.empty?
+    raise(SpmVersionUpdates::ConfigurationError, "repo-rules-path file does not exist: #{path}") unless File.file?(path)
 
     path
   end
@@ -109,13 +110,13 @@ class RepositoryUpdateRules
     string_keys = config.transform_keys(&:to_s)
     validate_keys!(string_keys, VALID_YAML_KEYS.fetch(:root), "#{source} root")
     repositories = string_keys.compact.fetch(yaml_key(:repositories), [])
-    raise(ArgumentError, "#{source} repositories must be a list") unless repositories.kind_of?(Array)
+    raise(SpmVersionUpdates::ConfigurationError, "#{source} repositories must be a list") unless repositories.kind_of?(Array)
 
     repositories
   end
 
   def self.rule_entry_from(entry, source)
-    raise(ArgumentError, "#{source} must be a mapping") unless entry.kind_of?(Hash)
+    raise(SpmVersionUpdates::ConfigurationError, "#{source} must be a mapping") unless entry.kind_of?(Hash)
 
     entry.transform_keys(&:to_s).tap { |string_keys| validate_keys!(string_keys, VALID_YAML_KEYS.fetch(:entry), source) }
   end
@@ -124,7 +125,7 @@ class RepositoryUpdateRules
     normalized_url = normalized_url_for(required_value(string_keys, yaml_key(:url), source))
     ignore_until = parse_ignore_until(string_keys, source)
     allowed_updates = parse_allowed_updates(string_keys, source)
-    raise(ArgumentError, "#{source} must set #{yaml_key(:ignore_until)} or #{yaml_key(:allowed_updates)}") unless ignore_until || allowed_updates
+    raise(SpmVersionUpdates::ConfigurationError, "#{source} must set #{yaml_key(:ignore_until)} or #{yaml_key(:allowed_updates)}") unless ignore_until || allowed_updates
 
     { normalized_url:, ignore_until:, allowed_updates: }
   end
@@ -133,19 +134,19 @@ class RepositoryUpdateRules
     unknown = values.keys - allowed
     return if unknown.empty?
 
-    raise(ArgumentError, "#{source} contains unknown key(s): #{unknown.join(', ')}")
+    raise(SpmVersionUpdates::ConfigurationError, "#{source} contains unknown key(s): #{unknown.join(', ')}")
   end
 
   def self.required_value(values, key, source)
     value = values[key].to_s.strip
-    raise(ArgumentError, "#{source} #{key} must be set") if value.empty?
+    raise(SpmVersionUpdates::ConfigurationError, "#{source} #{key} must be set") if value.empty?
 
     value
   end
 
   def self.normalized_url_for(value)
     normalized = GitOperations.trim_repo_url(value)
-    raise(ArgumentError, "repo-rules url must normalize to a repository URL") if normalized.empty?
+    raise(SpmVersionUpdates::ConfigurationError, "repo-rules url must normalize to a repository URL") if normalized.empty?
 
     normalized
   end
@@ -155,7 +156,7 @@ class RepositoryUpdateRules
     return unless values.key?(key)
 
     semver(values[key].to_s.strip).tap { |version|
-      raise(ArgumentError, "#{source} #{key} must be a semantic version") unless version
+      raise(SpmVersionUpdates::ConfigurationError, "#{source} #{key} must be a semantic version") unless version
     }
   end
 
@@ -166,7 +167,7 @@ class RepositoryUpdateRules
     value = values[key].to_s.strip.downcase
     return value if SEVERITY_RANK.key?(value)
 
-    raise(ArgumentError, "#{source} #{key} must be patch, minor, or major")
+    raise(SpmVersionUpdates::ConfigurationError, "#{source} #{key} must be patch, minor, or major")
   end
 
   def self.record_value(record, key)

@@ -100,6 +100,9 @@ outputs:
   patch-updates-found:
     description: 'Number of patch semantic-version updates found'
     value: ${{ steps.check.outputs.patch-updates-found }}
+  parse-warnings:
+    description: 'Number of .package(...) declarations that could not be parsed and were skipped (not counted in updates-found)'
+    value: ${{ steps.check.outputs.parse-warnings }}
   updates-json:
     description: 'JSON array of dependency update objects with message plus available package, version, severity, repository, and source fields'
     value: ${{ steps.check.outputs.updates-json }}

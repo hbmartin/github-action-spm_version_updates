@@ -2,6 +2,7 @@
 
 require "json"
 require "spm_version_updates/credential_redactor"
+require "spm_version_updates/parse_warning"
 require "spm_version_updates/repository_link"
 require "spm_version_updates/update_severity"
 
@@ -177,9 +178,10 @@ class ActionReporter
     end
   end
 
-  def initialize(warnings, warning_details = nil)
+  def initialize(warnings, warning_details = nil, parse_warnings = nil)
     @warnings = Array(warnings)
     @warning_details = Array(warning_details)
+    @parse_warnings = Array(parse_warnings)
   end
 
   def write
@@ -229,15 +231,31 @@ class ActionReporter
       "major-updates-found=#{severity_counts['major']}",
       "minor-updates-found=#{severity_counts['minor']}",
       "patch-updates-found=#{severity_counts['patch']}",
+      "parse-warnings=#{@parse_warnings.size}",
       "blocked=false",
       "error-message=",
     ]
   end
 
   def step_summary_lines
-    return [SUMMARY_HEADING, "", "All SPM dependencies are up to date."] if records.empty?
+    update_lines = if records.empty?
+                     [SUMMARY_HEADING, "", "All SPM dependencies are up to date."]
+                   else
+                     [SUMMARY_HEADING, "", update_count_line, "", *update_summary_lines]
+                   end
+    update_lines + parse_warning_summary_lines
+  end
 
-    [SUMMARY_HEADING, "", update_count_line, "", *update_summary_lines]
+  def parse_warning_summary_lines
+    return [] if @parse_warnings.empty?
+
+    ["", "### Parse warnings", ""] + @parse_warnings.flat_map { |record|
+      [
+        "- #{record['message']}",
+        "  Snippet: `#{record['snippet'].to_s.delete('`')}`",
+        "  [Open an issue](#{ParseWarning.issue_link(record)})",
+      ]
+    }
   end
 
   def update_count_line
@@ -281,6 +299,14 @@ class ActionReporter
       properties["file"] = source if source
 
       puts(WorkflowCommand.annotation("warning", properties, message))
+    }
+    emit_parse_warning_annotations
+  end
+
+  def emit_parse_warning_annotations
+    @parse_warnings.each { |record|
+      properties = { "title" => "SPM manifest parse warning", "file" => record["source"] }.compact
+      puts(WorkflowCommand.annotation("warning", properties, record["message"]))
     }
   end
 end

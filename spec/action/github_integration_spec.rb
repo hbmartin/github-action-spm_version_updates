@@ -80,6 +80,44 @@ RSpec.describe(GithubIntegration) {
       expect(message).to(include("1. Newer version of onevcat/Kingfisher: 8.0.0"))
     end
 
+    it("appends a parse warnings section with an open-an-issue link", :aggregate_failures) do
+      parse_warnings = [
+        ParseWarning.record(
+          reason: "unrecognized_requirement",
+          source: "Modules/Package.swift",
+          snippet: 'url: "https://github.com/a/odd", futureRequirement: "1.0.0"'
+        ),
+      ]
+
+      message = integration.send(
+        :build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil, parse_warnings
+      )
+
+      expect(message).to(include("Found 1 potential dependency update"))
+      expect(message).to(include("1 declaration could not be parsed"))
+      expect(message).to(include("`Modules/Package.swift`: its version requirement was not recognized"))
+      expect(message).to(include('`url: "https://github.com/a/odd", futureRequirement: "1.0.0"`'))
+      expect(message).to(include("[open an issue](#{ParseWarning::ISSUE_URL}?"))
+    end
+
+    it("keeps the up-to-date line when only parse warnings exist", :aggregate_failures) do
+      parse_warnings = [
+        ParseWarning.record(reason: "unbalanced_parentheses", source: "Package.swift", snippet: ".package("),
+      ]
+
+      message = integration.send(:build_warnings_message, [], nil, parse_warnings)
+
+      expect(message).to(include("All SPM dependencies are up to date!"))
+      expect(message).to(include("1 declaration could not be parsed"))
+      expect(message).to(include("remainder of this manifest was not scanned"))
+    end
+
+    it("does not append a parse warnings section when none exist") do
+      message = integration.send(:build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil, [])
+
+      expect(message).not_to(include("could not be parsed"))
+    end
+
     it("builds GitLab compare and release links for nested projects", :aggregate_failures) do
       details = [
         {
@@ -370,6 +408,31 @@ RSpec.describe(GithubIntegration) {
         expect(body).to(include(described_class::COMMENT_IDENTIFIER))
         expect(body).to(include("Found 1 potential dependency update"))
         expect(body).to(include("Newer version of onevcat/Kingfisher: 8.0.0"))
+      end
+    end
+
+    it("posts a comment when there are only parse warnings", :aggregate_failures) do
+      client = instance_double(Octokit::Client)
+      allow(Octokit::Client).to(receive(:new).with(access_token: "token").and_return(client))
+      allow(client).to(
+        receive_messages(
+          issue_comments: [],
+          add_comment: { html_url: "https://github.com/owner/repo/issues/42#issuecomment-789" }
+        )
+      )
+      parse_warnings = [
+        ParseWarning.record(reason: "unrecognized_requirement", source: "Package.swift", snippet: "odd"),
+      ]
+
+      Dir.mktmpdir do |dir|
+        with_env(github_env(write_event_file(dir))) do
+          described_class.new.publish_updates([], nil, parse_warnings)
+        end
+      end
+
+      expect(client).to(have_received(:add_comment)) do |_repo, _pr_number, body|
+        expect(body).to(include("All SPM dependencies are up to date!"))
+        expect(body).to(include("1 declaration could not be parsed"))
       end
     end
   }

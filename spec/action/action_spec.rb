@@ -186,7 +186,20 @@ RSpec.describe Action do
     it "rejects non-integer version tag cache TTLs" do
       with_env(input_env("INPUT_VERSION_TAGS_CACHE_TTL" => "six hours")) do
         expect { action.send(:read_inputs) }
-          .to raise_error(ArgumentError, /INPUT_VERSION_TAGS_CACHE_TTL must be an integer/)
+          .to raise_error(SpmVersionUpdates::ConfigurationError, /INPUT_VERSION_TAGS_CACHE_TTL must be a non-negative integer/)
+      end
+    end
+
+    it "rejects negative version tag cache TTLs" do
+      with_env(input_env("INPUT_VERSION_TAGS_CACHE_TTL" => "-60")) do
+        expect { action.send(:read_inputs) }
+          .to raise_error(SpmVersionUpdates::ConfigurationError, /INPUT_VERSION_TAGS_CACHE_TTL must be a non-negative integer/)
+      end
+    end
+
+    it "accepts a zero version tag cache TTL" do
+      with_env(input_env("INPUT_VERSION_TAGS_CACHE_TTL" => "0")) do
+        expect(action.send(:read_inputs)[:version_tags_cache_ttl]).to eq(0)
       end
     end
   end
@@ -256,7 +269,7 @@ RSpec.describe Action do
           "::warning title=SPM dependency update,file=Modules/Package.swift::" \
           "Newer version of onevcat/Kingfisher: 8.0.0"
         )
-        expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details)
+        expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, nil)
       end
     end
 
@@ -618,7 +631,7 @@ RSpec.describe Action do
         end
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
-      expect(reporter_sink).to have_received(:publish_updates).with(warnings, [])
+      expect(reporter_sink).to have_received(:publish_updates).with(warnings, [], [])
     end
 
     it "fails when a semantic update meets the fail-on threshold", :aggregate_failures do
@@ -642,7 +655,7 @@ RSpec.describe Action do
         end
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
-      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details)
+      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, [])
     end
 
     it "does not fail when semantic updates are below the fail-on threshold", :aggregate_failures do
@@ -664,7 +677,7 @@ RSpec.describe Action do
         action.run
       end
 
-      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details)
+      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, [])
     end
   end
 

@@ -2,6 +2,7 @@
 
 require "json"
 require "octokit"
+require "spm_version_updates/parse_warning"
 require "spm_version_updates/repository_link"
 require "uri"
 require_relative "reporter_sink"
@@ -223,6 +224,40 @@ class GithubIntegration < ReporterSink
     end
   end
 
+  # Renders the comment section listing `.package(...)` declarations the
+  # manifest parser had to skip, each with a pre-filled new-issue link.
+  class ParseWarningsSection
+    def initialize(parse_warnings)
+      @parse_warnings = Array(parse_warnings)
+    end
+
+    def markdown
+      return nil if @parse_warnings.empty?
+
+      <<~MARKDOWN.chomp
+                #{header}
+
+                #{@parse_warnings.map { |record| bullet(record) }
+        .join("\n")}
+      MARKDOWN
+    end
+
+    private
+
+    def header
+      count = @parse_warnings.size
+      "⚠️ **#{count} declaration#{count == 1 ? '' : 's'} could not be parsed** " \
+        "(updates for the affected dependencies were not checked):"
+    end
+
+    def bullet(record)
+      line = +"- `#{record['source']}`: #{ParseWarning.describe_reason(record)}"
+      snippet = record["snippet"].to_s.delete("`")
+      line << " — `#{snippet}`" unless snippet.empty?
+      line << ". If this is valid Swift, please [open an issue](#{ParseWarning.issue_link(record)})."
+    end
+  end
+
   # Renders the source column for grouped structured warning details.
   class SourceCell
     def initialize(sources, formatter)
@@ -284,10 +319,10 @@ class GithubIntegration < ReporterSink
     !!(@open_tracking_issue && !@pr_number && @client && @github_repository)
   end
 
-  def publish_updates(warnings, warning_details = nil)
+  def publish_updates(warnings, warning_details = nil, parse_warnings = nil)
     return unless tracking_issue_run? || comment_target?
 
-    message = build_comment_message(build_warnings_message(warnings, warning_details))
+    message = build_comment_message(build_warnings_message(warnings, warning_details, parse_warnings))
     if tracking_issue_run?
       @tracking_issue_result = tracking_issue.upsert(message)
     else
@@ -373,7 +408,13 @@ class GithubIntegration < ReporterSink
     MARKDOWN
   end
 
-  def build_warnings_message(warnings, warning_details = nil)
+  def build_warnings_message(warnings, warning_details = nil, parse_warnings = nil)
+    [updates_message(warnings, warning_details), ParseWarningsSection.new(parse_warnings).markdown]
+      .compact
+      .join("\n\n")
+  end
+
+  def updates_message(warnings, warning_details)
     return "✅ **All SPM dependencies are up to date!**" if warnings.empty?
 
     details = structured_warning_details(warning_details)

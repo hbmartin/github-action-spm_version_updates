@@ -33,6 +33,22 @@ DOCS_LAYERS = {
 # Documented-object floor enforced by docs:check; raise it as coverage improves.
 DOCS_MINIMUM_COVERAGE = 54.0
 
+VERSION_FILE = "gems/spm_version_updates/lib/spm_version_updates/version.rb"
+# Every directory whose Gemfile.lock embeds the path-gem version and must be
+# regenerated when it changes.
+BUNDLE_DIRS = [
+  ".",
+  "action",
+  "gems/spm_version_updates",
+  "gems/danger-spm_version_updates",
+].freeze
+# gems/*/Gemfile.lock is gitignored (those bundles resolve at install time),
+# so only these lockfiles are committed with the bump.
+COMMITTED_LOCKFILES = [
+  "Gemfile.lock",
+  "action/Gemfile.lock",
+].freeze
+
 RSpec::Core::RakeTask.new(:specs)
 
 task default: :specs
@@ -112,6 +128,44 @@ end
 
 desc "Build the documentation site"
 task docs: "docs:build"
+
+desc "Bump the gem version, regenerate every Gemfile.lock, and commit + tag the release"
+task :bump, [:version] do |_task, args|
+  require "bundler"
+
+  version = args[:version]
+  abort("Usage: rake 'bump[X.Y.Z]'") unless version&.match?(/\A\d+\.\d+\.\d+\z/)
+  abort("Working tree is dirty; commit or stash everything before bumping") unless `git status --porcelain`.empty?
+
+  source = File.read(VERSION_FILE)
+  current = source[/VERSION = "([^"]+)"/, 1]
+  abort("Could not find the VERSION constant in #{VERSION_FILE}") unless current
+  abort("New version #{version} must be greater than current #{current}") if Gem::Version.new(version) <= Gem::Version.new(current)
+
+  File.write(VERSION_FILE, source.sub(/VERSION = "[^"]+"/, %(VERSION = "#{version}")))
+
+  # The path gems pin each other's exact version, so every lockfile embeds it
+  # and must be regenerated. Drop the root bundle's environment so each
+  # directory resolves against its own Gemfile.
+  Bundler.with_unbundled_env {
+    BUNDLE_DIRS.each { |dir|
+      Dir.chdir(dir) { sh("bundle", "install", "--quiet") }
+    }
+  }
+
+  sh("git", "add", VERSION_FILE, *COMMITTED_LOCKFILES)
+  sh("git", "commit", "-m", "Bump version to #{version}")
+  sh("git", "tag", "v#{version}")
+
+  puts <<~NEXT_STEPS
+
+    Bumped #{current} -> #{version} and tagged v#{version}.
+
+    Next steps (pushing the tag publishes the gems via push_gem.yml):
+      git push origin HEAD v#{version}
+    then publish a GitHub release for v#{version} to move the floating major tag.
+  NEXT_STEPS
+end
 
 desc "Ensure that the plugin passes `danger plugins lint`"
 task :spec_docs do

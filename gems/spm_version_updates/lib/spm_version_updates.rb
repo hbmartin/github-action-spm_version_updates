@@ -2,11 +2,13 @@
 
 require_relative "spm_version_updates/allow_host_normalizer"
 require_relative "spm_version_updates/credential_redactor"
+require_relative "spm_version_updates/errors"
 require_relative "spm_version_updates/fail_on_threshold"
 require_relative "spm_version_updates/git_host_normalizer"
 require_relative "spm_version_updates/git_operations"
 require_relative "spm_version_updates/manifest_parser"
 require_relative "spm_version_updates/package_resolved"
+require_relative "spm_version_updates/parse_warning"
 require_relative "spm_version_updates/repository_link"
 require_relative "spm_version_updates/repository_update_rules"
 require_relative "spm_version_updates/semver"

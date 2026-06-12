@@ -99,6 +99,13 @@ module Danger
 
     def emit_checker_warnings(checker)
       checker.warning_details.each { |detail| warn(render_warning(detail)) }
+      checker.parse_warnings.each { |record| warn(render_parse_warning(record)) }
+    end
+
+    # Builds the Danger warning markdown for a `.package(...)` declaration the
+    # manifest parser had to skip.
+    def render_parse_warning(record)
+      "#{record['message']} ([open an issue](#{ParseWarning.issue_link(record)}))"
     end
 
     # Builds the Danger warning markdown for one structured warning detail:
