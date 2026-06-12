@@ -59,11 +59,11 @@ inputs:
     required: false
     default: ''
   comment:
-    description: 'Post or update the pull request comment. Set false to disable all PR commenting.'
+    description: 'Post or update the pull request comment. Set false to disable all PR commenting; outputs, the step summary, and annotations are still produced, and a comment left by a prior run is kept as-is rather than deleted. Tracking issues (open-tracking-issue) are unaffected.'
     required: false
     default: 'true'
   comment-on-success:
-    description: 'Post a pull request comment when all dependencies are up to date'
+    description: 'Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead.'
     required: false
     default: 'false'
   open-tracking-issue:
@@ -75,11 +75,11 @@ inputs:
     required: false
     default: 'true'
   version-tags-cache-ttl:
-    description: 'How long cached git tag results stay fresh, in seconds. Set 0 to disable cache reads and writes.'
+    description: 'Freshness window, in seconds, for persisted git tag lookups. Set 0 to disable persistent cache reads and writes.'
     required: false
     default: '21600'
   setup-ruby:
-    description: 'Set up Ruby and install this action bundle. Set false only after an earlier invocation in the same job has done this.'
+    description: 'Set up Ruby and install this action bundle. Set false only for later invocations in the same job after an earlier invocation has already run setup.'
     required: false
     default: 'true'
   github-token:
@@ -101,10 +101,10 @@ outputs:
     description: 'Number of patch semantic-version updates found'
     value: ${{ steps.check.outputs.patch-updates-found }}
   parse-warnings:
-    description: 'Number of .package(...) declarations that could not be parsed and were skipped (not counted in updates-found)'
+    description: 'Number of .package(...) declarations that could not be parsed and were skipped. Not counted in updates-found and never fails the run, but skipped declarations are listed in the step summary and PR comment with a link to open an issue — a PR comment is posted even when no updates were found so skips are never silent.'
     value: ${{ steps.check.outputs.parse-warnings }}
   updates-json:
-    description: 'JSON array of dependency update objects with message plus available package, version, severity, repository, and source fields'
+    description: 'JSON array of update objects. Each object has a message field and, when available, structured fields such as type, package, repository_url, current_version, available_version, severity, note, source, requirement_kind, package_identity, suggested_command, and suggested_requirement.'
     value: ${{ steps.check.outputs.updates-json }}
   blocked:
     description: 'Whether the run was blocked before version lookup by a security gate such as allow-hosts'
@@ -113,10 +113,10 @@ outputs:
     description: 'Failure message when blocked is true'
     value: ${{ steps.check.outputs.error-message }}
   tracking-issue-number:
-    description: 'Number of the tracking issue created or updated, when open-tracking-issue is enabled and the run had no pull request context'
+    description: 'Number of the tracking issue created or updated, when open-tracking-issue is enabled and the run had no pull request context. Empty otherwise.'
     value: ${{ steps.check.outputs.tracking-issue-number }}
   tracking-issue-url:
-    description: 'HTML URL of the tracking issue created or updated'
+    description: 'HTML URL of the tracking issue created or updated. Empty otherwise.'
     value: ${{ steps.check.outputs.tracking-issue-url }}
 
 runs:

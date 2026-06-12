@@ -1,0 +1,41 @@
+<%# Shadows yard's default headers.erb (see the gem's templates/default/
+    layout/html/headers.erb) to add a favicon and client-side syntax
+    highlighting for the non-Ruby code blocks in the guides. Keep the
+    stock parts in sync when upgrading yard. %>
+<meta charset="<%= charset %>">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>
+  <%= h @page_title %>
+  <% if options.title && @page_title != options.title %>
+    &mdash; <%= h options.title %>
+  <% end %>
+</title>
+<% if ENV["SPM_DOCS_LAYER"] %>
+  <link rel="icon" href="<%= url_for('index.html').sub(/index\.html\z/, '') %>../favicon.svg" type="image/svg+xml">
+<% end %>
+<% stylesheets.each do |stylesheet| %>
+  <link rel="stylesheet" href="<%= mtime_url(stylesheet) %>" type="text/css">
+<% end %>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<%= erb :script_setup %>
+<% javascripts.each do |javascript| %>
+  <script type="text/javascript" charset="utf-8" src="<%= mtime_url(javascript) %>"></script>
+<% end %>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<script>
+  // yard highlights Ruby server-side (span tokens); hand everything else,
+  // identified by the language class kramdown left on the code element, to
+  // highlight.js. No-op when the CDN is unreachable.
+  document.addEventListener('DOMContentLoaded', function () {
+    if (!window.hljs) return;
+    document.querySelectorAll('pre.code > code').forEach(function (code) {
+      var lang = (code.className || '').trim();
+      if (!lang || lang === 'ruby' || code.querySelector('span')) return;
+      if (window.hljs.getLanguage(lang)) {
+        code.classList.add('language-' + lang);
+        window.hljs.highlightElement(code);
+      }
+    });
+  });
+</script>

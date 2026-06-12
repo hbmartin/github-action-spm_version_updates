@@ -76,6 +76,96 @@ action ref, and its bundle installs the core gem from the in-repo path.
 New report destinations implement `ReporterSink` without touching the checker
 or the reporting flow.
 
+### One check run, end to end
+
+```text
+action.rb                          SpmChecker (core gem)
+    │  read INPUT_* env vars            │
+    │  ReporterSink#configure(inputs)   │
+    │  check_manifests /                │
+    │  check_for_updates ──────────────▶│
+    │                                   │ ManifestParser / XcodeParser
+    │                                   │   └─ .package(...) declarations
+    │                                   │      (unparseable ones → parse_warnings)
+    │                                   │ PackageResolved
+    │                                   │   └─ resolved pins, merged by normalized URL
+    │                                   │ VersionTagFetcher / GitOperations
+    │                                   │   └─ git ls-remote per dependency
+    │                                   │      (parallel workers, optional disk cache,
+    │                                   │       allow-hosts gate before contact)
+    │                                   │ Semver / UpdateSeverity
+    │                                   │   └─ classify each update
+    │                                   │ ignore-repos / RepositoryUpdateRules
+    │                                   │   └─ filter suppressed reports
+    │ ◀── warnings, warning_details, ───┘
+    │     parse_warnings
+    │  ActionReporter
+    │    └─ step outputs, step summary, ::warning annotations
+    │  ReporterSink
+    │    └─ publish_updates / publish_success / clear  ──▶  PR comment or
+    │                                                       tracking issue
+    │  FailOnThreshold
+    │    └─ exit status (after everything above is written)
+```
+
+### Writing a custom `ReporterSink`
+
+`Action` calls the sink at fixed points; implement these methods
+(`action/lib/reporter_sink.rb`):
+
+| Method | When it is called |
+| --- | --- |
+| `configure(inputs)` | Once, before checking, with the parsed inputs hash. Optional override. |
+| `publish_updates(warnings, warning_details, parse_warnings)` | Updates or parse warnings exist. Parse warnings force a publish even with zero updates, so a skipped declaration never reads as "all up to date". |
+| `publish_success` | Clean run with `comment-on-success: true`. |
+| `clear` | Clean run otherwise — retract a previously published report, if any. |
+| `tracking_issue_run?` | Return `true` when the sink reports outside a PR, so publishing happens even with `comment: false`. Optional override (default `false`). |
+| `tracking_issue_result` | `{ number:, url: }` of the issue touched by the last publish, or `nil`; feeds the `tracking-issue-*` outputs. Optional override. |
+
+A minimal sink that posts to a Slack incoming webhook:
+
+```ruby
+require "json"
+require "net/http"
+require_relative "reporter_sink"
+
+# Reports update warnings to a Slack channel instead of a PR comment.
+class SlackSink < ReporterSink
+  def configure(_inputs)
+    @webhook_url = URI(ENV.fetch("SLACK_WEBHOOK_URL"))
+  end
+
+  def publish_updates(warnings, _warning_details = nil, _parse_warnings = nil)
+    post("📦 SPM updates available:\n#{warnings.join("\n")}")
+  end
+
+  def publish_success
+    post(SUCCESS_MESSAGE)
+  end
+
+  def clear
+    # Nothing to retract; Slack messages are immutable.
+  end
+
+  private
+
+  def post(text)
+    Net::HTTP.post(@webhook_url, JSON.generate(text:), "Content-Type" => "application/json")
+  end
+end
+```
+
+Wire it in by constructing the entry point with the sink:
+
+```ruby
+Action.new(reporter_sink: SlackSink.new).run
+```
+
+The richer `warning_details` records (repository URL, current/available
+version, severity, suggested update command, …) and the `parse_warnings`
+records are available when the sink wants to render more than the plain
+warning strings — `GithubIntegration` is the in-tree example that uses both.
+
 ## Release flow
 
 `rake 'bump[X.Y.Z]'` performs the version bump: it rewrites the single

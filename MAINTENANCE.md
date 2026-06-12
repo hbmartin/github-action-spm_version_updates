@@ -100,7 +100,9 @@ it directly. Both gems are released from this repository in lockstep.
 2. **Update `action/lib/action.rb`** to handle new arguments
 3. **Add appropriate logic** to core modules
 4. **Add tests** for new functionality
-5. **Update README.md** with new configuration options
+5. **Regenerate the README tables** — the input/output tables in README.md are
+   generated from `action.yml`: edit the descriptions there and run
+   `bundle exec rake docs:tables` (CI fails on drift via `docs:tables:check`)
 
 ### Runtime Dependency Changes
 

@@ -133,6 +133,8 @@ jobs:
 
 No temporary Xcode project, no synthetic `Package.resolved`, no repo-specific parser.
 
+📚 **More complete workflows** — scheduled reports as tracking issues, fork-safe runs, merge gating, and automatic bump PRs built on `updates-json` — are assembled in the [cookbook](docs/cookbook.md).
+
 ## Permissions
 
 The action reads your manifests from the checked-out repo and posts a single comment on the pull request, so the job needs:
@@ -153,34 +155,9 @@ Running on pull requests **from forks** needs extra care — see [Security](#sec
 
 ## Security
 
-This action reads dependency URLs from your manifests and contacts each one with `git ls-remote`. On your own branches that's routine, but pull requests from forks can rewrite those URLs, so treat fork runs as untrusted.
+This action reads dependency URLs from your manifests and contacts each one with `git ls-remote`. On your own branches that's routine, but pull requests from forks can rewrite those URLs, so treat fork runs as untrusted: check out the PR head with `persist-credentials: false`, keep extra secrets out of the job, and restrict version lookups to known hosts with `allow-hosts`. Transports are limited to `https`, `ssh`, and `git`; `file`, `ext`, and remote helpers are blocked.
 
-- **Fork PRs get a read-only `GITHUB_TOKEN`**, so the comment step can't write. To run on fork PRs, trigger with `pull_request_target` (review the [security implications](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)) or post the results from a separate, trusted workflow.
-- **Fork PR manifests are untrusted input.** With `pull_request_target`, checking out the PR head lets a fork change `Package.swift` or `.xcodeproj` dependency URLs. Because lookups use `git ls-remote`, a malicious PR could point the runner at hosts it can reach and at credentials already available to git.
-- **Transports are restricted.** Lookups are limited to Git's `https`, `ssh`, and `git` transports; `file`, `ext`, and remote-helper transports are blocked.
-- **Lock down fork runs.** Set `persist-credentials: false`, avoid extra secrets / SSH keys / private network access, and restrict version lookups with `allow-hosts`. Host matching is exact, case-insensitive, and ignores schemes, credentials, paths, and ports; an off-list dependency fails the action and writes `blocked=true` plus `error-message`.
-
-```yaml
-on:
-  pull_request_target:
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  spm-version-updates:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-      - uses: hbmartin/github-action-spm_version_updates@v1
-        with:
-          package-manifest-paths: Modules/Package.swift
-          allow-hosts: github.com
-```
+See the [security guide](docs/security.md) for the full threat model, the `allow-hosts` matching semantics, and a hardened `pull_request_target` example.
 
 ## Source modes
 
@@ -223,28 +200,32 @@ Local packages (`.package(path: ...)`) and commented-out declarations are ignore
 
 ## Configuration Options
 
-| Input | Description | Required | Default |
-| ----- | ----------- | -------- | ------- |
-| `xcode-project-path` | Path to your Xcode project file (`.xcodeproj`). Provide this **or** `package-manifest-paths`. | One of the two | |
-| `package-manifest-paths` | Newline-separated list of `Package.swift` paths. Provide this **or** `xcode-project-path`. | One of the two | |
-| `package-resolved-paths` | Optional newline-separated list of `Package.resolved` paths. Defaults to a `Package.resolved` next to each manifest. | No | inferred |
-| `check-when-exact` | Check for updates even when using `exact` version constraints | No | `false` |
-| `check-branches` | Check for newer commits on branch-pinned dependencies | No | `true` |
-| `check-revisions` | Report the latest tagged version for revision-pinned dependencies | No | `false` |
-| `report-above-maximum` | Report versions above the maximum constraint range | No | `false` |
-| `report-pre-releases` | Include pre-release versions in update reports | No | `false` |
-| `ignore-repos` | Comma-separated list of repository URLs to ignore | No | `''` |
-| `repo-rules-path` | Path to a YAML file with per-repository semantic update suppression rules | No | `''` |
-| `allow-hosts` | Comma-separated list of git remote hostnames allowed for enabled version lookups. Empty allows any host for the allowed git protocols. | No | `''` |
-| `fail-on-updates` | Legacy fail behavior. Set `true` to fail on any update, or `major` / `minor` / `patch` to fail on semantic version updates at or above that severity. | No | `false` |
-| `fail-on` | Fail on semantic version updates at or above this severity: `major`, `minor`, or `patch`. Overrides `fail-on-updates` when set. | No | `''` |
-| `comment` | Post or update the pull request comment. Set `false` to disable all PR commenting; outputs, the step summary, and annotations are still produced, and a comment left by a prior run is kept as-is rather than deleted. Tracking issues (`open-tracking-issue`) are unaffected. | No | `true` |
-| `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | No | `false` |
-| `open-tracking-issue` | On runs without a pull request context (`schedule`, `workflow_dispatch`, `push`), open or update a single tracking issue with the update report, and close it once everything is up to date. Requires `issues: write`. | No | `false` |
-| `cache-version-tags` | Persist successful git tag lookups between runs with `actions/cache`. | No | `true` |
-| `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Set `0` to disable persistent cache reads and writes. | No | `21600` |
-| `setup-ruby` | Set up Ruby and install this action's bundle. Set to `false` only for later invocations in the same job after an earlier invocation has already run setup. | No | `true` |
-| `github-token` | Token used to create or update pull request comments. | No | `${{ github.token }}` |
+Exactly one of `xcode-project-path` or `package-manifest-paths` is required (see [Source modes](#source-modes)); every other input is optional.
+
+<!-- inputs-table:begin (generated from action.yml by `rake docs:tables`; edit descriptions there) -->
+| Input | Description | Default |
+| ----- | ----------- | ------- |
+| `xcode-project-path` | Xcode mode: path to the .xcodeproj file. Mutually exclusive with package-manifest-paths. |  |
+| `package-manifest-paths` | Manifest mode: newline-separated Package.swift paths. Mutually exclusive with xcode-project-path. |  |
+| `package-resolved-paths` | Optional newline-separated Package.resolved paths. Defaults to a Package.resolved next to each manifest. |  |
+| `check-when-exact` | Include exact version constraints when checking for updates | `false` |
+| `check-branches` | Check branch-pinned dependencies for newer commits | `true` |
+| `check-revisions` | Report the latest tagged release for revision-pinned dependencies | `false` |
+| `report-above-maximum` | Also report versions above the maximum allowed constraint range | `false` |
+| `report-pre-releases` | Include pre-release versions when choosing available updates | `false` |
+| `ignore-repos` | Comma-separated repository URLs to skip before any git lookup |  |
+| `repo-rules-path` | Path to a YAML file with per-repository semantic update suppression rules |  |
+| `allow-hosts` | Comma-separated git remote hostnames allowed for version lookups. Empty allows any host for allowed git protocols. |  |
+| `fail-on-updates` | Deprecated: use fail-on instead. Set true to fail on any update, or major/minor/patch for semantic updates. | `false` |
+| `fail-on` | Fail when an update at or above this severity is found: major, minor, patch, or empty to never fail. Overrides fail-on-updates when set. |  |
+| `comment` | Post or update the pull request comment. Set false to disable all PR commenting; outputs, the step summary, and annotations are still produced, and a comment left by a prior run is kept as-is rather than deleted. Tracking issues (open-tracking-issue) are unaffected. | `true` |
+| `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | `false` |
+| `open-tracking-issue` | On runs without a pull request context (schedule, workflow_dispatch, push), open or update a single tracking issue with the update report, and close it when everything is up to date. Requires issues: write permission. | `false` |
+| `cache-version-tags` | Cache git tag lookup results with actions/cache to make repeated runs faster | `true` |
+| `version-tags-cache-ttl` | Freshness window, in seconds, for persisted git tag lookups. Set 0 to disable persistent cache reads and writes. | `21600` |
+| `setup-ruby` | Set up Ruby and install this action bundle. Set false only for later invocations in the same job after an earlier invocation has already run setup. | `true` |
+| `github-token` | Token used to create or update pull request comments. Defaults to github.token. | `${{ github.token }}` |
+<!-- inputs-table:end -->
 
 ### Runtime setup
 
@@ -279,18 +260,20 @@ Across all of the constraint types above, pre-release tags (versions with a `-` 
 
 The action always writes machine-readable outputs, appends a GitHub step summary, and emits `::warning` annotations for each update. Pull request runs get a summary comment when updates are found. Clean runs delete the prior generated comment by default; set `comment-on-success: true` to keep an up-to-date comment instead, or `comment: false` to disable PR commenting entirely. Scheduled and `workflow_dispatch` runs still have visible results in the workflow run summary and annotations — set `open-tracking-issue: true` to also keep a single tracking issue updated with the same report (it is closed automatically once everything is up to date).
 
+<!-- outputs-table:begin (generated from action.yml by `rake docs:tables`; edit descriptions there) -->
 | Output | Description |
 | ------ | ----------- |
-| `updates-found` | Number of dependency updates found. |
-| `major-updates-found` | Number of major semantic-version updates found. |
-| `minor-updates-found` | Number of minor semantic-version updates found. |
-| `patch-updates-found` | Number of patch semantic-version updates found. |
-| `parse-warnings` | Number of `.package(...)` declarations that could not be parsed and were skipped. Not counted in `updates-found` and never fails the run, but skipped declarations are listed in the step summary and PR comment with a link to open an issue — a PR comment is posted even when no updates were found so skips are never silent. |
-| `updates-json` | JSON array of update objects. Each object has a `message` field and, when available, structured fields such as `type`, `package`, `repository_url`, `current_version`, `available_version`, `severity`, `note`, `source`, `requirement_kind`, `package_identity`, `suggested_command`, and `suggested_requirement`. |
-| `blocked` | `true` when the action stopped before a version lookup because a security gate such as `allow-hosts` blocked it; otherwise `false`. |
-| `error-message` | Failure message when `blocked` is `true`. |
-| `tracking-issue-number` | Number of the tracking issue created or updated, when `open-tracking-issue` is enabled and the run had no pull request context. Empty otherwise. |
+| `updates-found` | Number of dependency updates found |
+| `major-updates-found` | Number of major semantic-version updates found |
+| `minor-updates-found` | Number of minor semantic-version updates found |
+| `patch-updates-found` | Number of patch semantic-version updates found |
+| `parse-warnings` | Number of .package(...) declarations that could not be parsed and were skipped. Not counted in updates-found and never fails the run, but skipped declarations are listed in the step summary and PR comment with a link to open an issue — a PR comment is posted even when no updates were found so skips are never silent. |
+| `updates-json` | JSON array of update objects. Each object has a message field and, when available, structured fields such as type, package, repository_url, current_version, available_version, severity, note, source, requirement_kind, package_identity, suggested_command, and suggested_requirement. |
+| `blocked` | Whether the run was blocked before version lookup by a security gate such as allow-hosts |
+| `error-message` | Failure message when blocked is true |
+| `tracking-issue-number` | Number of the tracking issue created or updated, when open-tracking-issue is enabled and the run had no pull request context. Empty otherwise. |
 | `tracking-issue-url` | HTML URL of the tracking issue created or updated. Empty otherwise. |
+<!-- outputs-table:end -->
 
 ### `updates-json` example
 
@@ -345,26 +328,18 @@ Use `fail-on: major` when only major semantic-version updates should fail the jo
 
 ### Per-repository rules
 
-Use `ignore-repos` when a dependency should be skipped entirely before any git lookup. Use `repo-rules-path` when the dependency should still be checked, but selected semantic-version reports should be hidden from comments, annotations, outputs, and `fail-on` counts.
-
-```yaml
-- uses: hbmartin/github-action-spm_version_updates@v1
-  with:
-    package-manifest-paths: Modules/Package.swift
-    report-above-maximum: true
-    repo-rules-path: .github/spm-version-rules.yml
-```
+Use `ignore-repos` when a dependency should be skipped entirely before any git lookup. Use `repo-rules-path` to point at a YAML file of per-repository rules when the dependency should still be checked, but selected semantic-version reports should be hidden from comments, annotations, outputs, and `fail-on` counts:
 
 ```yaml
 repositories:
   - url: "https://github.com/example/noise"
-    ignore-until: "2.0.0"
+    ignore-until: "2.0.0"      # hide reports below 2.0.0; 2.0.0 itself reports
 
   - url: "https://github.com/example/no-major"
-    allowed-updates: "minor"
+    allowed-updates: "minor"   # hide major reports; patch and minor still report
 ```
 
-`ignore-until` suppresses semantic reports whose available version is below the configured version; version X itself still reports. `allowed-updates` accepts `patch`, `minor`, or `major`, where `minor` allows patch and minor reports but suppresses major reports. These rules apply only to semantic `version` and `above_maximum` reports; branch and revision reports keep using `check-branches`, `check-revisions`, and `ignore-repos`.
+See the [repository rules reference](docs/repo-rules.md) for the full schema, the URL matching semantics, and worked examples.
 
 ## Example output
 
@@ -449,19 +424,7 @@ spm_version_updates.check_manifests(["Modules/Package.swift", "BuildTools/Packag
 
 ## Troubleshooting
 
-**No comment appeared on my PR.** Check that the job has `pull-requests: write` and that the run is a real pull request — fork PRs get a read-only token and can't comment (see [Security](#security)). On clean runs the prior comment is deleted by default; set `comment-on-success: true` to keep an "up to date" comment instead.
-
-**No tracking issue appeared on my scheduled run.** Tracking issues require `open-tracking-issue: true`, the `issues: write` permission, and a run *without* a pull request context — PR runs always use the PR comment instead. Check `tracking-issue-url` in the step outputs to confirm whether one was touched.
-
-**The action failed with a missing `Package.resolved`.** In Swift manifest mode every manifest needs a resolved file next to it (e.g. `Modules/Package.swift` → `Modules/Package.resolved`). Commit the resolved file, or point `package-resolved-paths` at its real location.
-
-**No updates found, but I know a newer version exists.** Updates are detected from semver-style tags. Pre-releases (unless `report-pre-releases: true`), versions above your constraint (unless `report-above-maximum: true`), and exact/revision pins (unless `check-when-exact` / `check-revisions`) are skipped by design. A dependency that doesn't publish version tags produces no updates, and `ignore-repos` / `repo-rules-path` may be suppressing the report.
-
-**The output says `blocked=true`.** A dependency's host isn't in `allow-hosts`. Add the host (matching is exact and case-insensitive) or adjust your manifests; `error-message` names what was blocked.
-
-**It can't reach a private dependency.** The runner must already be authenticated (SSH key or git credentials) to fetch private repos — the action doesn't manage credentials. Unreachable or auth-failing dependencies fail the run after retries rather than reporting "no updates."
-
-**"Provide exactly one of…" error.** Set either `xcode-project-path` **or** `package-manifest-paths` — not both, and not neither.
+The [troubleshooting guide](docs/troubleshooting.md) covers the common failure modes: no comment on the PR, no tracking issue on a scheduled run, a missing `Package.resolved`, "no updates found" when you know one exists, non-zero `parse-warnings`, `blocked=true`, unreachable private dependencies, and the "Provide exactly one of…" error.
 
 ## Versioning
 

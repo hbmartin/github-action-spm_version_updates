@@ -1,0 +1,44 @@
+<%# Shadows yard's default layout.erb (see the gem's templates/default/
+    layout/html/layout.erb) to add the cross-layer navigation banner. The
+    banner renders only in the rake docs build, which sets SPM_DOCS_LAYER
+    and assembles the layers side by side under one site root. Keep the
+    stock parts in sync when upgrading yard. %>
+<!DOCTYPE html>
+<html>
+  <head>
+    <%= erb(:headers) %>
+  </head>
+  <body>
+    <div id="main_progress" aria-hidden="true"></div>
+
+    <div class="nav_wrap">
+      <iframe id="nav" src="<%= @nav_url %>?1"></iframe>
+      <div id="resizer"></div>
+    </div>
+
+    <div id="main" tabindex="-1">
+      <% if (docs_layer = ENV["SPM_DOCS_LAYER"]) %>
+      <% site_root = url_for('index.html').sub(/index\.html\z/, '') + '../' %>
+      <nav id="spm-layer-nav">
+        <a class="spm-site" href="<%= site_root %>index.html">Swift Package Version Updates</a>
+        <span class="spm-layers">
+          <a href="<%= site_root %>core/index.html"<%= ' class="current"' if docs_layer == 'core' %>>Core gem</a>
+          <a href="<%= site_root %>danger/index.html"<%= ' class="current"' if docs_layer == 'danger' %>>Danger plugin</a>
+          <a href="<%= site_root %>action/index.html"<%= ' class="current"' if docs_layer == 'action' %>>Action runner</a>
+          <a href="<%= site_root %>index.html#guides">Guides</a>
+          <a href="https://github.com/hbmartin/github-action-spm_version_updates">GitHub</a>
+        </span>
+      </nav>
+      <% end %>
+      <div id="header">
+        <%= erb(:breadcrumb) %>
+        <%= erb(:search) %>
+        <div class="clear"></div>
+      </div>
+
+      <div id="content"><%= yieldall %></div>
+
+      <%= erb(:footer) %>
+    </div>
+  </body>
+</html>
