@@ -234,12 +234,7 @@ class GithubIntegration < ReporterSink
     def markdown
       return nil if @parse_warnings.empty?
 
-      <<~MARKDOWN.chomp
-                #{header}
-
-                #{@parse_warnings.map { |record| bullet(record) }
-        .join("\n")}
-      MARKDOWN
+      [header, "", *@parse_warnings.map { |record| bullet(record) }].join("\n")
     end
 
     private

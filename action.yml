@@ -75,7 +75,7 @@ inputs:
     required: false
     default: 'true'
   version-tags-cache-ttl:
-    description: 'Freshness window, in seconds, for persisted git tag lookups. Set 0 to disable persistent cache reads and writes.'
+    description: 'Freshness window, in seconds, for persisted git tag lookups. Must be a non-negative integer; set 0 to disable persistent cache reads and writes.'
     required: false
     default: '21600'
   setup-ruby:

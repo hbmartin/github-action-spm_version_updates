@@ -231,6 +231,14 @@ This action follows semantic versioning:
    git push origin release/v1.2.0
    ```
 
+   If review feedback requires more commits on the release branch, the local
+   `v1.2.0` tag still points at the original bump commit. Re-point it at the
+   final commit before pushing it:
+
+   ```bash
+   git tag -f v1.2.0
+   ```
+
 4. **After PR approval and merge**, push the tag the bump task created:
 
    ```bash
