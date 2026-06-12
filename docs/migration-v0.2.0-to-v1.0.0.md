@@ -488,7 +488,7 @@ bundle exec rake docs docs:check  # build the docs site, gate on coverage
 
 API documentation builds per layer (core gem, Danger plugin, action runner)
 into `_site/` via `rake docs`, and `docs.yml` publishes it to GitHub Pages
-under a versioned path (`/<tag>/` plus `/latest/`) on every release tag.
+on every release tag.
 
 To exercise the action entrypoint locally:
 
