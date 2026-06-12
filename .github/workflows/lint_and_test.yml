@@ -32,6 +32,11 @@ jobs:
         run: bundle exec rubocop
       - name: Run Reek
         run: bundle exec rake reek
+      # Catches doc drift before release: a broken docs build, YARD warnings,
+      # undocumented classes/modules, or a coverage regression all fail here
+      # instead of at tag time in docs.yml.
+      - name: Build docs site and check documentation
+        run: bundle exec rake docs docs:check
       - name: Run Danger plugin lint
         working-directory: gems/danger-spm_version_updates
         env:

@@ -55,11 +55,10 @@ with a runtime dependency on the core gem.
 `Danger::DangerSpmVersionUpdates` (`lib/spm_version_updates/plugin.rb`) exposes
 the Dangerfile API (`check_for_updates`, `check_manifests`, and the
 `check_when_exact`-style accessors) and delegates the actual checking to the
-core gem. Reporting goes through Danger's `warn`/`fail` messaging.
-
-The `Git` and `Xcode` modules in this gem are deprecated compatibility shims
-for code written against `v0.2.0`; they delegate to `GitOperations` and
-`XcodeProjectPackageReader` in the core gem.
+core gem. Reporting goes through Danger's `warn`/`fail` messaging. The gem
+contains no checking logic of its own — the `Git`/`Xcode` helper modules from
+`v0.2.0` were removed in favor of the core gem's `GitOperations`,
+`XcodeParser`, and `XcodeProjectPackageReader`.
 
 ## GitHub Action layer: `action/`
 

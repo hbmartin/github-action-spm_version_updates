@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 require "spm_version_updates"
-require_relative "git"
-require_relative "xcode"
 
 # Danger's plugin namespace, reopened to register {DangerSpmVersionUpdates}.
 module Danger
@@ -49,8 +47,8 @@ module Danger
     # A method that you can call from your Dangerfile
     # @param   [String] xcodeproj_path
     #          The path to your Xcode project
-    # @raise [Xcode::XcodeprojPathMustBeSet] if the xcodeproj_path is blank
-    # @raise [Xcode::CouldNotFindResolvedFile] if no Package.resolved files were found
+    # @raise [XcodeParser::XcodeprojPathMustBeSet] if the xcodeproj_path is blank
+    # @raise [XcodeParser::CouldNotFindResolvedFile] if no Package.resolved files were found
     # @return   [void]
     def check_for_updates(xcodeproj_path)
       run_checker { |checker| checker.check_for_updates(xcodeproj_path) }

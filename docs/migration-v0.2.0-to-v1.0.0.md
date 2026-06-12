@@ -6,6 +6,9 @@ This guide covers the user-facing and maintainer-facing changes between the
 The short version: `v0.2.0` was documented as a Danger plugin. `v1` adds a
 first-class GitHub Action, a new Swift manifest source mode, structured GitHub
 Actions outputs, stricter git lookup behavior, and a higher Ruby requirement.
+Along the way the project was split into layers: a dependency-checking core
+gem, a thin Danger plugin gem on top of it, and the GitHub Action runner (see
+[architecture.md](architecture.md)).
 
 ## Who needs to change something?
 
@@ -18,6 +21,45 @@ Actions outputs, stricter git lookup behavior, and a higher Ruby requirement.
 | Maintaining this repository locally | The runtime and quality toolchain changed. | Use Ruby 3.2 or newer, preferably Ruby 3.3, and run the expanded spec/lint suite. |
 
 ## Breaking and compatibility notes
+
+### One project, two gems
+
+`v0.2.0` shipped as a single gem, `danger-spm_version_updates`. The project is
+now layered:
+
+| Layer | Where | Published as |
+| --- | --- | --- |
+| Core checking logic | `gems/spm_version_updates/` | [`spm_version_updates`](https://rubygems.org/gems/spm_version_updates) on RubyGems |
+| Danger plugin | `gems/danger-spm_version_updates/` | [`danger-spm_version_updates`](https://rubygems.org/gems/danger-spm_version_updates) on RubyGems |
+| GitHub Action runner | `action/` + `action.yml` | Not a gem; consumed via the action ref |
+
+`danger-spm_version_updates` declares a runtime dependency on
+`spm_version_updates`, so Bundler installs both — no Gemfile change is needed
+beyond updating the version. If your own tooling consumes the checking logic
+programmatically (parsers, git lookups, semver classification), depend on the
+core gem directly instead of the Danger plugin gem.
+
+Per-layer API documentation is published to GitHub Pages on every release:
+<https://hbmartin.github.io/github-action-spm_version_updates/>.
+
+### Removed `v0.2.0` helper modules
+
+The `Git` and `Xcode` helper modules that `v0.2.0` exposed from the Danger gem
+have been removed. The Dangerfile API (`check_for_updates`, `check_manifests`,
+and the configuration accessors) is unaffected, but code that called the
+helpers directly must switch to the core gem's equivalents:
+
+| Removed | Replacement (core gem) |
+| --- | --- |
+| `Git.trim_repo_url`, `Git.repo_name`, `Git.version_tags`, `Git.branch_last_commit` | `GitOperations` (same method names) |
+| `Xcode.get_packages` | `XcodeProjectPackageReader.package_references` |
+| `Xcode.get_resolved_versions` | `XcodeParser` / `PackageResolved.versions_from` |
+| `Xcode::XcodeprojPathMustBeSet`, `Xcode::CouldNotFindResolvedFile` | `XcodeParser::XcodeprojPathMustBeSet`, `XcodeParser::CouldNotFindResolvedFile` |
+| `require "spm_version_updates/gem_version"` | `require "spm_version_updates/version"` |
+
+Note that `GitOperations` lookups raise `GitOperations::LsRemoteError` after
+bounded retries instead of returning empty results on failure, and return
+`SpmVersionUpdates::Semver` values rather than `Semantic::Version`.
 
 ### Ruby requirement
 
@@ -78,6 +120,9 @@ spm_version_updates.repo_rules_path = ".github/spm-version-rules.yml"
 
 Important limitations if you stay on the Danger plugin:
 
+- The `Git` and `Xcode` helper modules are gone; see
+  [Removed `v0.2.0` helper modules](#removed-v020-helper-modules) if your
+  Dangerfile called them directly.
 - It remains Xcode-project mode only. It does not expose `package-manifest-paths`.
 - It does not expose GitHub Actions outputs, step summaries, annotations,
   `fail-on`, `allow-hosts`, or `comment-on-success`.
@@ -438,7 +483,12 @@ bundle exec rspec
 bundle exec rubocop
 bundle exec rake reek
 bundle exec danger plugins lint
+bundle exec rake docs docs:check  # build the docs site, gate on coverage
 ```
+
+API documentation builds per layer (core gem, Danger plugin, action runner)
+into `_site/` via `rake docs`, and `docs.yml` publishes it to GitHub Pages
+under a versioned path (`/<tag>/` plus `/latest/`) on every release tag.
 
 To exercise the action entrypoint locally:
 
