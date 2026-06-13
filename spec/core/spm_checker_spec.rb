@@ -316,7 +316,7 @@ RSpec.describe SpmChecker do
     end
 
     it "fetches version tags with a bounded worker pool and preserves warning order", :aggregate_failures do
-      package_count = SpmChecker::VERSION_TAG_WORKER_COUNT + 4
+      package_count = checker.version_lookup_workers + 4
       remote_packages = (1..package_count).each_with_object({}) { |index, packages|
         packages["github.com/acme/pkg#{index}"] = {
           "repository_url" => "https://github.com/acme/pkg#{index}",
@@ -346,9 +346,9 @@ RSpec.describe SpmChecker do
 
       begin
         Timeout.timeout(2) {
-          SpmChecker::VERSION_TAG_WORKER_COUNT.times { started.pop }
+          checker.version_lookup_workers.times { started.pop }
         }
-        expect(max_in_flight).to eq(SpmChecker::VERSION_TAG_WORKER_COUNT)
+        expect(max_in_flight).to eq(checker.version_lookup_workers)
       ensure
         package_count.times { release << true }
         checker_thread.value
@@ -824,6 +824,158 @@ RSpec.describe SpmChecker do
     end
   end
 
+  describe "#version_lookup_workers" do
+    it "defaults to four workers" do
+      expect(checker.version_lookup_workers).to eq(4)
+    end
+
+    it "accepts integers and numeric strings", :aggregate_failures do
+      checker.version_lookup_workers = "6"
+      expect(checker.version_lookup_workers).to eq(6)
+
+      checker.version_lookup_workers = 2
+      expect(checker.version_lookup_workers).to eq(2)
+    end
+
+    it "rejects non-positive and non-integer values" do
+      [0, -1, "abc"].each do |value|
+        expect { checker.version_lookup_workers = value }
+          .to raise_error(SpmVersionUpdates::ConfigurationError, /positive integer/)
+      end
+    end
+
+    it "passes the configured worker count to the tag fetcher" do
+      checker.version_lookup_workers = 3
+      allow(VersionTagFetcher).to receive(:call).and_return([{}, {}])
+
+      checker.send(:check_packages, cache_remote_packages, cache_resolved_versions)
+
+      expect(VersionTagFetcher).to have_received(:call)
+        .with(anything, hash_including(worker_limit: 3))
+    end
+  end
+
+  describe "missing resolved files" do
+    it "raises by default" do
+      Dir.mktmpdir do |dir|
+        manifest = ManifestPackageFixture.write_version(dir)
+        File.delete(File.join(dir, "Package.resolved"))
+
+        expect { checker.check_manifests([manifest]) }
+          .to raise_error(ManifestParser::CouldNotFindResolvedFile)
+      end
+    end
+
+    it "calls the handler with missing paths and continues with existing pins", :aggregate_failures do
+      missing_paths = []
+      checker.missing_resolved_handler = ->(paths) { missing_paths.concat(paths) }
+
+      Dir.mktmpdir do |pinned_dir|
+        Dir.mktmpdir do |missing_dir|
+          pinned_manifest = ManifestPackageFixture.write_version(pinned_dir)
+          missing_manifest = ManifestPackageFixture.write_version(missing_dir, url: "https://github.com/a/missing")
+          missing_resolved = File.join(missing_dir, "Package.resolved")
+          File.delete(missing_resolved)
+          allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b").and_return(versions("1.1.0", "1.0.0"))
+
+          warnings = checker.check_manifests([pinned_manifest, missing_manifest])
+
+          expect(warnings).to eq(["Newer version of a/b: 1.1.0\nSource: #{pinned_manifest}"])
+          expect(missing_paths).to eq([missing_resolved])
+          expect(GitOperations).not_to have_received(:version_tags).with("https://github.com/a/missing")
+        end
+      end
+    end
+  end
+
+  describe "#check_resolved" do
+    it "reports newer tags for version pins with resolved-pin details", :aggregate_failures do
+      allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b").and_return(versions("2.0.0", "1.0.0"))
+
+      Dir.mktmpdir do |dir|
+        ManifestPackageFixture.write_version(dir)
+        resolved = File.join(dir, "Package.resolved")
+
+        warnings = checker.check_resolved([resolved])
+
+        expect(warnings).to eq(["Newer version of a/b: 2.0.0\nSource: #{resolved}"])
+        expect(checker.warning_details.first).to include(
+          type: "version",
+          package: "a/b",
+          requirement_kind: "resolvedPin",
+          note: "resolved pin",
+          source: resolved,
+          suggested_command: "swift package update b",
+          suggested_requirement: nil
+        )
+      end
+    end
+
+    it "does not warn when the pin is equal to or newer than the newest tag" do
+      allow(GitOperations).to receive(:version_tags).and_return(versions("2.0.0", "1.0.0"))
+
+      Dir.mktmpdir do |dir|
+        resolved = write_resolved_pin(dir, "https://github.com/a/b", "3.0.0-beta.1")
+
+        expect(checker.check_resolved([resolved])).to eq([])
+      end
+    end
+
+    it "uses one lookup for a shared dependency across resolved files" do
+      lookup_count = 0
+      allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b") {
+        lookup_count += 1
+        versions("1.1.0", "1.0.0")
+      }
+
+      Dir.mktmpdir do |first_dir|
+        Dir.mktmpdir do |second_dir|
+          first = write_resolved_pin(first_dir, "https://github.com/a/b", "1.0.0")
+          second = write_resolved_pin(second_dir, "https://github.com/a/b", "1.0.0")
+
+          checker.check_resolved([first, second])
+
+          expect(lookup_count).to eq(1)
+        end
+      end
+    end
+
+    it "honors revision pins only when revision checks are enabled" do
+      allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b").and_return(versions("1.0.0"))
+      checker.check_revisions = true
+
+      Dir.mktmpdir do |dir|
+        resolved = write_resolved_revision(dir, "https://github.com/a/b", "abc123")
+
+        expect(checker.check_resolved([resolved])).to eq(
+          ["a/b is pinned to a revision (abc123); latest tagged version is 1.0.0\nSource: #{resolved}"]
+        )
+      end
+    end
+
+    it "rejects blank input" do
+      expect { checker.check_resolved([""]) }
+        .to raise_error(SpmVersionUpdates::ConfigurationError, /package-resolved-paths/)
+    end
+
+    it "routes missing and malformed resolved files to handlers", :aggregate_failures do
+      missing = []
+      malformed = []
+      checker.missing_resolved_handler = ->(paths) { missing.concat(paths) }
+      checker.malformed_resolved_handler = ->(path, _error) { malformed << path }
+
+      Dir.mktmpdir do |dir|
+        missing_path = File.join(dir, "Missing.resolved")
+        bad_path = File.join(dir, "Bad.resolved")
+        File.write(bad_path, "{not json")
+
+        expect(checker.check_resolved([missing_path, bad_path])).to eq([])
+        expect(missing).to eq([missing_path])
+        expect(malformed).to eq([bad_path])
+      end
+    end
+  end
+
   def redacted_repository_url_log
     a_string_including("https://[REDACTED]@github.com/acme/private")
       .and(satisfy("not output raw credentials") { |output| !output.include?("user:token") })
@@ -840,5 +992,25 @@ RSpec.describe SpmChecker do
 
   def cache_resolved_versions
     { "github.com/acme/shared" => "1.0.0" }
+  end
+
+  def write_resolved_pin(dir, url, version)
+    path = File.join(dir, "Package.resolved")
+    File.write(path,
+               {
+                 "pins" => [{ "location" => url, "state" => { "revision" => "abc123", "version" => version } }],
+                 "version" => 2
+               }.to_json)
+    path
+  end
+
+  def write_resolved_revision(dir, url, revision)
+    path = File.join(dir, "Package.resolved")
+    File.write(path,
+               {
+                 "pins" => [{ "location" => url, "state" => { "revision" => revision } }],
+                 "version" => 2
+               }.to_json)
+    path
   end
 end

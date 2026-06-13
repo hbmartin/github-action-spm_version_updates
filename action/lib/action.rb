@@ -4,6 +4,8 @@ require "spm_version_updates"
 require_relative "action_reporter"
 require_relative "github_integration"
 require_relative "reporter_sink"
+require_relative "timings"
+require_relative "update_applier"
 
 # Main GitHub Action entry point.
 #
@@ -31,11 +33,15 @@ class Action
       ignore_repos: "Ignore repos",
       repo_rules_path: "Repo rules",
       allow_hosts: "Allow hosts",
+      version_lookup_workers: "Version lookup workers",
       comment: "Comment",
       comment_on_success: "Comment on success",
       open_tracking_issue: "Open tracking issue",
+      enrich_release_notes: "Enrich release notes",
       cache_version_tags: "Cache version tags",
-      version_tags_cache_ttl: "Version tags cache TTL"
+      version_tags_cache_ttl: "Version tags cache TTL",
+      allow_missing_resolved: "Allow missing resolved",
+      apply_updates: "Apply updates"
     }.freeze
     private_constant :LABELS
 
@@ -70,6 +76,7 @@ class Action
       print_value(:check_revisions)
       print_value(:report_above_maximum)
       print_value(:report_pre_releases)
+      print_value(:version_lookup_workers)
     end
 
     def print_filter_inputs
@@ -83,11 +90,14 @@ class Action
       print_value(:comment)
       print_value(:comment_on_success)
       print_value(:open_tracking_issue)
+      print_value(:enrich_release_notes)
     end
 
     def print_cache_inputs
       print_value(:cache_version_tags)
       print_value(:version_tags_cache_ttl)
+      print_value(:allow_missing_resolved)
+      print_value(:apply_updates)
     end
 
     def print_value(key)
@@ -109,25 +119,36 @@ class Action
   def initialize(reporter_sink: nil, checker_factory: SpmChecker, github_integration: nil)
     @reporter_sink = [reporter_sink, github_integration].find { |sink| sink } || GithubIntegration.new
     @checker_factory = checker_factory
+    @missing_resolved = []
   end
 
   def run
+    @timings = Timings.new
+    @timings.start("Total")
+    @missing_resolved = []
     inputs = read_inputs
     ConfigPrinter.new(inputs).print
     @reporter_sink.configure(inputs)
     move_to_workspace
 
     checker = configure_checker(inputs)
-    warnings = run_checks(checker, inputs)
+    validate_apply_mode(inputs)
+    warnings = @timings.measure("Checks") { run_checks(checker, inputs) }
     warning_details = checker.warning_details
     parse_warnings = checker.parse_warnings
+    applied_updates = apply_updates_if_requested(inputs, warning_details)
+    @timings.finish("Total")
     reporter = report(
       warnings,
       warning_details,
       parse_warnings,
+      missing_resolved: missing_resolved_records,
+      applied_updates:,
+      timings: @timings,
       comment: inputs[:comment],
       comment_on_success: inputs[:comment_on_success]
     )
+    fail_for_apply_errors(applied_updates) if applied_updates&.failed?
     failure_message = FailOnThreshold.failure_message(inputs[:fail_on], reporter)
     fail_with(failure_message) if failure_message
 
@@ -151,6 +172,8 @@ class Action
     cache_ttl = Integer(cache_ttl_value || VersionTagsPersistentCache::DEFAULT_TTL_SECONDS.to_s, 10, exception: false)
     raise(SpmVersionUpdates::ConfigurationError, "INPUT_VERSION_TAGS_CACHE_TTL must be a non-negative integer") unless cache_ttl && cache_ttl >= 0
 
+    workers = positive_integer_input("INPUT_VERSION_LOOKUP_WORKERS", SpmChecker::DEFAULT_VERSION_LOOKUP_WORKERS)
+
     {
       xcode_project_path: env_value("INPUT_XCODE_PROJECT_PATH"),
       manifest_paths: env_lines("INPUT_PACKAGE_MANIFEST_PATHS"),
@@ -163,10 +186,14 @@ class Action
       ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
       repo_rules_path: env_value("INPUT_REPO_RULES_PATH"),
       allow_hosts: env_csv("INPUT_ALLOW_HOSTS"),
+      version_lookup_workers: workers,
       fail_on: FailOnThreshold.from_inputs(env_value("INPUT_FAIL_ON"), env_value("INPUT_FAIL_ON_UPDATES")),
       comment: env_flag_default_true("INPUT_COMMENT"),
       comment_on_success: env_flag("INPUT_COMMENT_ON_SUCCESS"),
       open_tracking_issue: env_flag("INPUT_OPEN_TRACKING_ISSUE"),
+      allow_missing_resolved: env_flag("INPUT_ALLOW_MISSING_RESOLVED"),
+      apply_updates: env_flag("INPUT_APPLY_UPDATES"),
+      enrich_release_notes: env_flag_default_true("INPUT_ENRICH_RELEASE_NOTES"),
       cache_version_tags: env_flag_default_true("INPUT_CACHE_VERSION_TAGS"),
       version_tags_cache_ttl: cache_ttl,
       version_tags_cache_dir: env_value("SPM_VERSION_UPDATES_TAG_CACHE_DIR")
@@ -184,6 +211,8 @@ class Action
     checker.ignore_repos = inputs[:ignore_repos]
     checker.repository_update_rules = RepositoryUpdateRules.load_file(repo_rules_path) if repo_rules_path
     checker.allow_hosts = inputs[:allow_hosts]
+    checker.version_lookup_workers = inputs[:version_lookup_workers]
+    configure_missing_resolved_handler(checker, inputs)
     checker.version_tags_cache_dir = inputs[:cache_version_tags] ? inputs[:version_tags_cache_dir] : nil
     checker.version_tags_cache_ttl_seconds = inputs[:version_tags_cache_ttl]
     checker
@@ -193,6 +222,7 @@ class Action
     xcode = inputs[:xcode_project_path]
     manifests = inputs[:manifest_paths]
     has_manifests = !manifests.empty?
+    has_resolved = !inputs[:resolved_paths].empty?
 
     if xcode && has_manifests
       raise(ModeError, "Set either xcode-project-path or package-manifest-paths, not both.")
@@ -202,14 +232,25 @@ class Action
     elsif xcode
       puts("Mode: Xcode project")
       checker.check_for_updates(xcode)
+    elsif has_resolved
+      puts("Mode: Package.resolved only")
+      checker.check_resolved(inputs[:resolved_paths])
     else
-      raise(ModeError, "Set either xcode-project-path or package-manifest-paths.")
+      raise(ModeError, "Set xcode-project-path, package-manifest-paths, or package-resolved-paths.")
     end
   end
 
   def report(warnings, warning_details = nil, parse_warnings = nil, **options)
-    reporter = ActionReporter.new(warnings, warning_details, parse_warnings)
-    reporter.write
+    reporter = ActionReporter.new(
+      warnings,
+      warning_details,
+      parse_warnings,
+      missing_resolved: options[:missing_resolved],
+      applied_updates: options[:applied_updates],
+      timings: options[:timings]
+    )
+    reporter.write_outputs
+    reporter.emit_annotations
 
     if warnings.empty?
       puts("✅ All SPM dependencies are up to date!")
@@ -218,22 +259,74 @@ class Action
     end
     # The comment input only controls PR commenting; tracking-issue runs
     # (open-tracking-issue on a non-PR run) still publish their report.
-    publish(warnings, warning_details, parse_warnings, options) if options.fetch(:comment, true) || @reporter_sink.tracking_issue_run?
+    missing_resolved = options[:missing_resolved]
+    publish(warnings, warning_details, parse_warnings, missing_resolved, options) if options.fetch(:comment, true) || @reporter_sink.tracking_issue_run?
     ActionReporter::TrackingIssueOutput.write(@reporter_sink.tracking_issue_result)
+    reporter.write_summary
 
     reporter
   end
 
   # Parse warnings force a publish even with zero updates: a silently skipped
   # declaration must not read as "all dependencies are up to date".
-  def publish(warnings, warning_details, parse_warnings, options)
-    if warnings.any? || Array(parse_warnings).any?
-      @reporter_sink.publish_updates(warnings, warning_details, parse_warnings)
+  def publish(warnings, warning_details, parse_warnings, missing_resolved, options)
+    if warnings.any? || Array(parse_warnings).any? || Array(missing_resolved).any?
+      publish_updates(warnings, warning_details, parse_warnings, missing_resolved)
     elsif options.fetch(:comment_on_success, false)
       @reporter_sink.publish_success
     else
       @reporter_sink.clear
     end
+  end
+
+  def publish_updates(warnings, warning_details, parse_warnings, missing_resolved)
+    return @reporter_sink.publish_updates(warnings, warning_details, parse_warnings, missing_resolved) unless @timings
+
+    @timings.measure("Publish") {
+      @reporter_sink.publish_updates(warnings, warning_details, parse_warnings, missing_resolved)
+    }
+  end
+
+  def configure_missing_resolved_handler(checker, inputs)
+    return unless inputs[:allow_missing_resolved]
+
+    checker.missing_resolved_handler = ->(paths) { @missing_resolved.concat(paths) }
+  end
+
+  def missing_resolved_records
+    @missing_resolved.map { |path|
+      {
+        "message" => "Package.resolved was not found; dependencies from this source may be skipped.",
+        "source" => path
+      }
+    }
+  end
+
+  def validate_apply_mode(inputs)
+    return unless inputs[:apply_updates]
+    return unless inputs[:manifest_paths].empty?
+
+    raise(SpmVersionUpdates::ConfigurationError, "apply-updates requires package-manifest-paths")
+  end
+
+  def apply_updates_if_requested(inputs, warning_details)
+    return unless inputs[:apply_updates]
+
+    @timings.measure("Apply updates") { UpdateApplier.new(warning_details).apply }
+  end
+
+  def fail_for_apply_errors(applied_updates)
+    applied_updates.failed.each { |failure|
+      puts(
+        ActionReporter::WorkflowCommand.annotation(
+          "error",
+          { "title" => "SPM apply-updates failed", "file" => failure[:source] },
+          failure[:error]
+        )
+      )
+    }
+    count = applied_updates.failed.size
+    fail_with("apply-updates failed for #{count} manifest#{count == 1 ? '' : 's'}")
   end
 
   def move_to_workspace
@@ -279,6 +372,14 @@ class Action
   def env_flag_default_true(key)
     value = env_value(key)
     value ? value == "true" : true
+  end
+
+  def positive_integer_input(key, default)
+    value = env_value(key)
+    parsed = Integer(value || default.to_s, 10, exception: false)
+    raise(SpmVersionUpdates::ConfigurationError, "#{key} must be a positive integer") unless parsed && parsed >= 1
+
+    parsed
   end
 end
 

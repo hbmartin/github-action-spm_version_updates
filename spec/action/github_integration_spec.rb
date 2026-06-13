@@ -274,6 +274,28 @@ RSpec.describe(GithubIntegration) {
       expect(message).to(include('| `onevcat/Kingfisher` | `from: "8.0.0"` | `Modules/Package.swift` |'))
     end
 
+    it("appends release notes when enrichment is enabled", :aggregate_failures) do
+      fetcher = instance_double(ReleaseNotes::Fetcher)
+      allow(fetcher).to(receive(:fetch).and_return({ body: "Release body" }))
+      integration.instance_variable_set(:@client, instance_double(Octokit::Client))
+      integration.instance_variable_set(:@enrich_release_notes, true)
+      integration.instance_variable_set(:@release_notes_fetcher, fetcher)
+
+      message = integration.send(:build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], [base_detail])
+
+      expect(message).to(include("How to update dependencies"))
+      expect(message).to(include("Release notes: onevcat/Kingfisher 8.0.0", "Release body"))
+    end
+
+    it("omits release notes when enrichment is disabled") do
+      integration.instance_variable_set(:@client, instance_double(Octokit::Client))
+      integration.instance_variable_set(:@enrich_release_notes, false)
+
+      message = integration.send(:build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], [base_detail])
+
+      expect(message).not_to(include("Release notes:"))
+    end
+
     it("falls back to static guidance for Xcode-mode details without commands", :aggregate_failures) do
       details = [base_detail.merge(source: nil).compact]
 

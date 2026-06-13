@@ -16,8 +16,9 @@ require_relative "version_tags_persistent_cache"
 require_relative "xcode_parser"
 
 # Core SPM version checking logic (migrated from Danger plugin)
+# rubocop:disable Metrics/ClassLength
 class SpmChecker
-  VERSION_TAG_WORKER_COUNT = 8
+  DEFAULT_VERSION_LOOKUP_WORKERS = 4
 
   # Raised when allow-hosts blocks a repository before git is contacted.
   class DisallowedRepositoryHost < SpmVersionUpdates::PolicyError; end
@@ -31,6 +32,8 @@ class SpmChecker
   # had to skip. Kept separate from update warnings so reported update counts
   # and fail-on thresholds are unaffected.
   attr_reader :parse_warnings
+
+  attr_reader :version_lookup_workers
 
   attr_accessor :allow_hosts,
                 :check_branches,
@@ -54,6 +57,12 @@ class SpmChecker
   # default), PackageResolved::MalformedFileError is raised.
   attr_accessor :malformed_resolved_handler
 
+  # Optional callable `(missing_paths)` invoked instead of raising when expected
+  # Package.resolved files are missing. Missing paths are dropped and packages
+  # without a resolved version keep the existing "Unable to locate..." behavior:
+  # no warning record is created and no version tags are fetched for them.
+  attr_accessor :missing_resolved_handler
+
   def self.redact_credentials(value)
     CredentialRedactor.redact(value)
   end
@@ -61,10 +70,11 @@ class SpmChecker
   def initialize
     @check_when_exact = @check_revisions = @report_above_maximum = @report_pre_releases = false
     @check_branches = true
-    @lookup_failure_handler = @malformed_resolved_handler = nil
+    @lookup_failure_handler = @malformed_resolved_handler = @missing_resolved_handler = nil
     @ignore_repos = []
     @repository_update_rules = RepositoryUpdateRules.empty
     @allow_hosts = []
+    @version_lookup_workers = DEFAULT_VERSION_LOOKUP_WORKERS
     @warnings = []
     @warning_details = []
     @parse_warnings = []
@@ -75,15 +85,19 @@ class SpmChecker
     @version_tags_cache_ttl_seconds = VersionTagsPersistentCache::DEFAULT_TTL_SECONDS
   end
 
+  def version_lookup_workers=(value)
+    workers = Integer(value.to_s, 10, exception: false)
+    raise(SpmVersionUpdates::ConfigurationError, "version_lookup_workers must be a positive integer") unless workers && workers >= 1
+
+    @version_lookup_workers = workers
+  end
+
   # Check for SPM updates using an Xcode project as the source of dependencies.
   #
   # @param   [String] xcodeproj_path The path to your Xcode project
   # @return  [Array<String>] Array of warning messages
   def check_for_updates(xcodeproj_path)
-    clear_warnings
-    reset_version_tags_cache
-    normalize_ignore_repos
-    normalize_allow_hosts
+    prepare_run
 
     remote_packages = XcodeParser.get_packages(xcodeproj_path)
     resolved_versions = XcodeParser.get_resolved_versions(xcodeproj_path, &@malformed_resolved_handler)
@@ -109,10 +123,7 @@ class SpmChecker
   # @raise [ManifestParser::CouldNotFindResolvedFile] if no resolved file exists
   # @return  [Array<String>] Array of warning messages
   def check_manifests(manifest_paths, resolved_paths = nil)
-    clear_warnings
-    reset_version_tags_cache
-    normalize_ignore_repos
-    normalize_allow_hosts
+    prepare_run
 
     resolved_versions = merged_resolved_versions(manifest_paths, resolved_paths)
     puts("Found resolved versions for #{resolved_versions.size} packages")
@@ -123,7 +134,33 @@ class SpmChecker
     @warnings
   end
 
+  # Check for SPM updates using one or more `Package.resolved` files as the
+  # source of dependencies. Version pins are compared directly with available
+  # tags; revision-only pins are reported only when check_revisions is enabled.
+  #
+  # @param [Array<String>] resolved_paths Paths to one or more Package.resolved files
+  # @raise [SpmVersionUpdates::ConfigurationError] if no paths are supplied
+  # @return [Array<String>] Array of warning messages
+  def check_resolved(resolved_paths)
+    prepare_run
+    paths = normalized_resolved_paths(resolved_paths)
+    raise(SpmVersionUpdates::ConfigurationError, "package-resolved-paths must be set") if paths.empty?
+
+    existing_paths(paths).each { |path|
+      remote_packages, resolved_versions = packages_from_resolved(path)
+      check_packages(remote_packages, resolved_versions, path)
+    }
+    @warnings
+  end
+
   private
+
+  def prepare_run
+    clear_warnings
+    reset_version_tags_cache
+    normalize_ignore_repos
+    normalize_allow_hosts
+  end
 
   def manifest_packages(manifest_path)
     ManifestParser.get_packages(manifest_path) { |skip| record_parse_warning(skip, manifest_path) }
@@ -185,14 +222,27 @@ class SpmChecker
   #
   # @return [Hash<String, String>]
   def merged_resolved_versions(manifest_paths, resolved_paths)
-    paths = Array(resolved_paths).map(&:to_s).reject(&:empty?)
+    paths = normalized_resolved_paths(resolved_paths)
     paths = manifest_paths.map { |manifest| ManifestParser.default_resolved_path(manifest) } if paths.empty?
 
-    missing = paths.reject { |path| File.exist?(path) }
-    raise(ManifestParser::CouldNotFindResolvedFile, missing.join(", ")) unless missing.empty?
+    paths = existing_paths(paths)
 
     puts("Reading resolved packages from: #{paths}")
     paths.each_with_object({}) { |path, pins| pins.merge!(resolved_versions_from(path)) }
+  end
+
+  def normalized_resolved_paths(paths)
+    Array(paths).map(&:to_s).reject(&:empty?)
+  end
+
+  def existing_paths(paths)
+    missing = paths.reject { |path| File.exist?(path) }
+    return paths if missing.empty?
+
+    raise(ManifestParser::CouldNotFindResolvedFile, missing.join(", ")) unless @missing_resolved_handler
+
+    @missing_resolved_handler.call(missing)
+    paths - missing
   end
 
   def resolved_versions_from(path)
@@ -202,6 +252,36 @@ class SpmChecker
 
     @malformed_resolved_handler.call(path, error)
     {}
+  end
+
+  def packages_from_resolved(path)
+    pins = resolved_pins_from(path)
+    [
+      pins.to_h { |pin| [pin["normalized_url"], package_entry_for_pin(pin)] },
+      pins.to_h { |pin| [pin["normalized_url"], pin["version"] || pin["revision"]] },
+    ]
+  end
+
+  def resolved_pins_from(path)
+    PackageResolved.pins_from(path)
+  rescue PackageResolved::MalformedFileError => error
+    raise unless @malformed_resolved_handler
+
+    @malformed_resolved_handler.call(path, error)
+    []
+  end
+
+  def package_entry_for_pin(pin)
+    {
+      "repository_url" => pin["repository_url"],
+      "requirement" => requirement_for_pin(pin)
+    }
+  end
+
+  def requirement_for_pin(pin)
+    return { "kind" => "resolvedPin", "version" => pin["version"] } if pin["version"]
+
+    { "kind" => "revision", "revision" => pin["revision"] }
   end
 
   # Compare a set of declared dependencies against the resolved pins.
@@ -312,7 +392,7 @@ class SpmChecker
     persistent_cache = VersionTagsPersistentCache.new(directory: @version_tags_cache_dir, ttl_seconds: @version_tags_cache_ttl_seconds)
     results, errors = VersionTagFetcher.call(
       pending,
-      worker_limit: VERSION_TAG_WORKER_COUNT,
+      worker_limit: @version_lookup_workers,
       persistent_cache:,
       raise_on_error: !@lookup_failure_handler
     )
@@ -386,6 +466,8 @@ class SpmChecker
       warn_for_new_versions(package, available_versions, :minor)
     when "versionRange"
       warn_for_new_versions_range(package, available_versions)
+    when "resolvedPin"
+      warn_for_new_versions_pin(package, available_versions)
     else
       puts("Not processing dependency rule '#{kind}' for #{package.name} (#{self.class.redact_credentials(repository_url)})")
     end
@@ -405,7 +487,8 @@ class SpmChecker
   end
 
   def warning_detail_record(message, package, detail)
-    detail.merge(message:, source: package.source).compact
+    detail.merge(message:, source: package.source)
+      .reject { |key, value| value.nil? && key != :suggested_requirement }
   end
 
   def warning_detail(type, package, available_version, note = nil)
@@ -506,6 +589,27 @@ class SpmChecker
     end
   end
 
+  def warn_for_new_versions_pin(package, available_versions)
+    resolved_version = resolved_semver(package)
+    return unless resolved_version
+
+    newest_version = newest_reportable_version(available_versions)
+    return unless newest_version && newest_version > resolved_version
+
+    add_warning(
+      "Newer version of #{package.name}: #{newest_version}",
+      package,
+      warning_detail(:version, package, newest_version, "resolved pin")
+    )
+  end
+
+  def resolved_semver(package)
+    SpmVersionUpdates::Semver.new(package.resolved_version)
+  rescue ArgumentError => error
+    puts("Unable to extract semver from #{package.resolved_version} for #{package.name} (#{error})")
+    nil
+  end
+
   def warn_for_new_versions(package, available_versions, major_or_minor)
     name = package.name
     resolved_version_string = package.resolved_version
@@ -548,3 +652,4 @@ class SpmChecker
     )
   end
 end
+# rubocop:enable Metrics/ClassLength

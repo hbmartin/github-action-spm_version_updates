@@ -63,4 +63,37 @@ RSpec.describe PackageResolved do
       end
     end
   end
+
+  describe ".pins_from" do
+    it "returns normalized pin records with original repository URLs" do
+      Dir.mktmpdir do |dir|
+        nuke_pin = pin("location", "https://github.com/kean/Nuke.git", { "revision" => "abc123", "version" => "12.1.6" })
+        path = write_resolved(dir, { "version" => 2, "pins" => [nuke_pin] })
+
+        expect(described_class.pins_from(path)).to eq(
+          [
+            {
+              "normalized_url" => "github.com/kean/Nuke",
+              "repository_url" => "https://github.com/kean/Nuke.git",
+              "version" => "12.1.6",
+              "revision" => "abc123"
+            },
+          ]
+        )
+      end
+    end
+
+    it "supports v1 Package.resolved repositoryURL pins" do
+      Dir.mktmpdir do |dir|
+        v1_pin = pin("repositoryURL", "https://github.com/gonzalezreal/NetworkImage", { "version" => "3.1.0" })
+        path = write_resolved(dir, { "version" => 1, "object" => { "pins" => [v1_pin] } })
+
+        expect(described_class.pins_from(path).first).to include(
+          "normalized_url" => "github.com/gonzalezreal/NetworkImage",
+          "repository_url" => "https://github.com/gonzalezreal/NetworkImage",
+          "version" => "3.1.0"
+        )
+      end
+    end
+  end
 end

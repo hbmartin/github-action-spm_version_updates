@@ -7,7 +7,7 @@ branding:
 
 inputs:
   xcode-project-path:
-    description: 'Xcode mode: path to the .xcodeproj file. Mutually exclusive with package-manifest-paths.'
+    description: 'Xcode mode: path to the .xcodeproj file. Mutually exclusive with package-manifest-paths and package-resolved-paths-only mode.'
     required: false
     default: ''
   package-manifest-paths:
@@ -15,7 +15,7 @@ inputs:
     required: false
     default: ''
   package-resolved-paths:
-    description: 'Optional newline-separated Package.resolved paths. Defaults to a Package.resolved next to each manifest.'
+    description: 'Newline-separated Package.resolved paths. With package-manifest-paths, overrides default adjacent resolved files; alone, activates Package.resolved-only mode.'
     required: false
     default: ''
   check-when-exact:
@@ -50,6 +50,22 @@ inputs:
     description: 'Comma-separated git remote hostnames allowed for version lookups. Empty allows any host for allowed git protocols.'
     required: false
     default: ''
+  version-lookup-workers:
+    description: 'Maximum concurrent git tag lookups. Must be a positive integer.'
+    required: false
+    default: '4'
+  allow-missing-resolved:
+    description: 'When true, missing Package.resolved files are reported as warnings instead of failing the run.'
+    required: false
+    default: 'false'
+  apply-updates:
+    description: 'Rewrite supported Package.swift version requirements in the workspace. Manifest mode only; pair with a pull-request creation step.'
+    required: false
+    default: 'false'
+  enrich-release-notes:
+    description: 'Fetch GitHub release notes for updated packages and include them in PR comments or tracking issues.'
+    required: false
+    default: 'true'
   fail-on-updates:
     description: 'Deprecated: use fail-on instead. Set true to fail on any update, or major/minor/patch for semantic updates.'
     required: false
@@ -103,6 +119,15 @@ outputs:
   parse-warnings:
     description: 'Number of .package(...) declarations that could not be parsed and were skipped. Not counted in updates-found and never fails the run, but skipped declarations are listed in the step summary and PR comment with a link to open an issue — a PR comment is posted even when no updates were found so skips are never silent.'
     value: ${{ steps.check.outputs.parse-warnings }}
+  missing-resolved:
+    description: 'Number of missing Package.resolved files reported when allow-missing-resolved is true'
+    value: ${{ steps.check.outputs.missing-resolved }}
+  applied-updates:
+    description: 'Number of Package.swift requirement updates applied when apply-updates is true'
+    value: ${{ steps.check.outputs.applied-updates }}
+  applied-updates-json:
+    description: 'JSON array of applied Package.swift update records. Empty array when apply-updates is false or nothing was applied.'
+    value: ${{ steps.check.outputs.applied-updates-json }}
   updates-json:
     description: 'JSON array of update objects. Each object has a message field and, when available, structured fields such as type, package, repository_url, current_version, available_version, severity, note, source, requirement_kind, package_identity, suggested_command, and suggested_requirement.'
     value: ${{ steps.check.outputs.updates-json }}
@@ -126,7 +151,7 @@ runs:
       if: ${{ inputs.setup-ruby == 'true' }}
       uses: ruby/setup-ruby@89f90524b88a01fe6e0b732220432cc6142926af # v1.313.0
       env:
-        BUNDLE_WITHOUT: development:test${{ inputs.package-manifest-paths != '' && ':xcode' || '' }}
+        BUNDLE_WITHOUT: development:test${{ inputs.xcode-project-path == '' && ':xcode' || '' }}
       with:
         ruby-version: '3.3'
         bundler-cache: true
@@ -169,7 +194,7 @@ runs:
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
-        BUNDLE_WITHOUT: development:test${{ inputs.package-manifest-paths != '' && ':xcode' || '' }}
+        BUNDLE_WITHOUT: development:test${{ inputs.xcode-project-path == '' && ':xcode' || '' }}
         INPUT_XCODE_PROJECT_PATH: ${{ inputs.xcode-project-path }}
         INPUT_PACKAGE_MANIFEST_PATHS: ${{ inputs.package-manifest-paths }}
         INPUT_PACKAGE_RESOLVED_PATHS: ${{ inputs.package-resolved-paths }}
@@ -181,6 +206,10 @@ runs:
         INPUT_IGNORE_REPOS: ${{ inputs.ignore-repos }}
         INPUT_REPO_RULES_PATH: ${{ inputs.repo-rules-path }}
         INPUT_ALLOW_HOSTS: ${{ inputs.allow-hosts }}
+        INPUT_VERSION_LOOKUP_WORKERS: ${{ inputs.version-lookup-workers }}
+        INPUT_ALLOW_MISSING_RESOLVED: ${{ inputs.allow-missing-resolved }}
+        INPUT_APPLY_UPDATES: ${{ inputs.apply-updates }}
+        INPUT_ENRICH_RELEASE_NOTES: ${{ inputs.enrich-release-notes }}
         INPUT_FAIL_ON_UPDATES: ${{ inputs.fail-on-updates }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
         INPUT_COMMENT: ${{ inputs.comment }}

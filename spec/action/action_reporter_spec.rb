@@ -35,6 +35,12 @@ RSpec.describe ActionReporter do
     JSON.parse(json)
   end
 
+  def applied_json(output_file)
+    content = File.read(output_file)
+    json = content[/applied-updates-json<<(\S+)\n(.*?)\n\1\n/m, 2]
+    JSON.parse(json)
+  end
+
   describe "#write action outputs" do
     it "writes counts, flags, and redacted updates-json to GITHUB_OUTPUT", :aggregate_failures do
       Dir.mktmpdir do |dir|
@@ -74,6 +80,32 @@ RSpec.describe ActionReporter do
         expect { capture_stdout { described_class.new([]).write } }
           .not_to raise_error
       }
+    end
+
+    it "writes missing-resolved and applied update outputs", :aggregate_failures do
+      result_class = Struct.new(:applied, :skipped, :failed, keyword_init: true) {
+        def to_json_records
+          applied
+        end
+      }
+      applied = [{ "source" => "Package.swift", "package" => "foo/bar", "current_version" => "1.0.0", "available_version" => "1.1.0" }]
+      reporter = described_class.new(
+        [],
+        nil,
+        nil,
+        missing_resolved: [{ "source" => "Missing/Package.resolved", "message" => "missing" }],
+        applied_updates: result_class.new(applied:, skipped: [], failed: [])
+      )
+
+      Dir.mktmpdir do |dir|
+        output_file = File.join(dir, "output.txt")
+
+        quiet_write(reporter, "GITHUB_OUTPUT" => output_file, "GITHUB_STEP_SUMMARY" => nil)
+
+        content = File.read(output_file)
+        expect(content).to include("missing-resolved=1", "applied-updates=1")
+        expect(applied_json(output_file)).to eq(applied)
+      end
     end
   end
 
@@ -163,6 +195,38 @@ RSpec.describe ActionReporter do
         expect(File.read(summary_file)).not_to include("[Compare]")
       end
     end
+
+    it "renders missing resolved, applied updates, and timings sections", :aggregate_failures do
+      result_class = Struct.new(:applied, :skipped, :failed, keyword_init: true) {
+        def to_json_records
+          applied
+        end
+      }
+      timings = instance_double(Timings, summary_lines: ["", "### Timings", "", "| Phase | Duration |", "| Checks | 0.1s |"])
+      reporter = described_class.new(
+        [],
+        nil,
+        nil,
+        missing_resolved: [{ "source" => "Missing/Package.resolved", "message" => "missing" }],
+        applied_updates: result_class.new(
+          applied: [{ "source" => "Package.swift", "package" => "foo/bar", "current_version" => "1.0.0", "available_version" => "1.1.0" }],
+          skipped: [],
+          failed: []
+        ),
+        timings:
+      )
+
+      Dir.mktmpdir do |dir|
+        summary_file = File.join(dir, "summary.md")
+
+        quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
+
+        content = File.read(summary_file)
+        expect(content).to include("### Missing Package.resolved", "Missing/Package.resolved")
+        expect(content).to include("### Applied updates", "| Package.swift | foo/bar | 1.0.0 -> 1.1.0 |")
+        expect(content).to include("### Timings", "| Checks | 0.1s |")
+      end
+    end
   end
 
   describe "#write annotations" do
@@ -217,9 +281,9 @@ RSpec.describe ActionReporter do
 
         content = File.read(summary_file)
         expect(content).to include("### Parse warnings")
-        expect(content).to include("Could not parse a `.package(...)` declaration in Modules/Package.swift")
-        expect(content).to include("Snippet: `url: \"https://github.com/a/odd\", futureRequirement: \"1.0.0\"`")
-        expect(content).to include("[Open an issue](#{ParseWarning::ISSUE_URL}?")
+        expect(content).to include("`Modules/Package.swift`: its version requirement was not recognized")
+        expect(content).to include('`url: "https://github.com/a/odd", futureRequirement: "1.0.0"`')
+        expect(content).to include("[open an issue](#{ParseWarning::ISSUE_URL}?")
       end
     end
 
