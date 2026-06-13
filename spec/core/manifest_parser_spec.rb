@@ -190,6 +190,83 @@ RSpec.describe ManifestParser do
       expect(skips).to be_empty
     end
 
+    it "skips package declarations with interpolated URL strings and keeps neighboring packages", :aggregate_failures do
+      skips = []
+      content = <<~SWIFT
+        let org = "a"
+        dependencies: [
+          .package(url: "https://github.com/a/before", from: "1.0.0"),
+          .package(url: "https://github.com/\\(org)/dynamic", from: "1.0.0"),
+          .package(url: "https://github.com/a/after", from: "1.0.0"),
+        ]
+      SWIFT
+
+      packages = parse(content) { |skip| skips << skip }
+
+      expect(packages.keys).to eq(["github.com/a/before", "github.com/a/after"])
+      expect(skips.first[:reason]).to eq("unsupported_string_interpolation")
+    end
+
+    it "skips package declarations that use Swift raw strings", :aggregate_failures do
+      skips = []
+      content = <<~SWIFT
+        dependencies: [
+          .package(url: "https://github.com/a/before", from: "1.0.0"),
+          .package(url: #"https://github.com/a/raw"#, from: "1.0.0"),
+          .package(url: "https://github.com/a/after", from: "1.0.0"),
+        ]
+      SWIFT
+
+      packages = parse(content) { |skip| skips << skip }
+
+      expect(packages.keys).to eq(["github.com/a/before", "github.com/a/after"])
+      expect(skips.first[:reason]).to eq("unsupported_raw_string")
+    end
+
+    it "treats raw strings as opaque while stripping comments", :aggregate_failures do
+      content = <<~SWIFT
+        let text = #"this is not a // comment and not /* a block */"#
+        dependencies: [
+          .package(url: "https://github.com/a/active", from: "1.0.0"),
+        ]
+      SWIFT
+
+      expect(parse(content).keys).to eq(["github.com/a/active"])
+    end
+
+    it "does not parse fake package declarations inside raw strings" do
+      content = <<~SWIFT
+        let text = #".package(url: "https://github.com/a/fake", from: "9.9.9")"#
+        dependencies: [
+          .package(url: "https://github.com/a/active", from: "1.0.0"),
+        ]
+      SWIFT
+
+      expect(parse(content).keys).to eq(["github.com/a/active"])
+    end
+
+    it "keeps scanning after raw strings with escaped quotes and hashes" do
+      content = <<~SWIFT
+        let text = ##"quoted " text and a closing-looking "# fragment"##
+        dependencies: [
+          .package(url: "https://github.com/a/active", from: "1.0.0"),
+        ]
+      SWIFT
+
+      expect(parse(content).keys).to eq(["github.com/a/active"])
+    end
+
+    it "reports unbalanced parentheses when a raw string reaches EOF inside a declaration", :aggregate_failures do
+      skips = []
+      content = <<~SWIFT
+        dependencies: [
+          .package(url: #"https://github.com/a/broken, from: "1.0.0")
+      SWIFT
+
+      expect(parse(content) { |skip| skips << skip }).to eq({})
+      expect(skips.first[:reason]).to eq("unbalanced_parentheses")
+    end
+
     it "raises when the manifest path is blank" do
       expect { described_class.get_packages("") }
         .to raise_error(ManifestParser::ManifestPathMustBeSet)

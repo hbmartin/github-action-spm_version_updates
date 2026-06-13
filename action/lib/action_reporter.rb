@@ -2,9 +2,11 @@
 
 require "json"
 require "spm_version_updates/credential_redactor"
-require "spm_version_updates/parse_warning"
-require "spm_version_updates/repository_link"
 require "spm_version_updates/update_severity"
+require_relative "render/applied_updates_section"
+require_relative "render/missing_resolved_section"
+require_relative "render/parse_warnings_section"
+require_relative "render/version_links"
 
 # Writes GitHub Actions-visible reports for the dependency update results.
 class ActionReporter
@@ -56,6 +58,8 @@ class ActionReporter
       "minor-updates-found=0",
       "patch-updates-found=0",
       "parse-warnings=0",
+      "missing-resolved=0",
+      "applied-updates=0",
       "blocked=true",
     ].freeze
 
@@ -88,6 +92,7 @@ class ActionReporter
       file.puts(OUTPUT_LINES)
       WorkflowCommand.write_multiline_output(file, "error-message", message)
       WorkflowCommand.write_multiline_output(file, "updates-json", JSON.generate([]))
+      WorkflowCommand.write_multiline_output(file, "applied-updates-json", JSON.generate([]))
     end
 
     def write_step_summary
@@ -179,15 +184,30 @@ class ActionReporter
     end
   end
 
-  def initialize(warnings, warning_details = nil, parse_warnings = nil)
+  def initialize(warnings, warning_details = nil, parse_warnings = nil, **options)
     @warnings = Array(warnings)
     @warning_details = Array(warning_details)
     @parse_warnings = Array(parse_warnings)
+    @missing_resolved = Array(options[:missing_resolved])
+    @applied_updates = options[:applied_updates]
+    @timings = options[:timings]
   end
 
   def write
+    write_outputs
+    write_summary
+    emit_annotations
+  end
+
+  def write_outputs
     write_action_outputs
+  end
+
+  def write_summary
     write_step_summary
+  end
+
+  def emit_annotations
     emit_warning_annotations
   end
 
@@ -212,6 +232,7 @@ class ActionReporter
     File.open(output_path, "a") { |file|
       file.puts(action_output_lines)
       WorkflowCommand.write_multiline_output(file, "updates-json", JSON.generate(sanitized_records))
+      WorkflowCommand.write_multiline_output(file, "applied-updates-json", JSON.generate(applied_update_records))
     }
   end
 
@@ -233,6 +254,8 @@ class ActionReporter
       "minor-updates-found=#{severity_counts['minor']}",
       "patch-updates-found=#{severity_counts['patch']}",
       "parse-warnings=#{@parse_warnings.size}",
+      "missing-resolved=#{@missing_resolved.size}",
+      "applied-updates=#{applied_update_records.size}",
       "blocked=false",
       "error-message=",
     ]
@@ -244,19 +267,15 @@ class ActionReporter
                    else
                      [SUMMARY_HEADING, "", update_count_line, "", *update_summary_lines]
                    end
-    update_lines + parse_warning_summary_lines
+    update_lines +
+      Render::ParseWarningsSection.new(@parse_warnings).summary_lines +
+      Render::MissingResolvedSection.new(@missing_resolved).summary_lines +
+      Render::AppliedUpdatesSection.new(@applied_updates).summary_lines +
+      timing_summary_lines
   end
 
-  def parse_warning_summary_lines
-    return [] if @parse_warnings.empty?
-
-    ["", "### Parse warnings", ""] + @parse_warnings.flat_map { |record|
-      [
-        "- #{record['message']}",
-        "  - Snippet: `#{record['snippet'].to_s.delete('`')}`",
-        "  - [Open an issue](#{ParseWarning.issue_link(record)})",
-      ]
-    }
+  def timing_summary_lines
+    @timings ? @timings.summary_lines : []
   end
 
   def update_count_line
@@ -284,13 +303,7 @@ class ActionReporter
   end
 
   def summary_links(record)
-    link = RepositoryLink.from(record["repository_url"])
-    return unless link
-
-    current, available = record.values_at("current_version", "available_version")
-    return unless current && available
-
-    link.markdown_links([{ current:, available: }], separator: " · ")
+    Render::VersionLinks.markdown_links(record, separator: " · ")
   end
 
   def emit_warning_annotations
@@ -302,6 +315,7 @@ class ActionReporter
       puts(WorkflowCommand.annotation("warning", properties, message))
     }
     emit_parse_warning_annotations
+    emit_missing_resolved_annotations
   end
 
   def emit_parse_warning_annotations
@@ -309,5 +323,18 @@ class ActionReporter
       properties = { "title" => "SPM manifest parse warning", "file" => record["source"] }.compact
       puts(WorkflowCommand.annotation("warning", properties, record["message"]))
     }
+  end
+
+  def emit_missing_resolved_annotations
+    @missing_resolved.each { |record|
+      properties = { "title" => "Missing Package.resolved", "file" => record["source"] }.compact
+      puts(WorkflowCommand.annotation("warning", properties, record["message"]))
+    }
+  end
+
+  def applied_update_records
+    return [] unless @applied_updates
+
+    @applied_updates.to_json_records
   end
 end

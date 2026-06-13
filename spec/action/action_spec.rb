@@ -48,6 +48,11 @@ RSpec.describe Action do
       INPUT_FAIL_ON
       INPUT_COMMENT
       INPUT_COMMENT_ON_SUCCESS
+      INPUT_OPEN_TRACKING_ISSUE
+      INPUT_VERSION_LOOKUP_WORKERS
+      INPUT_ALLOW_MISSING_RESOLVED
+      INPUT_APPLY_UPDATES
+      INPUT_ENRICH_RELEASE_NOTES
       INPUT_CACHE_VERSION_TAGS
       INPUT_VERSION_TAGS_CACHE_TTL
       SPM_VERSION_UPDATES_TAG_CACHE_DIR
@@ -61,7 +66,8 @@ RSpec.describe Action do
       xcode_project_path: nil,
       manifest_paths: [],
       resolved_paths: [],
-      allow_hosts: []
+      allow_hosts: [],
+      apply_updates: false
     }.merge(overrides)
   end
 
@@ -75,7 +81,7 @@ RSpec.describe Action do
 
     it "raises when neither source mode is provided" do
       expect { action.send(:run_checks, checker, inputs) }
-        .to raise_error(Action::ModeError, /either/)
+        .to raise_error(Action::ModeError, /xcode-project-path/)
     end
 
     it "uses Xcode mode when only xcode-project-path is set" do
@@ -94,6 +100,14 @@ RSpec.describe Action do
 
       expect(checker).to have_received(:check_manifests).with(["Modules/Package.swift"], ["Modules/Package.resolved"])
     end
+
+    it "uses resolved-only mode when only package-resolved-paths is set" do
+      allow(checker).to receive(:check_resolved).and_return([])
+
+      action.send(:run_checks, checker, inputs(resolved_paths: ["Package.resolved"]))
+
+      expect(checker).to have_received(:check_resolved).with(["Package.resolved"])
+    end
   end
 
   describe "#read_inputs" do
@@ -111,8 +125,13 @@ RSpec.describe Action do
           "INPUT_IGNORE_REPOS" => " https://github.com/a/b, https://github.com/c/d ",
           "INPUT_REPO_RULES_PATH" => " .spm-version-updates.yml ",
           "INPUT_ALLOW_HOSTS" => " github.com, gitlab.com ",
+          "INPUT_VERSION_LOOKUP_WORKERS" => "6",
+          "INPUT_ALLOW_MISSING_RESOLVED" => "true",
+          "INPUT_APPLY_UPDATES" => "true",
+          "INPUT_ENRICH_RELEASE_NOTES" => "false",
           "INPUT_FAIL_ON_UPDATES" => "true",
           "INPUT_FAIL_ON" => "minor",
+          "INPUT_OPEN_TRACKING_ISSUE" => "true",
           "INPUT_COMMENT_ON_SUCCESS" => "true"
         )
       ) do
@@ -133,10 +152,14 @@ RSpec.describe Action do
         ignore_repos: ["https://github.com/a/b", "https://github.com/c/d"],
         repo_rules_path: ".spm-version-updates.yml",
         allow_hosts: ["github.com", "gitlab.com"],
+        version_lookup_workers: 6,
         fail_on: "minor",
         comment: true,
         comment_on_success: true,
-        open_tracking_issue: false,
+        open_tracking_issue: true,
+        allow_missing_resolved: true,
+        apply_updates: true,
+        enrich_release_notes: false,
         cache_version_tags: true,
         version_tags_cache_ttl: 21_600,
         version_tags_cache_dir: nil
@@ -200,6 +223,13 @@ RSpec.describe Action do
     it "accepts a zero version tag cache TTL" do
       with_env(input_env("INPUT_VERSION_TAGS_CACHE_TTL" => "0")) do
         expect(action.send(:read_inputs)[:version_tags_cache_ttl]).to eq(0)
+      end
+    end
+
+    it "rejects non-positive version lookup workers" do
+      with_env(input_env("INPUT_VERSION_LOOKUP_WORKERS" => "0")) do
+        expect { action.send(:read_inputs) }
+          .to raise_error(SpmVersionUpdates::ConfigurationError, /INPUT_VERSION_LOOKUP_WORKERS/)
       end
     end
   end
@@ -269,7 +299,7 @@ RSpec.describe Action do
           "::warning title=SPM dependency update,file=Modules/Package.swift::" \
           "Newer version of onevcat/Kingfisher: 8.0.0"
         )
-        expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, nil)
+        expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, nil, nil)
       end
     end
 
@@ -522,6 +552,47 @@ RSpec.describe Action do
       expect(reporter_sink).not_to have_received(:publish_success)
     end
 
+    it "dispatches resolved-only mode from environment inputs", :aggregate_failures do
+      allow(configured_checker).to receive(:check_resolved).and_return([])
+      allow(configured_checker).to receive(:check_for_updates)
+      allow(configured_checker).to receive(:check_manifests)
+
+      with_env(input_env("INPUT_PACKAGE_RESOLVED_PATHS" => "Package.resolved")) do
+        action.run
+      end
+
+      expect(configured_checker).to have_received(:check_resolved).with(["Package.resolved"])
+      expect(configured_checker).not_to have_received(:check_for_updates)
+      expect(configured_checker).not_to have_received(:check_manifests)
+    end
+
+    it "configures worker count and missing-resolved handler", :aggregate_failures do
+      allow(configured_checker).to receive(:check_manifests).and_return([])
+
+      with_env(
+        input_env(
+          "INPUT_PACKAGE_MANIFEST_PATHS" => "Package.swift",
+          "INPUT_VERSION_LOOKUP_WORKERS" => "2",
+          "INPUT_ALLOW_MISSING_RESOLVED" => "true"
+        )
+      ) do
+        action.run
+      end
+
+      expect(configured_checker.version_lookup_workers).to eq(2)
+      expect(configured_checker.missing_resolved_handler).not_to be_nil
+    end
+
+    it "rejects apply-updates outside manifest mode", :aggregate_failures do
+      allow(configured_checker).to receive(:check_for_updates).and_return([])
+
+      expect {
+        with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_APPLY_UPDATES" => "true")) do
+          action.run
+        end
+      }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+    end
+
     it "loads repo rules from the configured path", :aggregate_failures do
       allow(configured_checker).to receive(:check_for_updates).and_return([])
       allow(configured_checker).to receive(:check_manifests)
@@ -631,7 +702,7 @@ RSpec.describe Action do
         end
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
-      expect(reporter_sink).to have_received(:publish_updates).with(warnings, [], [])
+      expect(reporter_sink).to have_received(:publish_updates).with(warnings, [], [], [])
     end
 
     it "fails when a semantic update meets the fail-on threshold", :aggregate_failures do
@@ -655,7 +726,7 @@ RSpec.describe Action do
         end
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
-      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, [])
+      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, [], [])
     end
 
     it "does not fail when semantic updates are below the fail-on threshold", :aggregate_failures do
@@ -677,7 +748,7 @@ RSpec.describe Action do
         action.run
       end
 
-      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, [])
+      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, [], [])
     end
   end
 
@@ -694,7 +765,7 @@ RSpec.describe Action do
 
   def output_json_from(path)
     output = File.read(path)
-    match = output.match(/updates-json<<(?<delimiter>.+)\n(?<json>.+)\n\k<delimiter>/m)
+    match = output.match(/updates-json<<(?<delimiter>.+)\n(?<json>.*?)\n\k<delimiter>/m)
     JSON.parse(match[:json])
   end
 end

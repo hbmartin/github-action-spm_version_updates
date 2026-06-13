@@ -2,9 +2,12 @@
 
 require "json"
 require "octokit"
-require "spm_version_updates/parse_warning"
 require "spm_version_updates/repository_link"
 require "uri"
+require_relative "release_notes"
+require_relative "render/markdown"
+require_relative "render/missing_resolved_section"
+require_relative "render/parse_warnings_section"
 require_relative "reporter_sink"
 
 # GitHub-backed reporter sink for posting PR comments.
@@ -224,35 +227,6 @@ class GithubIntegration < ReporterSink
     end
   end
 
-  # Renders the comment section listing `.package(...)` declarations the
-  # manifest parser had to skip, each with a pre-filled new-issue link.
-  class ParseWarningsSection
-    def initialize(parse_warnings)
-      @parse_warnings = Array(parse_warnings)
-    end
-
-    def markdown
-      return nil if @parse_warnings.empty?
-
-      [header, "", *@parse_warnings.map { |record| bullet(record) }].join("\n")
-    end
-
-    private
-
-    def header
-      count = @parse_warnings.size
-      "⚠️ **#{count} declaration#{count == 1 ? '' : 's'} could not be parsed** " \
-        "(updates for the affected dependencies were not checked):"
-    end
-
-    def bullet(record)
-      line = +"- `#{record['source']}`: #{ParseWarning.describe_reason(record)}"
-      snippet = record["snippet"].to_s.delete("`")
-      line << " — `#{snippet}`" unless snippet.empty?
-      line << ". If this is valid Swift, please [open an issue](#{ParseWarning.issue_link(record)})."
-    end
-  end
-
   # Renders the source column for grouped structured warning details.
   class SourceCell
     def initialize(sources, formatter)
@@ -289,6 +263,7 @@ class GithubIntegration < ReporterSink
     @github_repository = ENV.fetch("GITHUB_REPOSITORY", nil)
     @github_event_path = ENV.fetch("GITHUB_EVENT_PATH", nil)
     @open_tracking_issue = false
+    @enrich_release_notes = true
     @tracking_issue_result = nil
 
     if github_token_missing?
@@ -305,6 +280,7 @@ class GithubIntegration < ReporterSink
 
   def configure(inputs)
     @open_tracking_issue = inputs.fetch(:open_tracking_issue, false)
+    @enrich_release_notes = inputs.fetch(:enrich_release_notes, true)
   end
 
   # Tracking-issue mode applies only on runs without a pull request context
@@ -314,10 +290,10 @@ class GithubIntegration < ReporterSink
     !!(@open_tracking_issue && !@pr_number && @client && @github_repository)
   end
 
-  def publish_updates(warnings, warning_details = nil, parse_warnings = nil)
+  def publish_updates(warnings, warning_details = nil, parse_warnings = nil, missing_resolved = nil)
     return unless tracking_issue_run? || comment_target?
 
-    message = build_comment_message(build_warnings_message(warnings, warning_details, parse_warnings))
+    message = build_comment_message(build_warnings_message(warnings, warning_details, parse_warnings, missing_resolved))
     if tracking_issue_run?
       @tracking_issue_result = tracking_issue.upsert(message)
     else
@@ -403,8 +379,12 @@ class GithubIntegration < ReporterSink
     MARKDOWN
   end
 
-  def build_warnings_message(warnings, warning_details = nil, parse_warnings = nil)
-    [updates_message(warnings, warning_details), ParseWarningsSection.new(parse_warnings).markdown]
+  def build_warnings_message(warnings, warning_details = nil, parse_warnings = nil, missing_resolved = nil)
+    [
+      updates_message(warnings, warning_details),
+      Render::ParseWarningsSection.new(parse_warnings).comment_markdown,
+      Render::MissingResolvedSection.new(missing_resolved).comment_markdown,
+    ]
       .compact
       .join("\n\n")
   end
@@ -422,12 +402,16 @@ class GithubIntegration < ReporterSink
       .map { |group| warning_group_row(group) }
       .join("\n")
 
-    <<~MARKDOWN
+    [structured_updates_table(header, table), UpgradeHintsSection.new(details).markdown, release_notes_markdown(details)]
+      .compact
+      .join("\n\n")
+  end
+
+  def structured_updates_table(header, table)
+    <<~MARKDOWN.chomp
       #{header}| Package | Current → Available | Source | Links |
       | --- | --- | --- | --- |
       #{table}
-
-      #{UpgradeHintsSection.new(details).markdown}
     MARKDOWN
   end
 
@@ -513,17 +497,25 @@ class GithubIntegration < ReporterSink
   end
 
   def display_version(value)
-    text = value.to_s
-    text.match?(/\A[0-9a-f]{40}\z/i) ? text[0, 7] : text
+    Render::Markdown.display_version(value)
   end
 
   def inline_code(value)
-    text = value.to_s
-    text.include?("`") ? "``#{text}``" : "`#{text}`"
+    Render::Markdown.inline_code(value)
   end
 
   def table_cell(value)
-    value.to_s.gsub("|", "\\|").gsub("\n", "<br>")
+    Render::Markdown.table_cell(value)
+  end
+
+  def release_notes_markdown(details)
+    return unless @client && @enrich_release_notes
+
+    ReleaseNotes::Section.new(details, release_notes_fetcher).markdown
+  end
+
+  def release_notes_fetcher
+    @release_notes_fetcher ||= ReleaseNotes::Fetcher.new(@client)
   end
 
   def find_existing_comment

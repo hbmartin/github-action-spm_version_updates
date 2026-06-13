@@ -3,8 +3,9 @@ name: E2E
 # Runs the composite action for real against the frozen fixture repository
 # hbmartin/spm-action-e2e-fixture (frozen tags: 1.0.0, 1.2.3, 2.0.0-beta.1,
 # 2.0.0). The sample projects pin 1.0.0 with
-# an up-to-next-major constraint, so the expected result is always exactly one
-# minor update to 1.2.3. On pull requests the manifest-mode job also posts the
+# an up-to-next-major constraint, so manifest mode reports one minor update to
+# 1.2.3 while resolved-only mode reports the unconstrained latest stable tag
+# 2.0.0. On pull requests the manifest-mode job also posts the
 # action's real summary comment — that is intentional dogfooding of the comment
 # path; xcode-mode runs with comment: 'false' so the two jobs never race on the
 # single sticky PR comment.
@@ -96,3 +97,89 @@ jobs:
             and .[0].severity == "minor"
             and .[0].type == "version"
             and (.[0] | has("suggested_command")) == false' <<<"$UPDATES_JSON"
+
+  resolved-only:
+    name: E2E (Package.resolved only)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Run action
+        id: spm
+        uses: ./
+        with:
+          package-resolved-paths: e2e/manifest/Package.resolved
+          cache-version-tags: 'false'
+          comment: 'false'
+      - name: Assert outputs
+        env:
+          UPDATES_FOUND: ${{ steps.spm.outputs.updates-found }}
+          UPDATES_JSON: ${{ steps.spm.outputs.updates-json }}
+        run: |
+          set -euo pipefail
+          [ "$UPDATES_FOUND" = "1" ]
+          jq -e 'length == 1
+            and .[0].package == "hbmartin/spm-action-e2e-fixture"
+            and .[0].available_version == "2.0.0"
+            and .[0].severity == "major"
+            and .[0].requirement_kind == "resolvedPin"
+            and (.[0] | has("suggested_command")) == true' <<<"$UPDATES_JSON"
+
+  apply-mode:
+    name: E2E (apply updates)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Run action
+        id: spm
+        uses: ./
+        with:
+          package-manifest-paths: e2e/manifest/Package.swift
+          apply-updates: 'true'
+          fail-on: ''
+          cache-version-tags: 'false'
+          comment: 'false'
+      - name: Assert workspace rewrite
+        env:
+          APPLIED: ${{ steps.spm.outputs.applied-updates }}
+          APPLIED_JSON: ${{ steps.spm.outputs.applied-updates-json }}
+        run: |
+          set -euo pipefail
+          [ "$APPLIED" = "1" ]
+          jq -e 'length == 1 and .[0].source == "e2e/manifest/Package.swift"' <<<"$APPLIED_JSON"
+          [ "$(git diff --name-only)" = "e2e/manifest/Package.swift" ]
+          grep -q '1.2.3' e2e/manifest/Package.swift
+
+  missing-resolved:
+    name: E2E (allow missing Package.resolved)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Run action
+        id: spm
+        uses: ./
+        with:
+          package-manifest-paths: e2e/manifest/Package.swift
+          package-resolved-paths: e2e/manifest/Missing.Package.resolved
+          allow-missing-resolved: 'true'
+          cache-version-tags: 'false'
+          comment: 'false'
+      - name: Assert outputs
+        env:
+          UPDATES_FOUND: ${{ steps.spm.outputs.updates-found }}
+          MISSING_RESOLVED: ${{ steps.spm.outputs.missing-resolved }}
+        run: |
+          set -euo pipefail
+          [ "$UPDATES_FOUND" = "0" ]
+          [ "$MISSING_RESOLVED" = "1" ]

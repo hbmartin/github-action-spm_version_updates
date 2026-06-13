@@ -22,7 +22,7 @@ class ReporterSink
     false
   end
 
-  def publish_updates(_warnings, _warning_details = nil, _parse_warnings = nil)
+  def publish_updates(_warnings, _warning_details = nil, _parse_warnings = nil, _missing_resolved = nil)
     raise_not_implemented(:publish_updates)
   end
 

@@ -17,12 +17,13 @@ A GitHub Action to automatically detect and report available updates for your Sw
     xcode-project-path: 'MyApp.xcodeproj'   # or: package-manifest-paths
 ```
 
-It works in two ways:
+It works in three ways:
 
 - **Xcode project mode** — dependencies declared as `XCRemoteSwiftPackageReference` objects inside an `.xcodeproj`.
 - **Swift manifest mode** — dependencies declared in one or more `Package.swift` manifests (a SwiftPM-first / modular iOS layout).
+- **Package.resolved-only mode** — dependencies read directly from one or more `Package.resolved` files when no manifest paths are provided.
 
-> **Which mode do I use?** If your `project.pbxproj` contains `XCRemoteSwiftPackageReference` entries, use **Xcode project mode** (`xcode-project-path`). If your dependencies live in one or more `Package.swift` files, use **Swift manifest mode** (`package-manifest-paths`). Provide exactly one.
+> **Which mode do I use?** If your `project.pbxproj` contains `XCRemoteSwiftPackageReference` entries, use **Xcode project mode** (`xcode-project-path`). If your dependencies live in one or more `Package.swift` files, use **Swift manifest mode** (`package-manifest-paths`). If you only want to audit locked pins, provide `package-resolved-paths` by itself.
 
 📖 **SwiftPM-first repo?** If your dependencies live in `Package.swift` manifests rather than in the `.xcodeproj`, see the [Swift manifest mode guide](docs/swiftpm-manifest-mode.md) for setup and migration steps.
 
@@ -38,6 +39,7 @@ It works in two ways:
 - [How dependency constraints are handled](#how-dependency-constraints-are-handled)
 - [Outputs](#outputs)
 - [Example output](#example-output)
+- [Applying updates automatically](#applying-updates-automatically)
 - [Advanced configuration](#advanced-configuration)
 - [Danger plugin](#danger-plugin)
 - [Limitations](#limitations)
@@ -69,10 +71,12 @@ In short:
 
 ## Features
 
-- ✅ **Two source modes** — point it at an `.xcodeproj` **or** at your `Package.swift` manifests
+- ✅ **Three source modes** — point it at an `.xcodeproj`, at your `Package.swift` manifests, or directly at `Package.resolved` files
 - 📦 **Comprehensive Detection** — supports all SPM dependency constraint types
 - 🧩 **Multiple manifests** — check several `Package.swift` files (e.g. app modules + build tools) in one run
 - 💬 **Smart PR Comments** — creates and updates a single informative pull request comment
+- 📝 **Release notes** — enriches update comments with GitHub release notes by default
+- 🛠️ **Optional apply mode** — rewrites supported `Package.swift` requirements in the workspace for companion PR workflows
 - 🔧 **Highly Configurable** — control exactly what updates to report
 - 🏃 **Runs on `ubuntu-latest`** — no macOS runner, no Swift toolchain, no Xcode required
 - 📋 **Package.resolved Support** — works with both v1 and v2 formats
@@ -161,7 +165,7 @@ See the [security guide](docs/security.md) for the full threat model, the `allow
 
 ## Source modes
 
-You must provide **exactly one** of `xcode-project-path` or `package-manifest-paths`. Providing both (or neither) fails with a clear error.
+Provide one source: `xcode-project-path`, `package-manifest-paths`, or `package-resolved-paths` by itself. `package-resolved-paths` may also be used with manifest mode to override the inferred resolved files.
 
 ### Xcode project mode (`xcode-project-path`)
 
@@ -180,6 +184,7 @@ Use this when the `.xcodeproj` directly owns its remote package references.
 - Reads the matching `Package.resolved` files and compares declared dependencies against resolved pins.
 - For each manifest, the resolved file is inferred to sit next to it (e.g. `Modules/Package.swift` → `Modules/Package.resolved`). Override this with `package-resolved-paths`.
 - Every expected `Package.resolved` must exist — the action fails (rather than silently reporting incomplete results) if one is missing, naming the file so you can commit it or point `package-resolved-paths` elsewhere.
+- Set `allow-missing-resolved: true` to degrade missing resolved files into warnings and continue checking the manifests that still have pins.
 - Resolved pins from every file are merged by normalized repository URL, and each warning is annotated with the manifest it came from.
 - Closed Swift ranges (`"1.0.0"..."2.0.0"`) are normalized the same way SwiftPM does — to the half-open range `"1.0.0"..<"2.0.1"` — so the inclusive upper bound is preserved.
 
@@ -198,16 +203,25 @@ Manifest parsing is done with a lightweight, dependency-free scanner. The common
 
 Local packages (`.package(path: ...)`) and commented-out declarations are ignored.
 
+### Package.resolved-only mode (`package-resolved-paths`)
+
+- Activated when `package-resolved-paths` is provided without `xcode-project-path` or `package-manifest-paths`.
+- Reads pins directly from the resolved files and checks version pins against available tags.
+- Revision-only pins are still quiet unless `check-revisions: true`.
+- Update records use `requirement_kind: "resolvedPin"` and include a `swift package update <identity>` suggestion, but there is no `Package.swift` requirement text to rewrite.
+
+Use this for lockfile audits, generated projects, or repositories where you want a report from committed pins without parsing manifests.
+
 ## Configuration Options
 
-Exactly one of `xcode-project-path` or `package-manifest-paths` is required (see [Source modes](#source-modes)); every other input is optional.
+Exactly one source mode is required (see [Source modes](#source-modes)); every other input is optional.
 
 <!-- inputs-table:begin (generated from action.yml by `rake docs:tables`; edit descriptions there) -->
 | Input | Description | Default |
 | ----- | ----------- | ------- |
-| `xcode-project-path` | Xcode mode: path to the .xcodeproj file. Mutually exclusive with package-manifest-paths. |  |
+| `xcode-project-path` | Xcode mode: path to the .xcodeproj file. Mutually exclusive with package-manifest-paths and package-resolved-paths-only mode. |  |
 | `package-manifest-paths` | Manifest mode: newline-separated Package.swift paths. Mutually exclusive with xcode-project-path. |  |
-| `package-resolved-paths` | Optional newline-separated Package.resolved paths. Defaults to a Package.resolved next to each manifest. |  |
+| `package-resolved-paths` | Newline-separated Package.resolved paths. With package-manifest-paths, overrides default adjacent resolved files; alone, activates Package.resolved-only mode. |  |
 | `check-when-exact` | Include exact version constraints when checking for updates | `false` |
 | `check-branches` | Check branch-pinned dependencies for newer commits | `true` |
 | `check-revisions` | Report the latest tagged release for revision-pinned dependencies | `false` |
@@ -216,6 +230,10 @@ Exactly one of `xcode-project-path` or `package-manifest-paths` is required (see
 | `ignore-repos` | Comma-separated repository URLs to skip before any git lookup |  |
 | `repo-rules-path` | Path to a YAML file with per-repository semantic update suppression rules |  |
 | `allow-hosts` | Comma-separated git remote hostnames allowed for version lookups. Empty allows any host for allowed git protocols. |  |
+| `version-lookup-workers` | Maximum concurrent git tag lookups. Must be a positive integer. | `4` |
+| `allow-missing-resolved` | When true, missing Package.resolved files are reported as warnings instead of failing the run. | `false` |
+| `apply-updates` | Rewrite supported Package.swift version requirements in the workspace. Manifest mode only; pair with a pull-request creation step. | `false` |
+| `enrich-release-notes` | Fetch GitHub release notes for updated packages and include them in PR comments or tracking issues. | `true` |
 | `fail-on-updates` | Deprecated: use fail-on instead. Set true to fail on any update, or major/minor/patch for semantic updates. | `false` |
 | `fail-on` | Fail when an update at or above this severity is found: major, minor, patch, or empty to never fail. Overrides fail-on-updates when set. |  |
 | `comment` | Post or update the pull request comment. Set false to disable all PR commenting; outputs, the step summary, and annotations are still produced, and a comment left by a prior run is kept as-is rather than deleted. Tracking issues (open-tracking-issue) are unaffected. | `true` |
@@ -230,8 +248,9 @@ Exactly one of `xcode-project-path` or `package-manifest-paths` is required (see
 ### Runtime setup
 
 By default, each invocation sets up Ruby and installs the action bundle from this
-action's directory. In Swift manifest mode, the bundle skips the Xcode project
-parser dependency, so manifest-only runs avoid installing `xcodeproj`.
+action's directory. When `xcode-project-path` is empty, the bundle skips the
+Xcode project parser dependency, so manifest and resolved-only runs avoid
+installing `xcodeproj`.
 
 If a job invokes this action multiple times, leave `setup-ruby` enabled on the
 first invocation and set `setup-ruby: false` on later invocations that use the
@@ -268,6 +287,9 @@ The action always writes machine-readable outputs, appends a GitHub step summary
 | `minor-updates-found` | Number of minor semantic-version updates found |
 | `patch-updates-found` | Number of patch semantic-version updates found |
 | `parse-warnings` | Number of .package(...) declarations that could not be parsed and were skipped. Not counted in updates-found and never fails the run, but skipped declarations are listed in the step summary and PR comment with a link to open an issue — a PR comment is posted even when no updates were found so skips are never silent. |
+| `missing-resolved` | Number of missing Package.resolved files reported when allow-missing-resolved is true |
+| `applied-updates` | Number of Package.swift requirement updates applied when apply-updates is true |
+| `applied-updates-json` | JSON array of applied Package.swift update records. Empty array when apply-updates is false or nothing was applied. |
 | `updates-json` | JSON array of update objects. Each object has a message field and, when available, structured fields such as type, package, repository_url, current_version, available_version, severity, note, source, requirement_kind, package_identity, suggested_command, and suggested_requirement. |
 | `blocked` | Whether the run was blocked before version lookup by a security gate such as allow-hosts |
 | `error-message` | Failure message when blocked is true |
@@ -308,9 +330,11 @@ The action always writes machine-readable outputs, appends a GitHub step summary
 ]
 ```
 
-`severity` is present only for semantic `version` / `above_maximum` updates, `source` only in Swift manifest mode, and `note` only for branch/revision/above-maximum reports. `repository_url` is redacted if it contained embedded credentials. When no updates are found, the output is `[]`.
+`severity` is present only for semantic `version` / `above_maximum` updates, `source` only in Swift manifest and Package.resolved-only modes, and `note` only for branch/revision/above-maximum/resolved-pin reports. `repository_url` is redacted if it contained embedded credentials. When no updates are found, the output is `[]`.
 
 Each update also carries upgrade guidance: `package_identity` is the SwiftPM package identity (derived from the repository URL), `suggested_command` is a ready-to-run `swift package update <identity>` command (manifest mode only — it never appears in Xcode project mode, where updates go through Xcode), and `suggested_requirement` is the new `Package.swift` requirement text needed first when the suggested version is outside the declared constraint (for example `from: "8.0.0"` on an `above_maximum` report, or `exact: "8.0.0"` for exact pins). The same guidance is rendered in the PR comment's "How to update dependencies" section and in the step summary.
+
+When `allow-missing-resolved: true`, `missing-resolved` counts missing resolved files that were reported instead of failing the run. When `apply-updates: true`, `applied-updates` and `applied-updates-json` describe the `Package.swift` requirement rewrites made in the workspace.
 
 Use `fail-on: major` when only major semantic-version updates should fail the job after the outputs, step summary, annotations, and PR comment have been written. Use `minor` to fail on major or minor updates, and `patch` to fail on any semantic-version update. `fail-on-updates: true` remains supported when any reported update, including branch or revision updates, should fail the job.
 
@@ -360,6 +384,32 @@ When the action finds available updates, it posts (and keeps updating) a single 
 
 The `Source` column is filled in Swift manifest mode, where it tells you which manifest a given update applies to (Xcode mode shows "Xcode project"). Compare/Releases links are rendered for GitHub, GitLab, and Bitbucket remotes.
 
+## Applying updates automatically
+
+`apply-updates: true` rewrites supported `Package.swift` version requirements in the checked-out workspace. It does not open a pull request itself; pair it with a normal PR creation action:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+
+steps:
+  - uses: actions/checkout@v4
+  - id: spm
+    uses: hbmartin/github-action-spm_version_updates@v1
+    with:
+      package-manifest-paths: Package.swift
+      apply-updates: 'true'
+      fail-on: ''
+  - uses: peter-evans/create-pull-request@v7
+    with:
+      branch: spm-version-updates
+      title: Update Swift package requirements
+      commit-message: Update Swift package requirements
+```
+
+Apply mode is manifest-only in this version. Xcode project files are not rewritten, and Package.resolved-only mode has no manifest requirement to edit. If a rewrite fails after some files have already changed, the action writes outputs and the step summary for the successful rewrites, emits an error annotation for the failed manifest, and exits non-zero so the partial workspace diff is visible.
+
 ## Advanced configuration
 
 ```yaml
@@ -378,6 +428,9 @@ The `Source` column is filled in Swift manifest mode, where it tells you which m
     ignore-repos: 'https://github.com/pointfreeco/swift-snapshot-testing'
     repo-rules-path: '.github/spm-version-rules.yml'
     allow-hosts: 'github.com,gitlab.com'
+    version-lookup-workers: 4
+    allow-missing-resolved: false
+    enrich-release-notes: true
     version-tags-cache-ttl: 21600
     fail-on-updates: false
 ```
@@ -420,6 +473,8 @@ spm_version_updates.check_manifests(["Modules/Package.swift", "BuildTools/Packag
   - For untrusted PRs or locked-down runners, set `allow-hosts`. Matching is exact, case-insensitive, and ignores schemes, credentials, paths, and ports; an off-list dependency fails the action and writes `blocked=true` plus `error-message`.
 - **Updates are detected from semver tags.** A dependency that doesn't publish semver-style version tags won't produce version updates. Successful tag lookups are cached briefly across runs by default; branch- and revision-pinned dependencies are handled separately via `check-branches` / `check-revisions`.
 - **Local packages are skipped.** `.package(path: ...)` dependencies and commented-out declarations are ignored.
+- **Apply mode is manifest-only.** It rewrites supported `Package.swift` requirement literals and deliberately skips Xcode project rewriting to avoid project-file churn or corruption.
+- **Release-note enrichment uses the GitHub API.** It is on by default, capped per run, and disabled for the rest of a run after non-404 API errors. Set `enrich-release-notes: false` to skip these calls.
 - **Unparseable declarations are reported, not checked.** A `.package(...)` declaration whose version requirement the parser doesn't recognize (or that has unbalanced parentheses) is skipped, counted in the `parse-warnings` output, and listed in the step summary and PR comment with a link to open an issue here.
 
 ## Troubleshooting

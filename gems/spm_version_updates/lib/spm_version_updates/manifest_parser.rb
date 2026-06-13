@@ -21,6 +21,7 @@ require_relative "package_resolved"
 # `"revision"`) so the same comparison logic can be reused for both modes.
 module ManifestParser
   PACKAGE_CALL = ".package("
+  PackageCallSpan = Struct.new(:body, :body_start, :body_end, keyword_init: true)
 
   # Find the direct SPM dependencies declared in a `Package.swift` manifest.
   #
@@ -44,6 +45,15 @@ module ManifestParser
 
     content = strip_comments(File.read(manifest_path))
     package_calls(content, &on_skip).each_with_object({}) { |call, packages|
+      if call.include?("\\(")
+        on_skip&.call({ reason: "unsupported_string_interpolation", snippet: call })
+        next
+      end
+      if call.match?(/#+"/)
+        on_skip&.call({ reason: "unsupported_raw_string", snippet: call })
+        next
+      end
+
       url = call[/\burl\s*:\s*"([^"]+)"/, 1]
       next if url.nil? # local package (path:) or otherwise unrecognized
 
@@ -73,6 +83,15 @@ module ManifestParser
     File.join(File.dirname(manifest_path), "Package.resolved")
   end
 
+  # Extract raw source spans for `.package(...)` calls. Offsets are byte indexes
+  # into the original content and point to the call body, excluding outer parens.
+  #
+  # @param [String] content raw manifest source
+  # @return [Array<PackageCallSpan>]
+  def self.package_call_spans(content)
+    package_spans(content).map { |span| PackageCallSpan.new(**span) }
+  end
+
   # Extract the argument body of each `.package( ... )` call, honoring nested
   # parentheses (e.g. `.upToNextMajor(from: "1.0.0")`) and string literals.
   #
@@ -82,9 +101,13 @@ module ManifestParser
   # @param  [String] content The (comment-stripped) manifest source
   # @return [Array<String>]
   def self.package_calls(content, &on_skip)
+    package_spans(content, &on_skip).map { |span| span[:body] }
+  end
+
+  def self.package_spans(content, &on_skip)
     calls = []
     search_start = 0
-    while (marker_index = content.index(PACKAGE_CALL, search_start))
+    while (marker_index = next_package_call(content, search_start))
       open_index = marker_index + PACKAGE_CALL.length - 1
       close_index = matching_paren(content, open_index)
       if close_index.nil?
@@ -92,10 +115,27 @@ module ManifestParser
         break
       end
 
-      calls << content[(open_index + 1)...close_index]
+      body_start = open_index + 1
+      calls << { body: content[body_start...close_index], body_start:, body_end: close_index }
       search_start = close_index + 1
     end
     calls
+  end
+
+  def self.next_package_call(content, search_start)
+    index = search_start
+    while index < content.length
+      return index if content[index, PACKAGE_CALL.length] == PACKAGE_CALL
+
+      if (raw_string = raw_string_start(content, index))
+        index = skip_raw_string_literal(content, index, raw_string)
+      elsif content[index] == '"'
+        index = skip_string_literal(content, index)
+      else
+        index += 1
+      end
+    end
+    nil
   end
 
   # Map the body of a `.package(...)` call to an Xcodeproj-style requirement.
@@ -165,6 +205,9 @@ module ManifestParser
           next
         end
         in_string = false if char == '"'
+      elsif (raw_string = raw_string_start(content, index))
+        index = skip_raw_string_literal(content, index, raw_string)
+        next
       elsif char == '"'
         in_string = true
       elsif char == "("
@@ -190,7 +233,9 @@ module ManifestParser
     while index < length
       char = content[index]
       nxt = content[index + 1]
-      if char == '"'
+      if (raw_string = raw_string_start(content, index))
+        index = copy_raw_string_literal(content, index, output, raw_string)
+      elsif char == '"'
         index = copy_string_literal(content, index, output)
       elsif char == "/" && nxt == "/"
         index += 1 while index < length && content[index] != "\n"
@@ -226,6 +271,64 @@ module ManifestParser
     index
   end
 
+  def self.skip_string_literal(content, index)
+    length = content.length
+    index += 1
+    while index < length
+      char = content[index]
+      if char == "\\"
+        index += 2
+        next
+      end
+
+      index += 1
+      break if char == '"'
+    end
+    index
+  end
+
+  def self.raw_string_start(content, index)
+    hash_count = 0
+    hash_count += 1 while content[index + hash_count] == "#"
+    return nil unless hash_count.positive?
+
+    quote_count = raw_string_quote_count(content, index + hash_count)
+    return nil unless quote_count.positive?
+
+    [hash_count, quote_count]
+  end
+
+  def self.raw_string_quote_count(content, index)
+    return 3 if content[index, 3] == '"""'
+    return 1 if content[index] == '"'
+
+    0
+  end
+
+  def self.raw_string_end?(content, index, hash_count, quote_count)
+    return false unless content[index, quote_count] == '"' * quote_count
+
+    content[(index + quote_count), hash_count] == "#" * hash_count
+  end
+
+  def self.copy_raw_string_literal(content, index, output, raw_string)
+    start = index
+    index = skip_raw_string_literal(content, index, raw_string)
+    output << content[start...index]
+    index
+  end
+
+  def self.skip_raw_string_literal(content, index, raw_string)
+    hash_count, quote_count = raw_string
+    index += hash_count + quote_count
+    while index < content.length
+      return index + quote_count + hash_count if raw_string_end?(content, index, hash_count, quote_count)
+
+      index += 1
+    end
+    index
+  end
+
   # Return the index just past the closing `*/` of a block comment. Swift block
   # comments nest, so depth is tracked: `/* a /* b */ c */` is a single comment.
   #
@@ -249,12 +352,19 @@ module ManifestParser
   end
 
   private_class_method :package_calls,
-                       :requirement_for,
+                       :package_spans,
+                       :next_package_call,
                        :version_range_requirement,
                        :increment_patch_version,
                        :matching_paren,
                        :strip_comments,
                        :copy_string_literal,
+                       :skip_string_literal,
+                       :raw_string_start,
+                       :raw_string_quote_count,
+                       :raw_string_end?,
+                       :copy_raw_string_literal,
+                       :skip_raw_string_literal,
                        :skip_block_comment
 
   # Raised when manifest mode is invoked without a manifest path.
