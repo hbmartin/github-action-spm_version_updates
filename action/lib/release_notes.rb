@@ -14,19 +14,20 @@ module ReleaseNotes
     end
 
     def fetch(repository_url, version)
-      return nil if @disabled || @cache.size >= @limit
+      return nil if @disabled
 
       repo = github_repo(repository_url)
       return nil unless repo
 
-      fetch_cached(repo, version.to_s)
+      version = version.to_s
+      key = [repo, version]
+      return @cache[key] if @cache.key?(key)
+      return nil if @cache.size >= @limit
+
+      @cache[key] = fetch_release(repo, version)
     end
 
     private
-
-    def fetch_cached(repo, version)
-      @cache[[repo, version]] ||= fetch_release(repo, version)
-    end
 
     def fetch_release(repo, version)
       release_for(repo, version) || release_for(repo, "v#{version}")
@@ -46,8 +47,8 @@ module ReleaseNotes
 
     def github_repo(repository_url)
       value = repository_url.to_s
-      match = value.match(/\Agit@github\.com:(?<repo>[^?#]+?)(?:\.git)?\z/) ||
-              value.match(%r{\Ahttps?://(?:[^@/\s]+@)?github\.com/(?<repo>[^?#]+?)(?:\.git)?\z})
+      match = value.match(%r{\Agit@github\.com:(?<repo>[^/\s]+/[^/\s]+?)(?:\.git)?/*\z}) ||
+              value.match(%r{\Ahttps?://(?:[^@/\s]+@)?github\.com/(?<repo>[^/\s]+/[^/\s]+?)(?:\.git)?/*\z})
       match && match[:repo]
     end
   end
@@ -86,7 +87,7 @@ module ReleaseNotes
     def release_body(release)
       body = value(release, :body).to_s
       body = "#{body[0, LIMIT]}…" if body.length > LIMIT
-      body.gsub(/@(\w)/, '@​\1')
+      body.gsub(/@(\w)/, "@\u200B\\1")
     end
 
     def value(object, key)

@@ -139,6 +139,16 @@ rules:
           return if $COLLECTION.include?($KEY)
           ...
           $COLLECTION << $KEY
+  - id: ruby.source.no-invisible-unicode
+    languages:
+      - generic
+    severity: ERROR
+    message: Use explicit Unicode escape sequences instead of invisible Unicode characters in Ruby source.
+    paths:
+      include:
+        - "**/*.rb"
+    patterns:
+      - pattern-regex: '[\x{200B}\x{200C}\x{200D}\x{FEFF}]'
   - id: ruby.github-integration.no-unbounded-issue-pagination
     languages:
       - ruby

@@ -79,7 +79,22 @@ RSpec.describe ManifestUpdater do
       result = described_class.rewrite(content, [update])
 
       expect(result.content.scan("1.2.3").size).to eq(2)
-      expect(result.applied.size).to eq(2)
+      expect(result.applied.size).to eq(1)
+      expect(result.skipped).to be_empty
+    end
+
+    it "does not partially rewrite duplicate declarations when one match fails", :aggregate_failures do
+      content = <<~SWIFT
+        .package(url: "https://github.com/a/b", from: "1.0.0")
+        .package(url: "https://github.com/a/b", branch: "main")
+      SWIFT
+
+      result = described_class.rewrite(content, [update])
+
+      expect(result.content).to eq(content)
+      expect(result.applied).to be_empty
+      expect(result.skipped.size).to eq(1)
+      expect(result.skipped.first["reason"]).to eq("requirement_mismatch")
     end
 
     it "applies multiple edits from right to left" do
