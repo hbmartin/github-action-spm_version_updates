@@ -79,6 +79,13 @@ RSpec.describe Action do
         .to raise_error(Action::ModeError, /not both/)
     end
 
+    it "raises when xcode and resolved-only modes are provided" do
+      both = inputs(xcode_project_path: "App.xcodeproj", resolved_paths: ["Package.resolved"])
+
+      expect { action.send(:run_checks, checker, both) }
+        .to raise_error(Action::ModeError, /package-resolved-paths/)
+    end
+
     it "raises when neither source mode is provided" do
       expect { action.send(:run_checks, checker, inputs) }
         .to raise_error(Action::ModeError, /xcode-project-path/)

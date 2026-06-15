@@ -51,7 +51,11 @@ module ManifestUpdater
       matches = matching_spans(value(update, "normalized_url"))
       return skip(update, "declaration_not_found") if matches.empty?
 
-      matches.each { |span| rewrite_span(update, span, kind) }
+      edits, reason = edits_for(update, matches, kind)
+      return skip(update, reason) if reason
+
+      @edits.concat(edits)
+      @applied << applied_entry(update)
     end
 
     def matching_spans(normalized_url)
@@ -62,18 +66,28 @@ module ManifestUpdater
       body[/\burl\s*:\s*"([^"]+)"/, 1]
     end
 
-    def rewrite_span(update, span, kind)
-      return skip(update, "unsupported_syntax") if unsupported_syntax?(span.body)
+    def edits_for(update, matches, kind)
+      edits = []
+      matches.each { |span|
+        edit, reason = edit_or_failure(update, span, kind)
+        return [[], reason] if reason
+
+        edits << edit
+      }
+      [edits, nil]
+    end
+
+    def edit_or_failure(update, span, kind)
+      return [nil, "unsupported_syntax"] if unsupported_syntax?(span.body)
 
       requirement = ManifestParser.requirement_for(span.body)
-      return skip(update, "requirement_mismatch") unless requirement && requirement["kind"] == kind
+      return [nil, "requirement_mismatch"] unless requirement && requirement["kind"] == kind
 
       edit = edit_for(update, span, requirement)
-      return skip(update, "requirement_mismatch") unless edit
-      return skip(update, "verification_failed") unless verified_edit?(span, edit, kind, value(update, "type"))
+      return [nil, "requirement_mismatch"] unless edit
+      return [nil, "verification_failed"] unless verified_edit?(span, edit, kind, value(update, "type"))
 
-      @edits << edit
-      @applied << applied_entry(update)
+      [edit, nil]
     end
 
     def unsupported_syntax?(body)

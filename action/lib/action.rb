@@ -226,6 +226,8 @@ class Action
 
     if xcode && has_manifests
       raise(ModeError, "Set either xcode-project-path or package-manifest-paths, not both.")
+    elsif xcode && has_resolved
+      raise(ModeError, "Set either xcode-project-path or package-resolved-paths, not both.")
     elsif has_manifests
       puts("Mode: Swift package manifests")
       checker.check_manifests(manifests, inputs[:resolved_paths])
