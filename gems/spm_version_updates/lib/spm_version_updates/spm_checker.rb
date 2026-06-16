@@ -255,11 +255,11 @@ class SpmChecker
   end
 
   def packages_from_resolved(path)
-    pins = resolved_pins_from(path)
-    [
-      pins.to_h { |pin| [pin["normalized_url"], package_entry_for_pin(pin)] },
-      pins.to_h { |pin| [pin["normalized_url"], pin["version"] || pin["revision"]] },
-    ]
+    resolved_pins_from(path).each_with_object([{}, {}]) { |pin, packages|
+      normalized_url = pin["normalized_url"]
+      packages.first[normalized_url] = package_entry_for_pin(pin)
+      packages.last[normalized_url] = pin["version"] || pin["revision"]
+    }
   end
 
   def resolved_pins_from(path)
@@ -279,7 +279,8 @@ class SpmChecker
   end
 
   def requirement_for_pin(pin)
-    return { "kind" => "resolvedPin", "version" => pin["version"] } if pin["version"]
+    version = pin["version"]
+    return { "kind" => "resolvedPin", "version" => version } if version
 
     { "kind" => "revision", "revision" => pin["revision"] }
   end
@@ -604,9 +605,10 @@ class SpmChecker
   end
 
   def resolved_semver(package)
-    SpmVersionUpdates::Semver.new(package.resolved_version)
+    resolved_version = package.resolved_version
+    SpmVersionUpdates::Semver.new(resolved_version)
   rescue ArgumentError => error
-    puts("Unable to extract semver from #{package.resolved_version} for #{package.name} (#{error})")
+    puts("Unable to extract semver from #{resolved_version} for #{package.name} (#{error})")
     nil
   end
 

@@ -142,9 +142,6 @@ end
 
 desc "Run RuboCop on the gems/action/spec directories"
 RuboCop::RakeTask.new(:rubocop) { |task|
-  task.requires << "rubocop-rspec"
-  task.requires << "rubocop-rake"
-  task.requires << "rubocop-performance"
   task.patterns = RUBY_SOURCE_PATTERNS
 }
 

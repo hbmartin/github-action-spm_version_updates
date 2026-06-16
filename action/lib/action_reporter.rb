@@ -89,10 +89,11 @@ class ActionReporter
     end
 
     def write_output_payload(file)
+      empty_json = JSON.generate([])
       file.puts(OUTPUT_LINES)
       WorkflowCommand.write_multiline_output(file, "error-message", message)
-      WorkflowCommand.write_multiline_output(file, "updates-json", JSON.generate([]))
-      WorkflowCommand.write_multiline_output(file, "applied-updates-json", JSON.generate([]))
+      WorkflowCommand.write_multiline_output(file, "updates-json", empty_json)
+      WorkflowCommand.write_multiline_output(file, "applied-updates-json", empty_json)
     end
 
     def write_step_summary

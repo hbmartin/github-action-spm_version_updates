@@ -52,6 +52,13 @@ RSpec.describe ReleaseNotes do
       expect(client).not_to have_received(:release_for_tag)
     end
 
+    it "skips whitespace-only release versions", :aggregate_failures do
+      allow(client).to receive(:release_for_tag)
+
+      expect(described_class.new(client).fetch("https://github.com/owner/repo", "   ")).to be_nil
+      expect(client).not_to have_received(:release_for_tag)
+    end
+
     it "skips non-GitHub repositories", :aggregate_failures do
       allow(client).to receive(:release_for_tag)
 
