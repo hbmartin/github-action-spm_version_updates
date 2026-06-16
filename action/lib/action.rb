@@ -43,7 +43,16 @@ class Action
       allow_missing_resolved: "Allow missing resolved",
       apply_updates: "Apply updates"
     }.freeze
+    VERSION_CHECK_KEYS = %i(
+      check_when_exact
+      check_branches
+      check_revisions
+      report_above_maximum
+      report_pre_releases
+      version_lookup_workers
+    ).freeze
     private_constant :LABELS
+    private_constant :VERSION_CHECK_KEYS
 
     def initialize(inputs)
       @inputs = inputs
@@ -71,12 +80,7 @@ class Action
     end
 
     def print_version_check_inputs
-      print_value(:check_when_exact)
-      print_value(:check_branches)
-      print_value(:check_revisions)
-      print_value(:report_above_maximum)
-      print_value(:report_pre_releases)
-      print_value(:version_lookup_workers)
+      VERSION_CHECK_KEYS.each { |key| print_value(key) }
     end
 
     def print_filter_inputs
@@ -243,11 +247,12 @@ class Action
   end
 
   def report(warnings, warning_details = nil, parse_warnings = nil, **options)
+    missing_resolved = options[:missing_resolved]
     reporter = ActionReporter.new(
       warnings,
       warning_details,
       parse_warnings,
-      missing_resolved: options[:missing_resolved],
+      missing_resolved:,
       applied_updates: options[:applied_updates],
       timings: options[:timings]
     )
@@ -261,7 +266,6 @@ class Action
     end
     # The comment input only controls PR commenting; tracking-issue runs
     # (open-tracking-issue on a non-PR run) still publish their report.
-    missing_resolved = options[:missing_resolved]
     publish(warnings, warning_details, parse_warnings, missing_resolved, options) if options.fetch(:comment, true) || @reporter_sink.tracking_issue_run?
     ActionReporter::TrackingIssueOutput.write(@reporter_sink.tracking_issue_result)
     reporter.write_summary
@@ -282,11 +286,14 @@ class Action
   end
 
   def publish_updates(warnings, warning_details, parse_warnings, missing_resolved)
-    return @reporter_sink.publish_updates(warnings, warning_details, parse_warnings, missing_resolved) unless @timings
+    publish = -> { publish_updates_now(warnings, warning_details, parse_warnings, missing_resolved) }
+    return publish.call unless @timings
 
-    @timings.measure("Publish") {
-      @reporter_sink.publish_updates(warnings, warning_details, parse_warnings, missing_resolved)
-    }
+    @timings.measure("Publish") { publish.call }
+  end
+
+  def publish_updates_now(warnings, warning_details, parse_warnings, missing_resolved)
+    @reporter_sink.publish_updates(warnings, warning_details, parse_warnings, missing_resolved)
   end
 
   def configure_missing_resolved_handler(checker, inputs)
@@ -318,18 +325,22 @@ class Action
   end
 
   def fail_for_apply_errors(applied_updates)
-    applied_updates.failed.each { |failure|
-      puts(
-        ActionReporter::WorkflowCommand.annotation(
-          "error",
-          { "title" => "SPM apply-updates failed", "file" => failure[:source] },
-          failure[:error]
-        )
-      )
-    }
-    count = applied_updates.failed.size
+    failures = applied_updates.failed
+    failures.each { |failure| puts(apply_error_annotation(failure)) }
+    fail_with("apply-updates failed for #{apply_error_count_message(failures.size)}")
+  end
+
+  def apply_error_annotation(failure)
+    ActionReporter::WorkflowCommand.annotation(
+      "error",
+      { "title" => "SPM apply-updates failed", "file" => failure[:source] },
+      failure[:error]
+    )
+  end
+
+  def apply_error_count_message(count)
     manifest_label = count == 1 ? "manifest" : "manifests"
-    fail_with("apply-updates failed for #{count} #{manifest_label}")
+    "#{count} #{manifest_label}"
   end
 
   def move_to_workspace

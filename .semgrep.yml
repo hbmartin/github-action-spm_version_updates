@@ -158,7 +158,8 @@ rules:
       include:
         - "**/release_notes.rb"
     patterns:
-      - pattern-regex: 'github\\\.com.*\[\^/\\s\]\+/\[\^/\\s\]\+'
+      - pattern-regex: 'github\\\.com.*\[\^/[^\]]*\\s[^\]]*\]\+/\[\^/[^\]]*\\s[^\]]*\]\+'
+      - pattern-not-regex: 'github\\\.com.*\[\^/[^\]]*\?[^\]]*#[^\]]*\\s[^\]]*\]\+/\[\^/[^\]]*\?[^\]]*#[^\]]*\\s[^\]]*\]\+'
   - id: ruby.github-integration.no-unbounded-issue-pagination
     languages:
       - ruby

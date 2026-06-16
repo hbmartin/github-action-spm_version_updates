@@ -8,6 +8,7 @@ require_relative "semver"
 module ManifestUpdater
   SUPPORTED_KINDS = %w(exactVersion upToNextMajorVersion upToNextMinorVersion versionRange).freeze
 
+  # Result of rewriting one manifest's dependency declarations.
   Result = Struct.new(:content, :applied, :skipped, :changed, keyword_init: true) {
     def changed?
       changed

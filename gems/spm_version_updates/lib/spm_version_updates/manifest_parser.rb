@@ -21,6 +21,7 @@ require_relative "package_resolved"
 # `"revision"`) so the same comparison logic can be reused for both modes.
 module ManifestParser
   PACKAGE_CALL = ".package("
+  # Raw body and byte offsets for a direct `.package(...)` declaration.
   PackageCallSpan = Struct.new(:body, :body_start, :body_end, keyword_init: true)
 
   # Find the direct SPM dependencies declared in a `Package.swift` manifest.
@@ -289,10 +290,14 @@ module ManifestParser
 
   def self.raw_string_start(content, index)
     hash_count = 0
-    hash_count += 1 while content[index + hash_count] == "#"
+    hash_index = index
+    while content[hash_index] == "#"
+      hash_count += 1
+      hash_index += 1
+    end
     return nil unless hash_count.positive?
 
-    quote_count = raw_string_quote_count(content, index + hash_count)
+    quote_count = raw_string_quote_count(content, hash_index)
     return nil unless quote_count.positive?
 
     [hash_count, quote_count]

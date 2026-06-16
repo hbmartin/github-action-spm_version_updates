@@ -16,7 +16,7 @@ module ReleaseNotes
     def fetch(repository_url, version)
       return nil if @disabled
 
-      version = version.to_s
+      version = version.to_s.strip
       return nil if version.empty?
 
       repo = github_repo(repository_url)
@@ -72,13 +72,14 @@ module ReleaseNotes
     private
 
     def release_notes_block(detail)
-      release = @fetcher.fetch(value(detail, :repository_url), value(detail, :available_version))
+      available_version = value(detail, :available_version)
+      release = @fetcher.fetch(value(detail, :repository_url), available_version)
       body = release_body(release)
       return if body.empty?
 
       <<~MARKDOWN.chomp
         <details>
-        <summary>📝 Release notes: #{value(detail, :package)} #{value(detail, :available_version)}</summary>
+        <summary>📝 Release notes: #{value(detail, :package)} #{available_version}</summary>
 
         #{body}
 

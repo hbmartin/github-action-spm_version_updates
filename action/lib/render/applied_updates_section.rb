@@ -12,11 +12,7 @@ module Render
     def summary_lines
       return [] unless result?
 
-      lines = ["", "### Applied updates", ""]
-      lines.concat(applied_table_lines)
-      lines.concat(skipped_lines)
-      lines.concat(failed_lines)
-      lines
+      ["", "### Applied updates", "", *applied_table_lines, *skipped_lines, *failed_lines]
     end
 
     private
@@ -52,7 +48,7 @@ module Render
     def skipped_lines
       return [] if skipped.empty?
 
-      ["", "Skipped:", *skipped.map { |record| "- #{record['package'] || record['message']}: #{record['reason']}" }]
+      ["", "Skipped:", *skipped.map { |record| skipped_line(record) }]
     end
 
     def failed_lines
@@ -63,6 +59,10 @@ module Render
 
     def change(record)
       "#{record['current_version']} -> #{record['available_version']}"
+    end
+
+    def skipped_line(record)
+      "- #{record['package'] || record['message']}: #{record['reason']}"
     end
 
     def cell(value)
