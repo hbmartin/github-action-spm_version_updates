@@ -114,6 +114,23 @@ it directly. Both gems are released from this repository in lockstep.
 4. **Verify the composite action** in a real GitHub Actions workflow so `ruby/setup-ruby` caching is exercised
 5. **Verify `setup-ruby: false`** only after an earlier invocation has installed the same or a superset of runtime dependencies
 
+### Known Latest-Version Blockers
+
+As of 2026-06-16, `bundle outdated` reports these latest releases, but both the
+root bundle and `action/` bundle are current under the released parent gems and
+the public Ruby `>= 3.2` support floor. Use `bundle outdated --strict` at the
+root and in `action/` as the pass/fail check for compatible dependency drift.
+Do not add explicit pins for these transitive gems unless a security advisory
+requires it; let Bundler pick up future compatible parent releases naturally.
+
+| Gems | Current blocker | Recheck criteria |
+| --- | --- | --- |
+| `CFPropertyList`, `atomos`, `colored2` | `xcodeproj 1.27.0` requires `CFPropertyList < 4.0`, `atomos ~> 0.1.3`, and `colored2 ~> 3.1`; root development tooling also pulls `colored2 ~> 3.1` through `cork`. | Recheck after an `xcodeproj` release relaxes those constraints, and run the Xcode parser specs before accepting the lockfile update. |
+| `diff-lcs` | `rspec-expectations` and `rspec-mocks` require `diff-lcs < 2.0`. | Recheck after RSpec releases support for `diff-lcs 2.x`, and review matcher diff output for behavior changes. |
+| `git`, `process_executer` | `danger 9.5.3` requires `git < 3.0`; `process_executer 4.x` arrives through `git 4.x`. | Recheck after Danger supports `git 4.x`, and rerun Danger plugin lint and plugin specs. |
+| `lumberjack` | `guard 2.20.1` requires `lumberjack < 2.0`. | Recheck after Guard supports `lumberjack 2.x`, or if Guard is removed from the development workflow. |
+| `dry-configurable`, `parallel` | The latest releases require Ruby `>= 3.3`, while the gems still publish Ruby `>= 3.2` support. | Recheck only if the public Ruby floor is raised, then update gemspecs, CI, and docs together. |
+
 ## Testing
 
 ### Unit Tests

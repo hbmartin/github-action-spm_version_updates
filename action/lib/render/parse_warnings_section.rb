@@ -31,10 +31,11 @@ module Render
     end
 
     def bullet(record)
-      line = "- `#{record['source']}`: #{ParseWarning.describe_reason(record)}"
       snippet = record["snippet"].to_s.delete("`")
-      line << " — `#{snippet}`" unless snippet.empty?
-      line << ". If this is valid Swift, please [open an issue](#{ParseWarning.issue_link(record)})."
+      snippet_text = snippet.empty? ? "" : " — `#{snippet}`"
+
+      "- `#{record['source']}`: #{ParseWarning.describe_reason(record)}" \
+        "#{snippet_text}. If this is valid Swift, please [open an issue](#{ParseWarning.issue_link(record)})."
     end
   end
 end
