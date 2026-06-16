@@ -35,6 +35,23 @@ RSpec.describe ReleaseNotes do
       expect(client).to have_received(:release_for_tag).with("owner/repo", "1.2.3")
     end
 
+    it "skips GitHub repository URLs with query strings or fragments", :aggregate_failures do
+      allow(client).to receive(:release_for_tag)
+
+      fetcher = described_class.new(client)
+
+      expect(fetcher.fetch("https://github.com/owner/repo.git?foo=bar", "1.2.3")).to be_nil
+      expect(fetcher.fetch("git@github.com:owner/repo.git#readme", "1.2.3")).to be_nil
+      expect(client).not_to have_received(:release_for_tag)
+    end
+
+    it "skips empty release versions", :aggregate_failures do
+      allow(client).to receive(:release_for_tag)
+
+      expect(described_class.new(client).fetch("https://github.com/owner/repo", "")).to be_nil
+      expect(client).not_to have_received(:release_for_tag)
+    end
+
     it "skips non-GitHub repositories", :aggregate_failures do
       allow(client).to receive(:release_for_tag)
 

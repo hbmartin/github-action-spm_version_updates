@@ -7,7 +7,7 @@
 [![Gem Version](https://img.shields.io/gem/v/danger-spm_version_updates?logo=rubygems&label=danger%20plugin)](https://rubygems.org/gems/danger-spm_version_updates)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A GitHub Action to automatically detect and report available updates for your Swift Package Manager (SPM) dependencies.
+Automatically detect and report available updates for your Swift Package Manager (SPM) dependencies — runnable as a standalone **GitHub Action**, a **Danger plugin**, or a **Ruby gem** (for example, in a Fastlane lane).
 
 🚀 **Fast, lightweight, and works without Swift or Xcode installed on your CI runner** — it parses your manifests directly and checks each dependency with `git ls-remote`, so there's no macOS runner, no Swift toolchain, and no Xcode to install.
 
@@ -17,13 +17,13 @@ A GitHub Action to automatically detect and report available updates for your Sw
     xcode-project-path: 'MyApp.xcodeproj'   # or: package-manifest-paths
 ```
 
-It works in three ways:
+The same dependency checker can be used **three ways**, so it slots into whatever CI you already run:
 
-- **Xcode project mode** — dependencies declared as `XCRemoteSwiftPackageReference` objects inside an `.xcodeproj`.
-- **Swift manifest mode** — dependencies declared in one or more `Package.swift` manifests (a SwiftPM-first / modular iOS layout).
-- **Package.resolved-only mode** — dependencies read directly from one or more `Package.resolved` files when no manifest paths are provided.
+- **Standalone GitHub Action** — drop the `uses:` step above into a workflow on `ubuntu-latest`. This is the quickest start; see the [Quick Start](#quick-start).
+- **Danger plugin** — run the checks inside an existing [Danger](https://danger.systems/ruby/) step via the [`danger-spm_version_updates`](https://rubygems.org/gems/danger-spm_version_updates) gem; see [Danger plugin](#danger-plugin).
+- **Ruby gem** — call the core [`spm_version_updates`](https://rubygems.org/gems/spm_version_updates) gem directly from any Ruby script, such as a Fastlane lane.
 
-> **Which mode do I use?** If your `project.pbxproj` contains `XCRemoteSwiftPackageReference` entries, use **Xcode project mode** (`xcode-project-path`). If your dependencies live in one or more `Package.swift` files, use **Swift manifest mode** (`package-manifest-paths`). If you only want to audit locked pins, provide `package-resolved-paths` by itself.
+Whichever you choose, dependencies can be read from an `.xcodeproj`, one or more `Package.swift` manifests, or `Package.resolved` files on their own — see [Source modes](#source-modes) for picking between them.
 
 📖 **SwiftPM-first repo?** If your dependencies live in `Package.swift` manifests rather than in the `.xcodeproj`, see the [Swift manifest mode guide](docs/swiftpm-manifest-mode.md) for setup and migration steps.
 
