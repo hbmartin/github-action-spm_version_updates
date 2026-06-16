@@ -23,6 +23,140 @@ class SpmChecker
   # Raised when allow-hosts blocks a repository before git is contacted.
   class DisallowedRepositoryHost < SpmVersionUpdates::PolicyError; end
 
+  # Filters configured Package.resolved paths and reports missing files.
+  class ResolvedPathList
+    def initialize(paths, missing_handler)
+      @paths = paths
+      @missing_handler = missing_handler
+    end
+
+    def existing
+      return @paths if missing.empty?
+
+      raise(ManifestParser::CouldNotFindResolvedFile, missing.join(", ")) unless @missing_handler
+
+      @missing_handler.call(missing)
+      @paths - missing
+    end
+
+    private
+
+    def missing
+      @missing ||= @paths.reject { |path| File.exist?(path) }
+    end
+  end
+  private_constant :ResolvedPathList
+
+  # Converts resolved pins into the package and version maps consumed by checks.
+  class ResolvedPackageEntries
+    def initialize(path, malformed_handler)
+      @path = path
+      @malformed_handler = malformed_handler
+    end
+
+    def packages_and_versions
+      pins.each_with_object([{}, {}]) { |pin, (packages, versions)|
+        entry = ResolvedPinEntry.new(pin)
+        entry.add_to(packages, versions)
+      }
+    end
+
+    private
+
+    def pins
+      PackageResolved.pins_from(@path)
+    rescue PackageResolved::MalformedFileError => error
+      raise unless @malformed_handler
+
+      @malformed_handler.call(@path, error)
+      []
+    end
+  end
+  private_constant :ResolvedPackageEntries
+
+  # Normalized data derived from one Package.resolved pin.
+  class ResolvedPinEntry
+    def initialize(pin)
+      @pin = pin
+    end
+
+    def normalized_url
+      @pin["normalized_url"]
+    end
+
+    def package
+      {
+        "repository_url" => @pin["repository_url"],
+        "requirement" => requirement
+      }
+    end
+
+    def resolved_version
+      @pin["version"] || @pin["revision"]
+    end
+
+    def add_to(packages, versions)
+      packages[normalized_url] = package
+      versions[normalized_url] = resolved_version
+    end
+
+    private
+
+    def requirement
+      version = @pin["version"]
+      return { "kind" => "resolvedPin", "version" => version } if version
+
+      { "kind" => "revision", "revision" => @pin["revision"] }
+    end
+  end
+  private_constant :ResolvedPinEntry
+
+  # Builds warning detail records while preserving explicit nil requirements.
+  class WarningDetailRecord
+    def initialize(message, package, detail)
+      @message = message
+      @package = package
+      @detail = detail
+    end
+
+    def to_h
+      with_optional_requirement(compacted_record)
+    end
+
+    private
+
+    def record
+      @detail.merge(message: @message, source: @package.source)
+    end
+
+    def compacted_record
+      record.compact
+    end
+
+    def with_optional_requirement(compacted)
+      return compacted unless record.key?(:suggested_requirement)
+
+      compacted.merge(suggested_requirement: record[:suggested_requirement])
+    end
+  end
+  private_constant :WarningDetailRecord
+
+  # Parses a package's resolved version for semantic comparisons.
+  class PackageSemver
+    def initialize(package)
+      @package = package
+    end
+
+    def value
+      resolved_version = @package.resolved_version
+      SpmVersionUpdates::Semver.new(resolved_version)
+    rescue ArgumentError => error
+      puts("Unable to extract semver from #{resolved_version} for #{@package.name} (#{error})")
+      nil
+    end
+  end
+  private_constant :PackageSemver
+
   # Structured facts about each warning, used by the GitHub Action comment
   # renderer. `check_for_updates` and `check_manifests` still return the legacy
   # string warnings for compatibility with existing plugin-style callers.
@@ -146,10 +280,7 @@ class SpmChecker
     paths = normalized_resolved_paths(resolved_paths)
     raise(SpmVersionUpdates::ConfigurationError, "package-resolved-paths must be set") if paths.empty?
 
-    existing_paths(paths).each { |path|
-      remote_packages, resolved_versions = packages_from_resolved(path)
-      check_packages(remote_packages, resolved_versions, path)
-    }
+    check_existing_resolved_paths(paths)
     @warnings
   end
 
@@ -236,13 +367,7 @@ class SpmChecker
   end
 
   def existing_paths(paths)
-    missing = paths.reject { |path| File.exist?(path) }
-    return paths if missing.empty?
-
-    raise(ManifestParser::CouldNotFindResolvedFile, missing.join(", ")) unless @missing_resolved_handler
-
-    @missing_resolved_handler.call(missing)
-    paths - missing
+    ResolvedPathList.new(paths, @missing_resolved_handler).existing
   end
 
   def resolved_versions_from(path)
@@ -255,34 +380,14 @@ class SpmChecker
   end
 
   def packages_from_resolved(path)
-    resolved_pins_from(path).each_with_object([{}, {}]) { |pin, (packages, versions)|
-      normalized_url = pin["normalized_url"]
-      packages[normalized_url] = package_entry_for_pin(pin)
-      versions[normalized_url] = pin["version"] || pin["revision"]
+    ResolvedPackageEntries.new(path, @malformed_resolved_handler).packages_and_versions
+  end
+
+  def check_existing_resolved_paths(paths)
+    existing_paths(paths).each { |path|
+      remote_packages, resolved_versions = packages_from_resolved(path)
+      check_packages(remote_packages, resolved_versions, path)
     }
-  end
-
-  def resolved_pins_from(path)
-    PackageResolved.pins_from(path)
-  rescue PackageResolved::MalformedFileError => error
-    raise unless @malformed_resolved_handler
-
-    @malformed_resolved_handler.call(path, error)
-    []
-  end
-
-  def package_entry_for_pin(pin)
-    {
-      "repository_url" => pin["repository_url"],
-      "requirement" => requirement_for_pin(pin)
-    }
-  end
-
-  def requirement_for_pin(pin)
-    version = pin["version"]
-    return { "kind" => "resolvedPin", "version" => version } if version
-
-    { "kind" => "revision", "revision" => pin["revision"] }
   end
 
   # Compare a set of declared dependencies against the resolved pins.
@@ -488,8 +593,7 @@ class SpmChecker
   end
 
   def warning_detail_record(message, package, detail)
-    detail.merge(message:, source: package.source)
-      .reject { |key, value| value.nil? && key != :suggested_requirement }
+    WarningDetailRecord.new(message, package, detail).to_h
   end
 
   def warning_detail(type, package, available_version, note = nil)
@@ -591,7 +695,7 @@ class SpmChecker
   end
 
   def warn_for_new_versions_pin(package, available_versions)
-    resolved_version = resolved_semver(package)
+    resolved_version = PackageSemver.new(package).value
     return unless resolved_version
 
     newest_version = newest_reportable_version(available_versions)
@@ -602,14 +706,6 @@ class SpmChecker
       package,
       warning_detail(:version, package, newest_version, "resolved pin")
     )
-  end
-
-  def resolved_semver(package)
-    resolved_version = package.resolved_version
-    SpmVersionUpdates::Semver.new(resolved_version)
-  rescue ArgumentError => error
-    puts("Unable to extract semver from #{resolved_version} for #{package.name} (#{error})")
-    nil
   end
 
   def warn_for_new_versions(package, available_versions, major_or_minor)

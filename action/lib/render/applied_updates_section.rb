@@ -5,6 +5,46 @@ require_relative "markdown"
 module Render
   # Renders manifest rewrites performed by apply-updates mode.
   class AppliedUpdatesSection
+    # One applied update table row.
+    class AppliedRow
+      def initialize(record)
+        @record = record
+      end
+
+      def markdown
+        "| #{cell('source')} | #{cell('package')} | #{Render::Markdown.table_cell(change)} |"
+      end
+
+      private
+
+      def change
+        "#{@record['current_version']} -> #{@record['available_version']}"
+      end
+
+      def cell(key)
+        Render::Markdown.table_cell(@record[key])
+      end
+    end
+    private_constant :AppliedRow
+
+    # One skipped update summary line.
+    class SkippedLine
+      def initialize(record)
+        @record = record
+      end
+
+      def markdown
+        "- #{label}: #{@record['reason']}"
+      end
+
+      private
+
+      def label
+        @record["package"] || @record["message"]
+      end
+    end
+    private_constant :SkippedLine
+
     def initialize(result)
       @result = result
     end
@@ -39,34 +79,20 @@ module Render
       [
         "| Manifest | Package | Change |",
         "| --- | --- | --- |",
-        *applied.map { |record|
-          "| #{cell(record['source'])} | #{cell(record['package'])} | #{cell(change(record))} |"
-        },
+        *applied.map { |record| AppliedRow.new(record).markdown },
       ]
     end
 
     def skipped_lines
       return [] if skipped.empty?
 
-      ["", "Skipped:", *skipped.map { |record| skipped_line(record) }]
+      ["", "Skipped:", *skipped.map { |record| SkippedLine.new(record).markdown }]
     end
 
     def failed_lines
       return [] if failed.empty?
 
       ["", "Failed:", *failed.map { |record| "- `#{record[:source]}`: #{record[:error]}" }]
-    end
-
-    def change(record)
-      "#{record['current_version']} -> #{record['available_version']}"
-    end
-
-    def skipped_line(record)
-      "- #{record['package'] || record['message']}: #{record['reason']}"
-    end
-
-    def cell(value)
-      Render::Markdown.table_cell(value)
     end
   end
 end

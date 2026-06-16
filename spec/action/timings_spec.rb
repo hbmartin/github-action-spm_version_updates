@@ -3,15 +3,17 @@
 require_relative "../../action/lib/timings"
 
 RSpec.describe Timings do
-  def fake_clock(values)
-    remaining = values.dup
-    Object.new.tap { |clock|
-      clock.define_singleton_method(:clock_gettime) { |_clock_id| remaining.shift }
+  let(:fake_clock) {
+    lambda { |values|
+      remaining = values.dup
+      Object.new.tap { |clock|
+        clock.define_singleton_method(:clock_gettime) { |_clock_id| remaining.shift }
+      }
     }
-  end
+  }
 
   it "measures phases and renders a summary table" do
-    timings = described_class.new(clock: fake_clock([10.0, 11.25]))
+    timings = described_class.new(clock: fake_clock.call([10.0, 11.25]))
 
     timings.measure("Checks") { "done" }
 
@@ -19,7 +21,7 @@ RSpec.describe Timings do
   end
 
   it "records explicit start and finish phases" do
-    timings = described_class.new(clock: fake_clock([1.0, 3.0]))
+    timings = described_class.new(clock: fake_clock.call([1.0, 3.0]))
 
     timings.start("Total")
     timings.finish("Total")

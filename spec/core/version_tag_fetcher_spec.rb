@@ -3,12 +3,10 @@
 require "spm_version_updates/version_tag_fetcher"
 
 RSpec.describe VersionTagFetcher do
+  let(:deterministic_sleep) { ->(index) { [0.001, 0.003, 0.002, 0.005, 0.001][index % 5] } }
+
   def lookup(index)
     ["key-#{index}", "https://github.com/acme/repo-#{index}", "persistent-#{index}"]
-  end
-
-  def deterministic_sleep(index)
-    [0.001, 0.003, 0.002, 0.005, 0.001][index % 5]
   end
 
   it "preserves the first lookup failure backtrace and cause when aggregating errors", :aggregate_failures do
@@ -68,7 +66,7 @@ RSpec.describe VersionTagFetcher do
           active += 1
           max_active = [max_active, active].max
         }
-        sleep(deterministic_sleep(index))
+        sleep(deterministic_sleep.call(index))
         ["#{index}.0.0"]
       ensure
         mutex.synchronize { active -= 1 }
@@ -115,7 +113,7 @@ RSpec.describe VersionTagFetcher do
           active += 1
           max_active = [max_active, active].max
         }
-        sleep(deterministic_sleep(index))
+        sleep(deterministic_sleep.call(index))
         raise(GitOperations::LsRemoteError, "failed #{index}") if (index % 5).zero?
 
         ["#{index}.0.0"]

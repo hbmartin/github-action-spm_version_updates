@@ -3,6 +3,7 @@
 require "spm_version_updates"
 require_relative "action_reporter"
 require_relative "github_integration"
+require_relative "report_payload"
 require_relative "reporter_sink"
 require_relative "timings"
 require_relative "update_applier"
@@ -120,10 +121,205 @@ class Action
   end
   private_constant :ConfigPrinter
 
+  # Reads and normalizes GitHub Action inputs from the environment.
+  class Inputs
+    DEFAULT_TRUE_VALUES = { nil => true, "true" => true }.freeze
+    private_constant :DEFAULT_TRUE_VALUES
+
+    def initialize(env = ENV)
+      @env = env
+    end
+
+    def to_h
+      source_inputs
+        .merge(check_inputs)
+        .merge(report_inputs)
+        .merge(cache_inputs)
+    end
+
+    private
+
+    attr_reader :env
+
+    def source_inputs
+      {
+        xcode_project_path: env_value("INPUT_XCODE_PROJECT_PATH"),
+        manifest_paths: env_lines("INPUT_PACKAGE_MANIFEST_PATHS"),
+        resolved_paths: env_lines("INPUT_PACKAGE_RESOLVED_PATHS")
+      }
+    end
+
+    def check_inputs
+      {
+        check_when_exact: env_true?("INPUT_CHECK_WHEN_EXACT"),
+        check_branches: env_true_by_default?("INPUT_CHECK_BRANCHES"),
+        check_revisions: env_true?("INPUT_CHECK_REVISIONS"),
+        report_above_maximum: env_true?("INPUT_REPORT_ABOVE_MAXIMUM"),
+        report_pre_releases: env_true?("INPUT_REPORT_PRE_RELEASES"),
+        ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
+        repo_rules_path: env_value("INPUT_REPO_RULES_PATH"),
+        allow_hosts: env_csv("INPUT_ALLOW_HOSTS"),
+        version_lookup_workers: positive_integer_input("INPUT_VERSION_LOOKUP_WORKERS", SpmChecker::DEFAULT_VERSION_LOOKUP_WORKERS)
+      }
+    end
+
+    def report_inputs
+      {
+        fail_on: FailOnThreshold.from_inputs(env_value("INPUT_FAIL_ON"), env_value("INPUT_FAIL_ON_UPDATES")),
+        comment: env_true_by_default?("INPUT_COMMENT"),
+        comment_on_success: env_true?("INPUT_COMMENT_ON_SUCCESS"),
+        open_tracking_issue: env_true?("INPUT_OPEN_TRACKING_ISSUE"),
+        allow_missing_resolved: env_true?("INPUT_ALLOW_MISSING_RESOLVED"),
+        apply_updates: env_true?("INPUT_APPLY_UPDATES"),
+        enrich_release_notes: env_true_by_default?("INPUT_ENRICH_RELEASE_NOTES")
+      }
+    end
+
+    def cache_inputs
+      {
+        cache_version_tags: env_true_by_default?("INPUT_CACHE_VERSION_TAGS"),
+        version_tags_cache_ttl: version_tags_cache_ttl,
+        version_tags_cache_dir: env_value("SPM_VERSION_UPDATES_TAG_CACHE_DIR")
+      }
+    end
+
+    def version_tags_cache_ttl
+      value = env_value("INPUT_VERSION_TAGS_CACHE_TTL")
+      parsed = Integer(value || VersionTagsPersistentCache::DEFAULT_TTL_SECONDS.to_s, 10, exception: false)
+      raise(SpmVersionUpdates::ConfigurationError, "INPUT_VERSION_TAGS_CACHE_TTL must be a non-negative integer") unless parsed && parsed >= 0
+
+      parsed
+    end
+
+    def env_value(key)
+      value = env.fetch(key, "").strip
+      value.empty? ? nil : value
+    end
+
+    def env_lines(key)
+      values_for(key, "\n")
+    end
+
+    def env_csv(key)
+      values_for(key, ",")
+    end
+
+    def values_for(key, separator)
+      env.fetch(key, "").split(separator).map(&:strip).reject(&:empty?)
+    end
+
+    def env_true?(key)
+      env_value(key) == "true"
+    end
+
+    def env_true_by_default?(key)
+      DEFAULT_TRUE_VALUES.fetch(env_value(key), false)
+    end
+
+    def positive_integer_input(key, default)
+      value = env_value(key)
+      parsed = Integer(value || default.to_s, 10, exception: false)
+      raise(SpmVersionUpdates::ConfigurationError, "#{key} must be a positive integer") unless parsed && parsed >= 1
+
+      parsed
+    end
+  end
+  private_constant :Inputs
+
+  # Validates whether automatic manifest updates can run for the selected mode.
+  class ApplyModeValidator
+    def initialize(inputs)
+      @inputs = inputs
+    end
+
+    def validate
+      return unless apply_updates?
+      return if manifest_mode?
+
+      raise(SpmVersionUpdates::ConfigurationError, "apply-updates requires package-manifest-paths")
+    end
+
+    private
+
+    attr_reader :inputs
+
+    def apply_updates?
+      inputs[:apply_updates]
+    end
+
+    def manifest_mode?
+      inputs[:manifest_paths].any?
+    end
+  end
+  private_constant :ApplyModeValidator
+
+  # Emits annotations and summary text for failed apply-updates rewrites.
+  class ApplyErrorReporter
+    # One failed manifest rewrite, rendered as a workflow annotation.
+    class Failure
+      def initialize(attributes)
+        @attributes = attributes
+      end
+
+      def annotation
+        ActionReporter::WorkflowCommand.annotation(
+          "error",
+          { "title" => "SPM apply-updates failed", "file" => @attributes[:source] },
+          @attributes[:error]
+        )
+      end
+    end
+    private_constant :Failure
+
+    def initialize(applied_updates)
+      @failures = applied_updates.failed
+    end
+
+    def annotations
+      @failures.map { |failure| Failure.new(failure).annotation }
+    end
+
+    def message
+      "apply-updates failed for #{manifest_count_message}"
+    end
+
+    private
+
+    def manifest_count_message
+      count = @failures.size
+      manifest_label = count == 1 ? "manifest" : "manifests"
+      "#{count} #{manifest_label}"
+    end
+  end
+  private_constant :ApplyErrorReporter
+
+  # Publishes update reports with optional timing instrumentation.
+  class PublishStep
+    def initialize(timings, reporter_sink, payload)
+      @timings = timings
+      @reporter_sink = reporter_sink
+      @payload = payload
+    end
+
+    def call
+      return publish unless @timings
+
+      @timings.measure("Publish") { publish }
+    end
+
+    private
+
+    def publish
+      @reporter_sink.publish_updates(@payload)
+    end
+  end
+  private_constant :PublishStep
+
   def initialize(reporter_sink: nil, checker_factory: SpmChecker, github_integration: nil)
     @reporter_sink = [reporter_sink, github_integration].find { |sink| sink } || GithubIntegration.new
     @checker_factory = checker_factory
     @missing_resolved = []
+    @timings = nil
   end
 
   def run
@@ -136,19 +332,13 @@ class Action
     move_to_workspace
 
     checker = configure_checker(inputs)
-    validate_apply_mode(inputs)
+    ApplyModeValidator.new(inputs).validate
     warnings = @timings.measure("Checks") { run_checks(checker, inputs) }
     warning_details = checker.warning_details
-    parse_warnings = checker.parse_warnings
     applied_updates = apply_updates_if_requested(inputs, warning_details)
     @timings.finish("Total")
     reporter = report(
-      warnings,
-      warning_details,
-      parse_warnings,
-      missing_resolved: missing_resolved_records,
-      applied_updates:,
-      timings: @timings,
+      report_payload(warnings, checker, applied_updates),
       comment: inputs[:comment],
       comment_on_success: inputs[:comment_on_success]
     )
@@ -158,50 +348,21 @@ class Action
 
     puts("SPM version check completed successfully!")
   rescue SpmVersionUpdates::ConfigurationError, SpmVersionUpdates::FileNotFoundError => error
-    fail_with_error(error)
+    fail_with(error)
   rescue SpmVersionUpdates::ParseError => error
-    fail_with("#{error.message}. Fix or regenerate this Package.resolved file.")
+    fail_with("#{error}. Fix or regenerate this Package.resolved file.")
   rescue SpmVersionUpdates::PolicyError => error
-    ActionReporter::BlockedReport.write(error.message)
-    fail_with_error(error)
+    ActionReporter::BlockedReport.write(error.to_s)
+    fail_with(error)
   rescue StandardError => error
     puts(error.backtrace) if ENV.fetch("DEBUG", nil)
-    fail_with_error(error)
+    fail_with(error)
   end
 
   private
 
   def read_inputs
-    cache_ttl_value = env_value("INPUT_VERSION_TAGS_CACHE_TTL")
-    cache_ttl = Integer(cache_ttl_value || VersionTagsPersistentCache::DEFAULT_TTL_SECONDS.to_s, 10, exception: false)
-    raise(SpmVersionUpdates::ConfigurationError, "INPUT_VERSION_TAGS_CACHE_TTL must be a non-negative integer") unless cache_ttl && cache_ttl >= 0
-
-    workers = positive_integer_input("INPUT_VERSION_LOOKUP_WORKERS", SpmChecker::DEFAULT_VERSION_LOOKUP_WORKERS)
-
-    {
-      xcode_project_path: env_value("INPUT_XCODE_PROJECT_PATH"),
-      manifest_paths: env_lines("INPUT_PACKAGE_MANIFEST_PATHS"),
-      resolved_paths: env_lines("INPUT_PACKAGE_RESOLVED_PATHS"),
-      check_when_exact: env_true?("INPUT_CHECK_WHEN_EXACT"),
-      check_branches: env_true_by_default?("INPUT_CHECK_BRANCHES"),
-      check_revisions: env_true?("INPUT_CHECK_REVISIONS"),
-      report_above_maximum: env_true?("INPUT_REPORT_ABOVE_MAXIMUM"),
-      report_pre_releases: env_true?("INPUT_REPORT_PRE_RELEASES"),
-      ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
-      repo_rules_path: env_value("INPUT_REPO_RULES_PATH"),
-      allow_hosts: env_csv("INPUT_ALLOW_HOSTS"),
-      version_lookup_workers: workers,
-      fail_on: FailOnThreshold.from_inputs(env_value("INPUT_FAIL_ON"), env_value("INPUT_FAIL_ON_UPDATES")),
-      comment: env_true_by_default?("INPUT_COMMENT"),
-      comment_on_success: env_true?("INPUT_COMMENT_ON_SUCCESS"),
-      open_tracking_issue: env_true?("INPUT_OPEN_TRACKING_ISSUE"),
-      allow_missing_resolved: env_true?("INPUT_ALLOW_MISSING_RESOLVED"),
-      apply_updates: env_true?("INPUT_APPLY_UPDATES"),
-      enrich_release_notes: env_true_by_default?("INPUT_ENRICH_RELEASE_NOTES"),
-      cache_version_tags: env_true_by_default?("INPUT_CACHE_VERSION_TAGS"),
-      version_tags_cache_ttl: cache_ttl,
-      version_tags_cache_dir: env_value("SPM_VERSION_UPDATES_TAG_CACHE_DIR")
-    }
+    Inputs.new.to_h
   end
 
   def configure_checker(inputs)
@@ -246,19 +407,19 @@ class Action
     end
   end
 
-  def report(warnings, warning_details = nil, parse_warnings = nil, **options)
-    missing_resolved = options[:missing_resolved]
-    reporter = ActionReporter.new(
-      warnings,
-      warning_details,
-      parse_warnings,
-      missing_resolved:,
+  def report(payload_or_warnings, *legacy_values, **options)
+    payload = ReportPayload.coerce(
+      payload_or_warnings,
+      *legacy_values,
+      missing_resolved: options[:missing_resolved],
       applied_updates: options[:applied_updates],
       timings: options[:timings]
     )
+    reporter = ActionReporter.new(payload)
     reporter.write_outputs
     reporter.emit_annotations
 
+    warnings = payload.warnings
     if warnings.empty?
       puts("✅ All SPM dependencies are up to date!")
     else
@@ -266,18 +427,29 @@ class Action
     end
     # The comment input only controls PR commenting; tracking-issue runs
     # (open-tracking-issue on a non-PR run) still publish their report.
-    publish(warnings, warning_details, parse_warnings, missing_resolved, options) if options.fetch(:comment, true) || @reporter_sink.tracking_issue_run?
+    publish(payload, options) if options.fetch(:comment, true) || @reporter_sink.tracking_issue_run?
     ActionReporter::TrackingIssueOutput.write(@reporter_sink.tracking_issue_result)
     reporter.write_summary
 
     reporter
   end
 
+  def report_payload(warnings, checker, applied_updates)
+    ReportPayload.new(
+      warnings:,
+      warning_details: checker.warning_details,
+      parse_warnings: checker.parse_warnings,
+      missing_resolved: missing_resolved_records,
+      applied_updates:,
+      timings: @timings
+    )
+  end
+
   # Parse warnings force a publish even with zero updates: a silently skipped
   # declaration must not read as "all dependencies are up to date".
-  def publish(warnings, warning_details, parse_warnings, missing_resolved, options)
-    if warnings.any? || Array(parse_warnings).any? || Array(missing_resolved).any?
-      publish_updates(warnings, warning_details, parse_warnings, missing_resolved)
+  def publish(payload, options)
+    if payload.warnings.any? || payload.parse_warnings.any? || payload.missing_resolved.any?
+      publish_updates(payload)
     elsif options.fetch(:comment_on_success, false)
       @reporter_sink.publish_success
     else
@@ -285,16 +457,8 @@ class Action
     end
   end
 
-  def publish_updates(warnings, warning_details, parse_warnings, missing_resolved)
-    if @timings
-      @timings.measure("Publish") { publish_updates_now(warnings, warning_details, parse_warnings, missing_resolved) }
-    else
-      publish_updates_now(warnings, warning_details, parse_warnings, missing_resolved)
-    end
-  end
-
-  def publish_updates_now(warnings, warning_details, parse_warnings, missing_resolved)
-    @reporter_sink.publish_updates(warnings, warning_details, parse_warnings, missing_resolved)
+  def publish_updates(payload)
+    PublishStep.new(@timings, @reporter_sink, payload).call
   end
 
   def configure_missing_resolved_handler(checker, inputs)
@@ -312,13 +476,6 @@ class Action
     }
   end
 
-  def validate_apply_mode(inputs)
-    return unless inputs[:apply_updates]
-    return unless inputs[:manifest_paths].empty?
-
-    raise(SpmVersionUpdates::ConfigurationError, "apply-updates requires package-manifest-paths")
-  end
-
   def apply_updates_if_requested(inputs, warning_details)
     return unless inputs[:apply_updates]
 
@@ -326,22 +483,9 @@ class Action
   end
 
   def fail_for_apply_errors(applied_updates)
-    failures = applied_updates.failed
-    failures.each { |failure| puts(apply_error_annotation(failure)) }
-    fail_with("apply-updates failed for #{apply_error_count_message(failures.size)}")
-  end
-
-  def apply_error_annotation(failure)
-    ActionReporter::WorkflowCommand.annotation(
-      "error",
-      { "title" => "SPM apply-updates failed", "file" => failure[:source] },
-      failure[:error]
-    )
-  end
-
-  def apply_error_count_message(count)
-    manifest_label = count == 1 ? "manifest" : "manifests"
-    "#{count} #{manifest_label}"
+    reporter = ApplyErrorReporter.new(applied_updates)
+    reporter.annotations.each { |annotation| puts(annotation) }
+    fail_with(reporter.message)
   end
 
   def move_to_workspace
@@ -355,46 +499,6 @@ class Action
   def fail_with(message)
     puts("Error: #{message}")
     exit(1)
-  end
-
-  def fail_with_error(error)
-    fail_with(error.message)
-  end
-
-  def env_value(key)
-    value = ENV.fetch(key, "").strip
-    value.empty? ? nil : value
-  end
-
-  def env_lines(key)
-    lines = ENV.fetch(key, "").split("\n")
-    lines.map!(&:strip)
-    lines.reject!(&:empty?)
-    lines
-  end
-
-  def env_csv(key)
-    values = ENV.fetch(key, "").split(",")
-    values.map!(&:strip)
-    values.reject!(&:empty?)
-    values
-  end
-
-  def env_true?(key)
-    env_value(key) == "true"
-  end
-
-  def env_true_by_default?(key)
-    value = env_value(key)
-    value.nil? || value == "true"
-  end
-
-  def positive_integer_input(key, default)
-    value = env_value(key)
-    parsed = Integer(value || default.to_s, 10, exception: false)
-    raise(SpmVersionUpdates::ConfigurationError, "#{key} must be a positive integer") unless parsed && parsed >= 1
-
-    parsed
   end
 end
 

@@ -24,6 +24,121 @@ module ManifestParser
   # Raw body and byte offsets for a direct `.package(...)` declaration.
   PackageCallSpan = Struct.new(:body, :body_start, :body_end, keyword_init: true)
 
+  # Navigates a normal Swift double-quoted string literal.
+  class StringLiteral
+    def initialize(content, index)
+      @content = content
+      @index = index
+      @cursor = index
+    end
+
+    def copy_to(output)
+      output << @content[@index...skip_index]
+      skip_index
+    end
+
+    def skip_index
+      @cursor = @index + 1
+      @cursor = next_cursor until finished?
+      finish_index
+    end
+
+    private
+
+    def finished?
+      @cursor >= @content.length || @content[@cursor] == '"'
+    end
+
+    def next_cursor
+      @content[@cursor] == "\\" ? @cursor + 2 : @cursor + 1
+    end
+
+    def finish_index
+      @cursor >= @content.length ? @cursor : @cursor + 1
+    end
+  end
+  private_constant :StringLiteral
+
+  # Navigates a Swift raw string literal such as #"..."# or #"""..."""#.
+  class RawStringLiteral
+    def initialize(content, index)
+      @content = content
+      @index = index
+      @hash_count = leading_hash_count
+      @quote_count = quote_count
+    end
+
+    def literal?
+      @hash_count.positive? && @quote_count.positive?
+    end
+
+    def copy_to(output)
+      output << @content[@index...skip_index]
+      skip_index
+    end
+
+    def skip_index
+      length = @content.length
+      index = @index + @hash_count + @quote_count
+      index += 1 until index >= length || ends_at?(index)
+      [index + @quote_count + @hash_count, length].min
+    end
+
+    private
+
+    def leading_hash_count
+      index = @index
+      index += 1 while @content[index] == "#"
+      index - @index
+    end
+
+    def quote_count
+      quote_index = @index + @hash_count
+      return 3 if @content[quote_index, 3] == '"""'
+      return 1 if @content[quote_index] == '"'
+
+      0
+    end
+
+    def ends_at?(index)
+      @content[index, @quote_count] == '"' * @quote_count &&
+        @content[(index + @quote_count), @hash_count] == "#" * @hash_count
+    end
+  end
+  private_constant :RawStringLiteral
+
+  # Finds `.package(` markers while skipping Swift string literals.
+  class PackageCallFinder
+    def initialize(content)
+      @content = content
+    end
+
+    def next_from(search_start)
+      index = search_start
+      while index < @content.length
+        return index if package_call_at?(index)
+
+        index = next_index(index)
+      end
+      nil
+    end
+
+    private
+
+    def package_call_at?(index)
+      @content[index, PACKAGE_CALL.length] == PACKAGE_CALL
+    end
+
+    def next_index(index)
+      raw_string = RawStringLiteral.new(@content, index)
+      return raw_string.skip_index if raw_string.literal?
+      return StringLiteral.new(@content, index).skip_index if @content[index] == '"'
+
+      index + 1
+    end
+  end
+  private_constant :PackageCallFinder
+
   # Find the direct SPM dependencies declared in a `Package.swift` manifest.
   #
   # Local packages (declared with `path:`) and packages without a recognizable
@@ -107,36 +222,37 @@ module ManifestParser
 
   def self.package_spans(content, &on_skip)
     calls = []
-    search_start = 0
-    while (marker_index = next_package_call(content, search_start))
-      open_index = marker_index + PACKAGE_CALL.length - 1
-      close_index = matching_paren(content, open_index)
-      if close_index.nil?
-        on_skip&.call({ reason: "unbalanced_parentheses", snippet: content[marker_index, 300] })
-        break
-      end
-
-      body_start = open_index + 1
-      calls << { body: content[body_start...close_index], body_start:, body_end: close_index }
-      search_start = close_index + 1
-    end
+    scan_package_spans(content, on_skip) { |span| calls << span }
     calls
   end
 
-  def self.next_package_call(content, search_start)
-    index = search_start
-    while index < content.length
-      return index if content[index, PACKAGE_CALL.length] == PACKAGE_CALL
+  def self.scan_package_spans(content, on_skip)
+    search_start = 0
+    while (marker_index = next_package_call(content, search_start))
+      span = package_span(content, marker_index, on_skip)
+      break unless span
 
-      if (raw_string = raw_string_start(content, index))
-        index = skip_raw_string_literal(content, index, raw_string)
-      elsif content[index] == '"'
-        index = skip_string_literal(content, index)
-      else
-        index += 1
-      end
+      yield(span)
+      search_start = span[:body_end] + 1
     end
+  end
+
+  def self.package_span(content, marker_index, on_skip)
+    open_index = marker_index + PACKAGE_CALL.length - 1
+    close_index = matching_paren(content, open_index)
+    return unbalanced_package_span(content, marker_index, on_skip) unless close_index
+
+    body_start = open_index + 1
+    { body: content[body_start...close_index], body_start:, body_end: close_index }
+  end
+
+  def self.unbalanced_package_span(content, marker_index, on_skip)
+    on_skip&.call({ reason: "unbalanced_parentheses", snippet: content[marker_index, 300] })
     nil
+  end
+
+  def self.next_package_call(content, search_start)
+    PackageCallFinder.new(content).next_from(search_start)
   end
 
   # Map the body of a `.package(...)` call to an Xcodeproj-style requirement.
@@ -197,20 +313,15 @@ module ManifestParser
     depth = 0
     index = open_index
     length = content.length
-    in_string = false
     while index < length
       char = content[index]
-      if in_string
-        if char == "\\"
-          index += 2
-          next
-        end
-        in_string = false if char == '"'
-      elsif (raw_string = raw_string_start(content, index))
-        index = skip_raw_string_literal(content, index, raw_string)
+      raw_string = RawStringLiteral.new(content, index)
+      if raw_string.literal?
+        index = raw_string.skip_index
         next
       elsif char == '"'
-        in_string = true
+        index = StringLiteral.new(content, index).skip_index
+        next
       elsif char == "("
         depth += 1
       elsif char == ")"
@@ -234,8 +345,9 @@ module ManifestParser
     while index < length
       char = content[index]
       nxt = content[index + 1]
-      if (raw_string = raw_string_start(content, index))
-        index = copy_raw_string_literal(content, index, output, raw_string)
+      raw_string = RawStringLiteral.new(content, index)
+      if raw_string.literal?
+        index = raw_string.copy_to(output)
       elsif char == '"'
         index = copy_string_literal(content, index, output)
       elsif char == "/" && nxt == "/"
@@ -255,83 +367,7 @@ module ManifestParser
   #
   # @return [Integer]
   def self.copy_string_literal(content, index, output)
-    length = content.length
-    output << content[index] # opening quote
-    index += 1
-    while index < length
-      char = content[index]
-      output << char
-      if char == "\\"
-        output << content[index + 1] if index + 1 < length
-        index += 2
-        next
-      end
-      index += 1
-      break if char == '"'
-    end
-    index
-  end
-
-  def self.skip_string_literal(content, index)
-    length = content.length
-    index += 1
-    while index < length
-      char = content[index]
-      if char == "\\"
-        index += 2
-        next
-      end
-
-      index += 1
-      break if char == '"'
-    end
-    index
-  end
-
-  def self.raw_string_start(content, index)
-    hash_count = 0
-    hash_index = index
-    while content[hash_index] == "#"
-      hash_count += 1
-      hash_index += 1
-    end
-    return nil unless hash_count.positive?
-
-    quote_count = raw_string_quote_count(content, hash_index)
-    return nil unless quote_count.positive?
-
-    [hash_count, quote_count]
-  end
-
-  def self.raw_string_quote_count(content, index)
-    return 3 if content[index, 3] == '"""'
-    return 1 if content[index] == '"'
-
-    0
-  end
-
-  def self.raw_string_end?(content, index, hash_count, quote_count)
-    return false unless content[index, quote_count] == '"' * quote_count
-
-    content[(index + quote_count), hash_count] == "#" * hash_count
-  end
-
-  def self.copy_raw_string_literal(content, index, output, raw_string)
-    start = index
-    index = skip_raw_string_literal(content, index, raw_string)
-    output << content[start...index]
-    index
-  end
-
-  def self.skip_raw_string_literal(content, index, raw_string)
-    hash_count, quote_count = raw_string
-    index += hash_count + quote_count
-    while index < content.length
-      return index + quote_count + hash_count if raw_string_end?(content, index, hash_count, quote_count)
-
-      index += 1
-    end
-    index
+    StringLiteral.new(content, index).copy_to(output)
   end
 
   # Return the index just past the closing `*/` of a block comment. Swift block
@@ -358,18 +394,15 @@ module ManifestParser
 
   private_class_method :package_calls,
                        :package_spans,
+                       :scan_package_spans,
+                       :package_span,
+                       :unbalanced_package_span,
                        :next_package_call,
                        :version_range_requirement,
                        :increment_patch_version,
                        :matching_paren,
                        :strip_comments,
                        :copy_string_literal,
-                       :skip_string_literal,
-                       :raw_string_start,
-                       :raw_string_quote_count,
-                       :raw_string_end?,
-                       :copy_raw_string_literal,
-                       :skip_raw_string_literal,
                        :skip_block_comment
 
   # Raised when manifest mode is invoked without a manifest path.

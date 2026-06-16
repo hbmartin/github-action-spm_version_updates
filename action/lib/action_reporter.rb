@@ -7,6 +7,7 @@ require_relative "render/applied_updates_section"
 require_relative "render/missing_resolved_section"
 require_relative "render/parse_warnings_section"
 require_relative "render/version_links"
+require_relative "report_payload"
 
 # Writes GitHub Actions-visible reports for the dependency update results.
 class ActionReporter
@@ -184,13 +185,8 @@ class ActionReporter
     end
   end
 
-  def initialize(warnings, warning_details = nil, parse_warnings = nil, **options)
-    @warnings = Array(warnings)
-    @warning_details = Array(warning_details)
-    @parse_warnings = Array(parse_warnings)
-    @missing_resolved = Array(options[:missing_resolved])
-    @applied_updates = options[:applied_updates]
-    @timings = options[:timings]
+  def initialize(payload_or_warnings, warning_details = nil, parse_warnings = nil, **)
+    @payload = ReportPayload.coerce(payload_or_warnings, warning_details, parse_warnings, **)
   end
 
   def write
@@ -221,19 +217,23 @@ class ActionReporter
 
   private
 
+  attr_reader :payload
+
   def warning_records
-    WarningRecord.build(@warnings, @warning_details)
+    WarningRecord.build(payload.warnings, payload.warning_details)
   end
 
   def write_action_outputs
     output_path = WorkflowCommand.env_value("GITHUB_OUTPUT")
     return unless output_path
 
-    File.open(output_path, "a") { |file|
-      file.puts(action_output_lines)
-      WorkflowCommand.write_multiline_output(file, "updates-json", JSON.generate(sanitized_records))
-      WorkflowCommand.write_multiline_output(file, "applied-updates-json", JSON.generate(applied_update_records))
-    }
+    File.open(output_path, "a") { |file| write_output_payload(file) }
+  end
+
+  def write_output_payload(file)
+    file.puts(action_output_lines)
+    WorkflowCommand.write_multiline_output(file, "updates-json", JSON.generate(sanitized_records))
+    WorkflowCommand.write_multiline_output(file, "applied-updates-json", JSON.generate(applied_update_records))
   end
 
   def sanitized_records
@@ -253,8 +253,8 @@ class ActionReporter
       "major-updates-found=#{severity_counts['major']}",
       "minor-updates-found=#{severity_counts['minor']}",
       "patch-updates-found=#{severity_counts['patch']}",
-      "parse-warnings=#{@parse_warnings.size}",
-      "missing-resolved=#{@missing_resolved.size}",
+      "parse-warnings=#{payload.parse_warnings.size}",
+      "missing-resolved=#{payload.missing_resolved.size}",
       "applied-updates=#{applied_update_records.size}",
       "blocked=false",
       "error-message=",
@@ -268,14 +268,15 @@ class ActionReporter
                      [SUMMARY_HEADING, "", update_count_line, "", *update_summary_lines]
                    end
     update_lines +
-      Render::ParseWarningsSection.new(@parse_warnings).summary_lines +
-      Render::MissingResolvedSection.new(@missing_resolved).summary_lines +
-      Render::AppliedUpdatesSection.new(@applied_updates).summary_lines +
+      Render::ParseWarningsSection.new(payload.parse_warnings).summary_lines +
+      Render::MissingResolvedSection.new(payload.missing_resolved).summary_lines +
+      Render::AppliedUpdatesSection.new(payload.applied_updates).summary_lines +
       timing_summary_lines
   end
 
   def timing_summary_lines
-    @timings ? @timings.summary_lines : []
+    timings = payload.timings
+    timings ? timings.summary_lines : []
   end
 
   def update_count_line
@@ -320,22 +321,23 @@ class ActionReporter
   end
 
   def emit_parse_warning_annotations
-    @parse_warnings.each { |record|
+    payload.parse_warnings.each { |record|
       properties = { "title" => "SPM manifest parse warning", "file" => record["source"] }.compact
       puts(WorkflowCommand.annotation("warning", properties, record["message"]))
     }
   end
 
   def emit_missing_resolved_annotations
-    @missing_resolved.each { |record|
+    payload.missing_resolved.each { |record|
       properties = { "title" => "Missing Package.resolved", "file" => record["source"] }.compact
       puts(WorkflowCommand.annotation("warning", properties, record["message"]))
     }
   end
 
   def applied_update_records
-    return [] unless @applied_updates
+    applied_updates = payload.applied_updates
+    return [] unless applied_updates
 
-    @applied_updates.to_json_records
+    applied_updates.to_json_records
   end
 end

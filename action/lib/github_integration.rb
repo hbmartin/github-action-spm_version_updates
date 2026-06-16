@@ -8,6 +8,7 @@ require_relative "release_notes"
 require_relative "render/markdown"
 require_relative "render/missing_resolved_section"
 require_relative "render/parse_warnings_section"
+require_relative "report_payload"
 require_relative "reporter_sink"
 
 # GitHub-backed reporter sink for posting PR comments.
@@ -255,6 +256,23 @@ class GithubIntegration < ReporterSink
     end
   end
 
+  # Assembles the optional sections that make up an update comment.
+  class ReportSections
+    def initialize(payload, updates_markdown)
+      @payload = payload
+      @updates_markdown = updates_markdown
+    end
+
+    def to_a
+      [
+        @updates_markdown,
+        Render::ParseWarningsSection.new(@payload.parse_warnings).comment_markdown,
+        Render::MissingResolvedSection.new(@payload.missing_resolved).comment_markdown,
+      ]
+    end
+  end
+  private_constant :ReportSections
+
   # The issue created or updated by the last publish (see ReporterSink).
   attr_reader :tracking_issue_result
 
@@ -291,10 +309,10 @@ class GithubIntegration < ReporterSink
     !!(@open_tracking_issue && !@pr_number && @client && @github_repository)
   end
 
-  def publish_updates(warnings, warning_details = nil, parse_warnings = nil, missing_resolved = nil)
+  def publish_updates(payload_or_warnings, *legacy_values)
     return unless tracking_issue_run? || comment_target?
 
-    message = build_comment_message(build_warnings_message(warnings, warning_details, parse_warnings, missing_resolved))
+    message = build_comment_message(build_warnings_message(payload_or_warnings, *legacy_values))
     if tracking_issue_run?
       @tracking_issue_result = tracking_issue.upsert(message)
     else
@@ -380,20 +398,16 @@ class GithubIntegration < ReporterSink
     MARKDOWN
   end
 
-  def build_warnings_message(warnings, warning_details = nil, parse_warnings = nil, missing_resolved = nil)
-    [
-      updates_message(warnings, warning_details),
-      Render::ParseWarningsSection.new(parse_warnings).comment_markdown,
-      Render::MissingResolvedSection.new(missing_resolved).comment_markdown,
-    ]
-      .compact
-      .join("\n\n")
+  def build_warnings_message(payload_or_warnings, *legacy_values)
+    payload = ReportPayload.coerce(payload_or_warnings, *legacy_values)
+    ReportSections.new(payload, updates_message(payload)).to_a.compact.join("\n\n")
   end
 
-  def updates_message(warnings, warning_details)
+  def updates_message(payload)
+    warnings = payload.warnings
     return "✅ **All SPM dependencies are up to date!**" if warnings.empty?
 
-    details = structured_warning_details(warning_details)
+    details = structured_warning_details(payload.warning_details)
     return build_legacy_warnings_message(warnings) if details.size < warnings.size
 
     grouped_updates = grouped_warning_details(details)
@@ -404,17 +418,13 @@ class GithubIntegration < ReporterSink
       .map { |group| warning_group_row(group) }
       .join("\n")
 
-    [structured_updates_table(header, table), UpgradeHintsSection.new(details).markdown, release_notes_markdown(details)]
+    [
+      "#{header}| Package | Current → Available | Source | Links |\n| --- | --- | --- | --- |\n#{table}",
+      UpgradeHintsSection.new(details).markdown,
+      release_notes_markdown(details),
+    ]
       .compact
       .join("\n\n")
-  end
-
-  def structured_updates_table(header, table)
-    <<~MARKDOWN.chomp
-      #{header}| Package | Current → Available | Source | Links |
-      | --- | --- | --- | --- |
-      #{table}
-    MARKDOWN
   end
 
   def build_legacy_warnings_message(warnings)

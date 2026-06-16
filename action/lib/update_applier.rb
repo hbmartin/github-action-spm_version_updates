@@ -19,55 +19,95 @@ class UpdateApplier
     end
   }
 
+  # Normalized update record with eligibility rules for apply-updates mode.
+  class Record
+    def initialize(attributes)
+      @attributes = attributes.to_h.transform_keys(&:to_s)
+    end
+
+    def eligible?
+      !skip_reason
+    end
+
+    def source
+      @attributes["source"]
+    end
+
+    def to_h
+      @attributes
+    end
+
+    def skipped_entry
+      @attributes.merge("reason" => skip_reason)
+    end
+
+    private
+
+    def skip_reason
+      type = @attributes["type"]
+      return "no-source" if @attributes["source"].to_s.empty?
+      return "above-maximum" if type == "above_maximum"
+      return type if %w(branch revision).include?(type)
+
+      "unsupported" unless type == "version"
+    end
+  end
+  private_constant :Record
+
+  # Eligible and skipped records after applying manifest rewrite rules.
+  class ClassifiedRecords
+    attr_reader :eligible, :skipped
+
+    def initialize(records)
+      @eligible = []
+      @skipped = []
+      records.each { |record| classify(record) }
+    end
+
+    private
+
+    def classify(record)
+      record.eligible? ? @eligible << record : @skipped << record.skipped_entry
+    end
+  end
+  private_constant :ClassifiedRecords
+
+  # Applies eligible records one manifest file at a time.
+  class BatchApplier
+    def initialize(records, updater)
+      @records = records
+      @updater = updater
+      @result = { applied: [], skipped: [], failed: [] }
+    end
+
+    def result_with(skipped)
+      records_by_source.each { |source, records| apply_source(source, records) }
+      Result.new(applied: @result[:applied], skipped: skipped + @result[:skipped], failed: @result[:failed])
+    end
+
+    private
+
+    def records_by_source
+      @records.group_by(&:source)
+    end
+
+    def apply_source(source, records)
+      result = @updater.update_file(source, records.map(&:to_h))
+      @result[:applied].concat(result.applied)
+      @result[:skipped].concat(result.skipped)
+    rescue StandardError => error
+      @result[:failed] << { source:, error: error.message }
+    end
+  end
+  private_constant :BatchApplier
+
   def initialize(records, updater: ManifestUpdater)
-    @records = Array(records).map { |record| stringify(record) }
+    @records = Array(records).map { |record| Record.new(record) }
     @updater = updater
   end
 
   def apply
-    eligible, skipped = classify_records
-    failed = []
-    applied = apply_eligible_records(eligible, skipped, failed)
-    Result.new(applied:, skipped:, failed:)
-  end
-
-  private
-
-  def apply_eligible_records(eligible, skipped, failed)
-    applied = []
-    records_by_source(eligible).each { |source, records|
-      begin
-        result = @updater.update_file(source, records)
-        applied.concat(result.applied)
-        skipped.concat(result.skipped)
-      rescue StandardError => error
-        failed << { source:, error: error.message }
-      end
-    }
-    applied
-  end
-
-  def records_by_source(records)
-    records.group_by { |record| record["source"] }
-  end
-
-  def classify_records
-    @records.each_with_object([[], []]) { |record, groups|
-      reason = skip_reason(record)
-      reason ? groups.last << record.merge("reason" => reason) : groups.first << record
-    }
-  end
-
-  def skip_reason(record)
-    type = record["type"]
-    return "no-source" if record["source"].to_s.empty?
-    return "above-maximum" if type == "above_maximum"
-    return type if %w(branch revision).include?(type)
-
-    "unsupported" unless type == "version"
-  end
-
-  def stringify(record)
-    record.to_h.transform_keys(&:to_s)
+    classified = ClassifiedRecords.new(@records)
+    BatchApplier.new(classified.eligible, @updater).result_with(classified.skipped)
   end
 end
