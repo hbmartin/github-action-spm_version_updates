@@ -317,11 +317,14 @@ RSpec.describe SpmChecker do
 
     it "fetches version tags with a bounded worker pool and preserves warning order", :aggregate_failures do
       package_count = checker.version_lookup_workers + 4
-      remote_packages = (1..package_count).each_with_object({}) { |index, packages|
-        packages["github.com/acme/pkg#{index}"] = {
-          "repository_url" => "https://github.com/acme/pkg#{index}",
-          "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }
-        }
+      remote_packages = (1..package_count).to_h { |index|
+        [
+          "github.com/acme/pkg#{index}",
+          {
+            "repository_url" => "https://github.com/acme/pkg#{index}",
+            "requirement" => { "kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0" }
+          },
+        ]
       }
       resolved_versions = remote_packages.keys.to_h { |url| [url, "1.0.0"] }
       in_flight = 0

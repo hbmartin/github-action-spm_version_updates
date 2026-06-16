@@ -21,7 +21,7 @@ class GithubIntegration < ReporterSink
   # report updates on runs without a pull request context.
   class TrackingIssue
     # Raised when the tracking issue search reaches the configured page limit.
-    LookupExhausted = Class.new(StandardError)
+    class LookupExhausted < StandardError; end
 
     ISSUE_IDENTIFIER = "<!-- spm-version-updates-action:tracking-issue -->"
     LABEL = "spm-version-updates"
@@ -118,7 +118,8 @@ class GithubIntegration < ReporterSink
     attr_reader :warnings
 
     def header
-      "⚠️ **Found #{warning_count} potential dependency update#{warning_count > 1 ? 's' : ''}:**\n\n"
+      update_label = warning_count == 1 ? "update" : "updates"
+      "⚠️ **Found #{warning_count} potential dependency #{update_label}:**\n\n"
     end
 
     def warning_count
@@ -397,7 +398,8 @@ class GithubIntegration < ReporterSink
 
     grouped_updates = grouped_warning_details(details)
     package_count = grouped_updates.size
-    header = "⚠️ **Found #{package_count} package#{package_count == 1 ? '' : 's'} with potential dependency updates:**\n\n"
+    package_label = package_count == 1 ? "package" : "packages"
+    header = "⚠️ **Found #{package_count} #{package_label} with potential dependency updates:**\n\n"
     table = grouped_updates
       .map { |group| warning_group_row(group) }
       .join("\n")

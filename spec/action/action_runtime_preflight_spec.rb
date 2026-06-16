@@ -14,11 +14,12 @@ RSpec.describe ActionRuntimePreflight do
   let(:stub_command) {
     lambda { |bin, name, exit_status:, output: nil|
       path = File.join(bin, name)
+      output_line = output ? "echo #{Shellwords.escape(output)}" : nil
       File.write(
         path,
         <<~SCRIPT
           #!/bin/bash
-          #{output ? "echo #{Shellwords.escape(output)}" : ''}
+          #{output_line}
           exit #{exit_status}
         SCRIPT
       )

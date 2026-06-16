@@ -280,7 +280,8 @@ class ActionReporter
 
   def update_count_line
     count = records.size
-    "Found **#{count}** potential dependency update#{count == 1 ? '' : 's'}."
+    update_label = count == 1 ? "update" : "updates"
+    "Found **#{count}** potential dependency #{update_label}."
   end
 
   def update_summary_lines

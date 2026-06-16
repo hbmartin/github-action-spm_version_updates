@@ -40,7 +40,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  spec.add_runtime_dependency("semverify", "~> 0.3")
+  spec.add_dependency("semverify", "~> 0.3")
   # Xcode-project mode additionally requires the "xcodeproj" gem (loaded
   # lazily); manifest mode works without it.
 end

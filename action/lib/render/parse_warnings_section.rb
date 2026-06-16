@@ -25,12 +25,13 @@ module Render
 
     def header
       count = @parse_warnings.size
-      "⚠️ **#{count} declaration#{count == 1 ? '' : 's'} could not be parsed** " \
+      declaration_label = count == 1 ? "declaration" : "declarations"
+      "⚠️ **#{count} #{declaration_label} could not be parsed** " \
         "(updates for the affected dependencies were not checked):"
     end
 
     def bullet(record)
-      line = +"- `#{record['source']}`: #{ParseWarning.describe_reason(record)}"
+      line = "- `#{record['source']}`: #{ParseWarning.describe_reason(record)}"
       snippet = record["snippet"].to_s.delete("`")
       line << " — `#{snippet}`" unless snippet.empty?
       line << ". If this is valid Swift, please [open an issue](#{ParseWarning.issue_link(record)})."
