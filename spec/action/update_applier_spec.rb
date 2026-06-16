@@ -4,24 +4,25 @@ require_relative "../../action/lib/update_applier"
 
 RSpec.describe UpdateApplier do
   let(:updater) { class_double(ManifestUpdater) }
-
-  def record(overrides = {})
-    {
-      type: "version",
-      package: "foo/bar",
-      source: "Package.swift",
-      current_version: "1.0.0",
-      available_version: "1.1.0",
-      requirement_kind: "upToNextMajorVersion"
-    }.merge(overrides)
-  end
+  let(:record) {
+    lambda { |overrides = {}|
+      {
+        type: "version",
+        package: "foo/bar",
+        source: "Package.swift",
+        current_version: "1.0.0",
+        available_version: "1.1.0",
+        requirement_kind: "upToNextMajorVersion"
+      }.merge(overrides)
+    }
+  }
 
   it "groups eligible version records by manifest source", :aggregate_failures do
-    applied_records = [record, record(package: "baz/qux")].map { |entry| entry.transform_keys(&:to_s) }
+    applied_records = [record.call, record.call(package: "baz/qux")].map { |entry| entry.transform_keys(&:to_s) }
     result = ManifestUpdater::Result.new(content: "", applied: applied_records, skipped: [], changed: true)
     allow(updater).to receive(:update_file).and_return(result)
 
-    applied = described_class.new([record, record(package: "baz/qux")], updater:).apply
+    applied = described_class.new([record.call, record.call(package: "baz/qux")], updater:).apply
 
     expect(updater).to have_received(:update_file).with("Package.swift", array_including(a_hash_including("package" => "foo/bar"), a_hash_including("package" => "baz/qux")))
     expect(applied.applied_count).to eq(2)
@@ -32,9 +33,9 @@ RSpec.describe UpdateApplier do
 
     result = described_class.new(
       [
-        record(type: "above_maximum"),
-        record(type: "revision"),
-        record(source: nil),
+        record.call(type: "above_maximum"),
+        record.call(type: "revision"),
+        record.call(source: nil),
       ],
       updater:
     ).apply
@@ -46,7 +47,7 @@ RSpec.describe UpdateApplier do
   it "records per-file failures and continues", :aggregate_failures do
     allow(updater).to receive(:update_file).and_raise(StandardError, "boom")
 
-    result = described_class.new([record], updater:).apply
+    result = described_class.new([record.call], updater:).apply
 
     expect(result.failed).to eq([{ source: "Package.swift", error: "boom" }])
     expect(result).to be_failed

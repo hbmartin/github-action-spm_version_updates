@@ -35,11 +35,13 @@ RSpec.describe ActionReporter do
     JSON.parse(json)
   end
 
-  def applied_json(output_file)
-    content = File.read(output_file)
-    json = content[/applied-updates-json<<(\S+)\n(.*?)\n\1\n/m, 2]
-    JSON.parse(json)
-  end
+  let(:applied_json) {
+    lambda { |output_file|
+      content = File.read(output_file)
+      json = content[/applied-updates-json<<(\S+)\n(.*?)\n\1\n/m, 2]
+      JSON.parse(json)
+    }
+  }
 
   describe "#write action outputs" do
     it "writes counts, flags, and redacted updates-json to GITHUB_OUTPUT", :aggregate_failures do
@@ -104,7 +106,7 @@ RSpec.describe ActionReporter do
 
         content = File.read(output_file)
         expect(content).to include("missing-resolved=1", "applied-updates=1")
-        expect(applied_json(output_file)).to eq(applied)
+        expect(applied_json.call(output_file)).to eq(applied)
       end
     end
   end

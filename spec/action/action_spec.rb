@@ -306,7 +306,12 @@ RSpec.describe Action do
           "::warning title=SPM dependency update,file=Modules/Package.swift::" \
           "Newer version of onevcat/Kingfisher: 8.0.0"
         )
-        expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, nil, nil)
+        expect(reporter_sink).to have_received(:publish_updates) { |payload|
+          expect(payload.warnings).to eq(warnings)
+          expect(payload.warning_details).to eq(warning_details)
+          expect(payload.parse_warnings).to eq([])
+          expect(payload.missing_resolved).to eq([])
+        }
       end
     end
 
@@ -709,7 +714,12 @@ RSpec.describe Action do
         end
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
-      expect(reporter_sink).to have_received(:publish_updates).with(warnings, [], [], [])
+      expect(reporter_sink).to have_received(:publish_updates) { |payload|
+        expect(payload.warnings).to eq(warnings)
+        expect(payload.warning_details).to eq([])
+        expect(payload.parse_warnings).to eq([])
+        expect(payload.missing_resolved).to eq([])
+      }
     end
 
     it "fails when a semantic update meets the fail-on threshold", :aggregate_failures do
@@ -733,7 +743,12 @@ RSpec.describe Action do
         end
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
-      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, [], [])
+      expect(reporter_sink).to have_received(:publish_updates) { |payload|
+        expect(payload.warnings).to eq(warnings)
+        expect(payload.warning_details).to eq(warning_details)
+        expect(payload.parse_warnings).to eq([])
+        expect(payload.missing_resolved).to eq([])
+      }
     end
 
     it "does not fail when semantic updates are below the fail-on threshold", :aggregate_failures do
@@ -755,7 +770,12 @@ RSpec.describe Action do
         action.run
       end
 
-      expect(reporter_sink).to have_received(:publish_updates).with(warnings, warning_details, [], [])
+      expect(reporter_sink).to have_received(:publish_updates) { |payload|
+        expect(payload.warnings).to eq(warnings)
+        expect(payload.warning_details).to eq(warning_details)
+        expect(payload.parse_warnings).to eq([])
+        expect(payload.missing_resolved).to eq([])
+      }
     end
   end
 
