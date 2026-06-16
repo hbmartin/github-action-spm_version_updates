@@ -255,10 +255,10 @@ class SpmChecker
   end
 
   def packages_from_resolved(path)
-    resolved_pins_from(path).each_with_object([{}, {}]) { |pin, packages|
+    resolved_pins_from(path).each_with_object([{}, {}]) { |pin, (packages, versions)|
       normalized_url = pin["normalized_url"]
-      packages.first[normalized_url] = package_entry_for_pin(pin)
-      packages.last[normalized_url] = pin["version"] || pin["revision"]
+      packages[normalized_url] = package_entry_for_pin(pin)
+      versions[normalized_url] = pin["version"] || pin["revision"]
     }
   end
 

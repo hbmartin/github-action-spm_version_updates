@@ -286,10 +286,11 @@ class Action
   end
 
   def publish_updates(warnings, warning_details, parse_warnings, missing_resolved)
-    publish = -> { publish_updates_now(warnings, warning_details, parse_warnings, missing_resolved) }
-    return publish.call unless @timings
-
-    @timings.measure("Publish") { publish.call }
+    if @timings
+      @timings.measure("Publish") { publish_updates_now(warnings, warning_details, parse_warnings, missing_resolved) }
+    else
+      publish_updates_now(warnings, warning_details, parse_warnings, missing_resolved)
+    end
   end
 
   def publish_updates_now(warnings, warning_details, parse_warnings, missing_resolved)
