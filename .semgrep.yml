@@ -149,6 +149,16 @@ rules:
         - "**/*.rb"
     patterns:
       - pattern-regex: '[\x{200B}\x{200C}\x{200D}\x{FEFF}]'
+  - id: ruby.release-notes.github-repo-regex-excludes-query-fragment
+    languages:
+      - generic
+    severity: ERROR
+    message: GitHub repository URL regex captures must exclude query strings and fragments from owner/repo values.
+    paths:
+      include:
+        - "**/release_notes.rb"
+    patterns:
+      - pattern-regex: 'github\\\.com.*\[\^/\\s\]\+/\[\^/\\s\]\+'
   - id: ruby.github-integration.no-unbounded-issue-pagination
     languages:
       - ruby

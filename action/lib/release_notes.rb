@@ -16,10 +16,12 @@ module ReleaseNotes
     def fetch(repository_url, version)
       return nil if @disabled
 
+      version = version.to_s
+      return nil if version.empty?
+
       repo = github_repo(repository_url)
       return nil unless repo
 
-      version = version.to_s
       key = [repo, version]
       return @cache[key] if @cache.key?(key)
       return nil if @cache.size >= @limit
@@ -47,8 +49,8 @@ module ReleaseNotes
 
     def github_repo(repository_url)
       value = repository_url.to_s
-      match = value.match(%r{\Agit@github\.com:(?<repo>[^/\s]+/[^/\s]+?)(?:\.git)?/*\z}) ||
-              value.match(%r{\Ahttps?://(?:[^@/\s]+@)?github\.com/(?<repo>[^/\s]+/[^/\s]+?)(?:\.git)?/*\z})
+      match = value.match(%r{\Agit@github\.com:(?<repo>[^/?#\s]+/[^/?#\s]+?)(?:\.git)?/*\z}) ||
+              value.match(%r{\Ahttps?://(?:[^@/\s]+@)?github\.com/(?<repo>[^/?#\s]+/[^/?#\s]+?)(?:\.git)?/*\z})
       match && match[:repo]
     end
   end
