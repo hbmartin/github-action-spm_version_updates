@@ -177,7 +177,10 @@ module ReleaseNotes
     private
 
     def body
-      @body ||= Body.new(release).text
+      fetched_release = release
+      return "" unless fetched_release
+
+      @body ||= Body.new(fetched_release).text
     end
 
     def release

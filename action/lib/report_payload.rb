@@ -40,6 +40,7 @@ class ReportPayload
   private_constant :Attributes
 
   def self.coerce(value, *legacy_values, **attributes)
+    # Existing payloads are already normalized; keyword overrides are ignored.
     return value if value.kind_of?(self)
 
     warning_details, parse_warnings, missing_resolved = legacy_values

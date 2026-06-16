@@ -348,15 +348,13 @@ class Action
 
     puts("SPM version check completed successfully!")
   rescue SpmVersionUpdates::ConfigurationError, SpmVersionUpdates::FileNotFoundError => error
-    fail_with(error)
+    fail_with_error(error)
   rescue SpmVersionUpdates::ParseError => error
-    fail_with("#{error}. Fix or regenerate this Package.resolved file.")
+    fail_with_parse_error(error)
   rescue SpmVersionUpdates::PolicyError => error
-    ActionReporter::BlockedReport.write(error.to_s)
-    fail_with(error)
+    fail_with_policy_error(error)
   rescue StandardError => error
-    puts(error.backtrace) if ENV.fetch("DEBUG", nil)
-    fail_with(error)
+    fail_with_unexpected_error(error)
   end
 
   private
@@ -499,6 +497,24 @@ class Action
   def fail_with(message)
     puts("Error: #{message}")
     exit(1)
+  end
+
+  def fail_with_error(error)
+    fail_with(error.message)
+  end
+
+  def fail_with_parse_error(error)
+    fail_with("#{error.message}. Fix or regenerate this Package.resolved file.")
+  end
+
+  def fail_with_policy_error(error)
+    ActionReporter::BlockedReport.write(error.to_s)
+    fail_with_error(error)
+  end
+
+  def fail_with_unexpected_error(error)
+    puts(error.backtrace) if ENV.fetch("DEBUG", nil)
+    fail_with_error(error)
   end
 end
 
