@@ -1,6 +1,6 @@
 # Defaults can be found here: https://github.com/bbatsov/rubocop/blob/master/config/default.yml
 
-require:
+plugins:
   - rubocop-rspec
   - rubocop-rake
   - rubocop-performance

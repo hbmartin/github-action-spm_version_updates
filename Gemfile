@@ -11,7 +11,7 @@ gemspec path: "gems/danger-spm_version_updates", name: "danger-spm_version_updat
 # GitHub Action runtime dependencies.
 # Octokit/Danger configure Faraday retry middleware at runtime under Faraday v2.
 gem "faraday-retry", "~> 2.4"
-gem "octokit", "~> 8.0"
+gem "octokit", "~> 10.0"
 
 group(:xcode) {
   gem "xcodeproj", "~> 1.24"

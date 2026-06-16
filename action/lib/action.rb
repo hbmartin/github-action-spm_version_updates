@@ -178,23 +178,23 @@ class Action
       xcode_project_path: env_value("INPUT_XCODE_PROJECT_PATH"),
       manifest_paths: env_lines("INPUT_PACKAGE_MANIFEST_PATHS"),
       resolved_paths: env_lines("INPUT_PACKAGE_RESOLVED_PATHS"),
-      check_when_exact: env_flag("INPUT_CHECK_WHEN_EXACT"),
-      check_branches: env_flag_default_true("INPUT_CHECK_BRANCHES"),
-      check_revisions: env_flag("INPUT_CHECK_REVISIONS"),
-      report_above_maximum: env_flag("INPUT_REPORT_ABOVE_MAXIMUM"),
-      report_pre_releases: env_flag("INPUT_REPORT_PRE_RELEASES"),
+      check_when_exact: env_true?("INPUT_CHECK_WHEN_EXACT"),
+      check_branches: env_true_by_default?("INPUT_CHECK_BRANCHES"),
+      check_revisions: env_true?("INPUT_CHECK_REVISIONS"),
+      report_above_maximum: env_true?("INPUT_REPORT_ABOVE_MAXIMUM"),
+      report_pre_releases: env_true?("INPUT_REPORT_PRE_RELEASES"),
       ignore_repos: env_csv("INPUT_IGNORE_REPOS"),
       repo_rules_path: env_value("INPUT_REPO_RULES_PATH"),
       allow_hosts: env_csv("INPUT_ALLOW_HOSTS"),
       version_lookup_workers: workers,
       fail_on: FailOnThreshold.from_inputs(env_value("INPUT_FAIL_ON"), env_value("INPUT_FAIL_ON_UPDATES")),
-      comment: env_flag_default_true("INPUT_COMMENT"),
-      comment_on_success: env_flag("INPUT_COMMENT_ON_SUCCESS"),
-      open_tracking_issue: env_flag("INPUT_OPEN_TRACKING_ISSUE"),
-      allow_missing_resolved: env_flag("INPUT_ALLOW_MISSING_RESOLVED"),
-      apply_updates: env_flag("INPUT_APPLY_UPDATES"),
-      enrich_release_notes: env_flag_default_true("INPUT_ENRICH_RELEASE_NOTES"),
-      cache_version_tags: env_flag_default_true("INPUT_CACHE_VERSION_TAGS"),
+      comment: env_true_by_default?("INPUT_COMMENT"),
+      comment_on_success: env_true?("INPUT_COMMENT_ON_SUCCESS"),
+      open_tracking_issue: env_true?("INPUT_OPEN_TRACKING_ISSUE"),
+      allow_missing_resolved: env_true?("INPUT_ALLOW_MISSING_RESOLVED"),
+      apply_updates: env_true?("INPUT_APPLY_UPDATES"),
+      enrich_release_notes: env_true_by_default?("INPUT_ENRICH_RELEASE_NOTES"),
+      cache_version_tags: env_true_by_default?("INPUT_CACHE_VERSION_TAGS"),
       version_tags_cache_ttl: cache_ttl,
       version_tags_cache_dir: env_value("SPM_VERSION_UPDATES_TAG_CACHE_DIR")
     }
@@ -328,7 +328,8 @@ class Action
       )
     }
     count = applied_updates.failed.size
-    fail_with("apply-updates failed for #{count} manifest#{count == 1 ? '' : 's'}")
+    manifest_label = count == 1 ? "manifest" : "manifests"
+    fail_with("apply-updates failed for #{count} #{manifest_label}")
   end
 
   def move_to_workspace
@@ -367,11 +368,11 @@ class Action
     values
   end
 
-  def env_flag(key)
+  def env_true?(key)
     env_value(key) == "true"
   end
 
-  def env_flag_default_true(key)
+  def env_true_by_default?(key)
     value = env_value(key)
     value ? value == "true" : true
   end

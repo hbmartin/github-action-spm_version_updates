@@ -40,7 +40,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  spec.add_runtime_dependency("danger-plugin-api", "~> 1.0")
-  spec.add_runtime_dependency("spm_version_updates", "~> #{SpmVersionUpdates::VERSION}")
-  spec.add_runtime_dependency("xcodeproj", "~> 1.24")
+  spec.add_dependency("danger-plugin-api", "~> 1.0")
+  spec.add_dependency("spm_version_updates", "~> #{SpmVersionUpdates::VERSION}")
+  spec.add_dependency("xcodeproj", "~> 1.24")
 end

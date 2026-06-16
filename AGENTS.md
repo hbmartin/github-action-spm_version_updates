@@ -1,6 +1,7 @@
 # Verification
 
 After completing a task, always run `bundle exec rubocop --format simple; bundle exec reek --format text; bundle exec rspec`
+rubocop and reek must pass checks before work can be considered complete.
 
 ## Code Style and Structure
 
