@@ -23,18 +23,17 @@ require "spm_version_updates"
 
 checker = SpmChecker.new
 
-# Manifest mode: check one or more Package.swift files (a Package.resolved
-# next to each manifest is used automatically when present).
-warnings = checker.check_manifests(["path/to/Package.swift"])
+# Manifest mode: check one or more Package.swift files.
+result = checker.check_manifests(["path/to/Package.swift"])
 
 # Xcode mode: check the packages referenced by an Xcode project.
-# warnings = checker.check_for_updates("path/to/App.xcodeproj")
+# result = checker.check_for_updates("path/to/App.xcodeproj")
 
-warnings.each { |warning| puts warning }
+result.updates.each { |update| puts update["message"] }
 
-# Structured details (repository URL, current/available version, severity,
-# suggested update command, ...) for each warning:
-checker.warning_details.each { |detail| p detail }
+# String-keyed details include repository URL, current/available version,
+# suggested update command, source, and related report fields.
+result.updates.each { |update| p update }
 ```
 
 Behavior is configurable through accessors on `SpmChecker` — for example
@@ -113,9 +112,9 @@ is recorded on the checker — separate from update warnings, so update counts
 and fail-on thresholds are unaffected:
 
 ```ruby
-checker.check_manifests(["Modules/Package.swift"])
+result = checker.check_manifests(["Modules/Package.swift"])
 
-checker.parse_warnings.each do |record|
+result.parse_warnings.each do |record|
   # String-keyed hash: "type" ("parse_warning"), "reason", "source"
   # (the manifest path), "snippet" (credential-redacted, truncated),
   # and a human-readable "message".

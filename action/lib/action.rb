@@ -165,7 +165,7 @@ class Action
 
     def report_inputs
       {
-        fail_on: FailOnThreshold.from_inputs(env_value("INPUT_FAIL_ON"), env_value("INPUT_FAIL_ON_UPDATES")),
+        fail_on: FailOnThreshold.from_input(env_value("INPUT_FAIL_ON")),
         comment: env_true_by_default?("INPUT_COMMENT"),
         comment_on_success: env_true?("INPUT_COMMENT_ON_SUCCESS"),
         open_tracking_issue: env_true?("INPUT_OPEN_TRACKING_ISSUE"),
@@ -315,8 +315,8 @@ class Action
   end
   private_constant :PublishStep
 
-  def initialize(reporter_sink: nil, checker_factory: SpmChecker, github_integration: nil)
-    @reporter_sink = [reporter_sink, github_integration].find { |sink| sink } || GithubIntegration.new
+  def initialize(reporter_sink: nil, checker_factory: SpmChecker)
+    @reporter_sink = reporter_sink || GithubIntegration.new
     @checker_factory = checker_factory
     @missing_resolved = []
     @timings = nil
@@ -333,12 +333,11 @@ class Action
 
     checker = configure_checker(inputs)
     ApplyModeValidator.new(inputs).validate
-    warnings = @timings.measure("Checks") { run_checks(checker, inputs) }
-    warning_details = checker.warning_details
-    applied_updates = apply_updates_if_requested(inputs, warning_details)
+    result = @timings.measure("Checks") { run_checks(checker, inputs) }
+    applied_updates = apply_updates_if_requested(inputs, result.updates)
     @timings.finish("Total")
     reporter = report(
-      report_payload(warnings, checker, applied_updates),
+      report_payload(result, applied_updates),
       comment: inputs[:comment],
       comment_on_success: inputs[:comment_on_success]
     )
@@ -405,23 +404,16 @@ class Action
     end
   end
 
-  def report(payload_or_warnings, *legacy_values, **options)
-    payload = ReportPayload.coerce(
-      payload_or_warnings,
-      *legacy_values,
-      missing_resolved: options[:missing_resolved],
-      applied_updates: options[:applied_updates],
-      timings: options[:timings]
-    )
+  def report(payload, **options)
     reporter = ActionReporter.new(payload)
     reporter.write_outputs
     reporter.emit_annotations
 
-    warnings = payload.warnings
-    if warnings.empty?
+    updates = payload.updates
+    if updates.empty?
       puts("✅ All SPM dependencies are up to date!")
     else
-      puts("⚠️  Found #{warnings.size} potential updates")
+      puts("⚠️  Found #{updates.size} potential updates")
     end
     # The comment input only controls PR commenting; tracking-issue runs
     # (open-tracking-issue on a non-PR run) still publish their report.
@@ -432,11 +424,10 @@ class Action
     reporter
   end
 
-  def report_payload(warnings, checker, applied_updates)
+  def report_payload(result, applied_updates)
     ReportPayload.new(
-      warnings:,
-      warning_details: checker.warning_details,
-      parse_warnings: checker.parse_warnings,
+      updates: result.updates,
+      parse_warnings: result.parse_warnings,
       missing_resolved: missing_resolved_records,
       applied_updates:,
       timings: @timings
@@ -446,7 +437,7 @@ class Action
   # Parse warnings force a publish even with zero updates: a silently skipped
   # declaration must not read as "all dependencies are up to date".
   def publish(payload, options)
-    if payload.warnings.any? || payload.parse_warnings.any? || payload.missing_resolved.any?
+    if payload.updates.any? || payload.parse_warnings.any? || payload.missing_resolved.any?
       publish_updates(payload)
     elsif options.fetch(:comment_on_success, false)
       @reporter_sink.publish_success
@@ -474,10 +465,10 @@ class Action
     }
   end
 
-  def apply_updates_if_requested(inputs, warning_details)
+  def apply_updates_if_requested(inputs, updates)
     return unless inputs[:apply_updates]
 
-    @timings.measure("Apply updates") { UpdateApplier.new(warning_details).apply }
+    @timings.measure("Apply updates") { UpdateApplier.new(updates).apply }
   end
 
   def fail_for_apply_errors(applied_updates)

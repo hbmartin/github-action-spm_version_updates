@@ -63,6 +63,27 @@ RSpec.describe SpmChecker do
     checker.repository_update_rules = RepositoryUpdateRules.from_hash("repositories" => [rule])
   end
 
+  def check_manifest_messages(*args)
+    update_messages(checker.check_manifests(*args))
+  end
+
+  def check_resolved_messages(*args)
+    update_messages(checker.check_resolved(*args))
+  end
+
+  def update_messages(result)
+    result.updates.map { |record| [record.fetch("message"), source_line(record)].compact.join("\n") }
+  end
+
+  def recorded_update_messages
+    update_messages(checker.send(:result))
+  end
+
+  def source_line(record)
+    source = record["source"]
+    "Source: #{source}" if source
+  end
+
   subject(:checker) { described_class.new }
 
   let(:manifests_dir) { File.expand_path("../support/manifests", __dir__) }
@@ -105,7 +126,7 @@ RSpec.describe SpmChecker do
     it "checks direct dependencies across multiple manifests and attributes the source" do
       checker.check_when_exact = true
 
-      warnings = checker.check_manifests([modules_manifest, build_tools_manifest])
+      warnings = check_manifest_messages([modules_manifest, build_tools_manifest])
 
       expect(warnings).to eq(
         [
@@ -120,7 +141,7 @@ RSpec.describe SpmChecker do
     end
 
     it "does not check exact versions unless configured" do
-      warnings = checker.check_manifests([modules_manifest])
+      warnings = check_manifest_messages([modules_manifest])
 
       expect(warnings).not_to include(a_string_matching(/swift-argument-parser/))
     end
@@ -134,12 +155,13 @@ RSpec.describe SpmChecker do
           .package(url: "https://github.com/a/odd", futureRequirement: "1.0.0")
         SWIFT
 
-        warnings = checker.check_manifests([manifest])
+        result = checker.check_manifests([manifest])
+        warnings = update_messages(result)
 
         expect(warnings).to eq(["Newer version of a/b: 1.1.0\nSource: #{manifest}"])
-        expect(checker.warning_details.size).to eq(1)
-        expect(checker.parse_warnings.size).to eq(1)
-        record = checker.parse_warnings.first
+        expect(result.updates.size).to eq(1)
+        expect(result.parse_warnings.size).to eq(1)
+        record = result.parse_warnings.first
         expect(record["reason"]).to eq("unrecognized_requirement")
         expect(record["source"]).to eq(manifest)
         expect(record["snippet"]).to include("github.com/a/odd")
@@ -150,13 +172,13 @@ RSpec.describe SpmChecker do
       Dir.mktmpdir do |dir|
         manifest = ManifestPackageFixture.write_version(dir)
         File.write(manifest, '.package(url: "https://github.com/a/odd", futureRequirement: "1.0.0")', mode: "a")
-        checker.check_manifests([manifest])
-        expect(checker.parse_warnings).not_to be_empty
+        first_result = checker.check_manifests([manifest])
+        expect(first_result.parse_warnings).not_to be_empty
 
         File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
-        checker.check_manifests([manifest])
+        second_result = checker.check_manifests([manifest])
 
-        expect(checker.parse_warnings).to be_empty
+        expect(second_result.parse_warnings).to be_empty
       end
     end
 
@@ -167,7 +189,7 @@ RSpec.describe SpmChecker do
                                 []
                               }
 
-      checker.check_manifests([modules_manifest])
+      check_manifest_messages([modules_manifest])
 
       # Regression: the normalized keys (github.com/...) are not valid git remotes.
       expect(received).to include("https://github.com/onevcat/Kingfisher", "https://github.com/kean/Nuke")
@@ -176,7 +198,7 @@ RSpec.describe SpmChecker do
     it "allows configured dependency hosts case-insensitively" do
       checker.allow_hosts = ["GitHub.com"]
 
-      warnings = checker.check_manifests([modules_manifest])
+      warnings = check_manifest_messages([modules_manifest])
 
       expect(warnings).to include("Newer version of onevcat/Kingfisher: 7.10.2\nSource: #{modules_manifest}")
     end
@@ -226,7 +248,7 @@ RSpec.describe SpmChecker do
         manifest = ManifestPackageFixture.write_version(dir, url: "https://metadata.internal/a/b")
 
         expect {
-          checker.check_manifests([manifest])
+          check_manifest_messages([manifest])
         }.to raise_error(SpmChecker::DisallowedRepositoryHost, /metadata\.internal.*allow-hosts/)
       end
 
@@ -241,7 +263,7 @@ RSpec.describe SpmChecker do
         manifest = ManifestPackageFixture.write_version(dir, url:)
 
         expect {
-          checker.check_manifests([manifest])
+          check_manifest_messages([manifest])
         }.to raise_error(SpmChecker::DisallowedRepositoryHost, /evil\.com.*allow-hosts/)
       end
 
@@ -256,7 +278,7 @@ RSpec.describe SpmChecker do
           manifest = ManifestPackageFixture.write_version(dir, url:)
 
           expect {
-            checker.check_manifests([manifest])
+            check_manifest_messages([manifest])
           }.to raise_error(SpmChecker::DisallowedRepositoryHost, /unknown host.*allow-hosts/)
         end
       end
@@ -271,7 +293,7 @@ RSpec.describe SpmChecker do
         manifest = ManifestPackageFixture.write_branch(dir)
 
         expect {
-          checker.check_manifests([manifest])
+          check_manifest_messages([manifest])
         }.to raise_error(SpmChecker::DisallowedRepositoryHost, /metadata\.internal.*allow-hosts/)
       end
 
@@ -284,7 +306,7 @@ RSpec.describe SpmChecker do
       Dir.mktmpdir do |dir|
         manifest = ManifestPackageFixture.write_version(dir, url: "https://metadata.internal/a/b", requirement: 'exact: "1.0.0"')
 
-        expect(checker.check_manifests([manifest])).to eq([])
+        expect(check_manifest_messages([manifest])).to eq([])
       end
 
       expect(GitOperations).not_to have_received(:version_tags)
@@ -297,7 +319,7 @@ RSpec.describe SpmChecker do
       Dir.mktmpdir do |dir|
         manifest = ManifestPackageFixture.write_branch(dir)
 
-        expect(checker.check_manifests([manifest])).to eq([])
+        expect(check_manifest_messages([manifest])).to eq([])
       end
 
       expect(GitOperations).not_to have_received(:branch_last_commit)
@@ -309,7 +331,7 @@ RSpec.describe SpmChecker do
       Dir.mktmpdir do |dir|
         manifest = ManifestPackageFixture.write_revision(dir)
 
-        expect(checker.check_manifests([manifest])).to eq([])
+        expect(check_manifest_messages([manifest])).to eq([])
       end
 
       expect(GitOperations).not_to have_received(:version_tags)
@@ -357,7 +379,7 @@ RSpec.describe SpmChecker do
         checker_thread.value
       end
 
-      expect(checker.instance_variable_get(:@warnings)).to eq(
+      expect(recorded_update_messages).to eq(
         (1..package_count).map { |index| "Newer version of acme/pkg#{index}: 1.1.0" }
       )
     end
@@ -384,7 +406,7 @@ RSpec.describe SpmChecker do
           manifest
         }
 
-        warnings = checker.check_manifests(manifests)
+        warnings = check_manifest_messages(manifests)
 
         expect(calls).to eq(["https://github.com/acme/shared"])
         expect(warnings).to eq(
@@ -420,7 +442,7 @@ RSpec.describe SpmChecker do
       checker.send(:check_packages, git_packages, resolved_versions, "Tools/Package.swift")
 
       expect(calls).to eq(["https://github.com/acme/shared", "git://github.com/acme/shared"])
-      expect(checker.instance_variable_get(:@warnings)).to eq(
+      expect(recorded_update_messages).to eq(
         ["Newer version of acme/shared: 1.1.0\nSource: Tools/Package.swift"]
       )
     end
@@ -428,7 +450,7 @@ RSpec.describe SpmChecker do
     it "does not check branches when check_branches is disabled" do
       checker.check_branches = false
 
-      warnings = checker.check_manifests([modules_manifest])
+      warnings = check_manifest_messages([modules_manifest])
 
       expect(warnings).not_to include(a_string_matching(/analytics-swift/))
     end
@@ -437,7 +459,7 @@ RSpec.describe SpmChecker do
       allow(GitOperations).to receive(:version_tags).with(/sentry-cocoa/).and_return(versions("8.20.0"))
       checker.check_revisions = true
 
-      warnings = checker.check_manifests([modules_manifest])
+      warnings = check_manifest_messages([modules_manifest])
 
       expect(warnings).to include(a_string_matching(%r{getsentry/sentry-cocoa is pinned to a revision .* latest tagged version is 8.20.0}))
     end
@@ -445,7 +467,7 @@ RSpec.describe SpmChecker do
     it "honors ignore_repos", :aggregate_failures do
       checker.ignore_repos = ["https://github.com/onevcat/Kingfisher"]
 
-      warnings = checker.check_manifests([modules_manifest])
+      warnings = check_manifest_messages([modules_manifest])
 
       expect(warnings).not_to include(a_string_matching(/Kingfisher/))
       expect(GitOperations).not_to have_received(:version_tags).with("https://github.com/onevcat/Kingfisher")
@@ -458,7 +480,7 @@ RSpec.describe SpmChecker do
         ]
       )
 
-      warnings = checker.check_manifests([modules_manifest])
+      warnings = check_manifest_messages([modules_manifest])
 
       expect(warnings).not_to include(a_string_matching(/Kingfisher/))
       expect(GitOperations).to have_received(:version_tags).with("https://github.com/onevcat/Kingfisher")
@@ -471,7 +493,7 @@ RSpec.describe SpmChecker do
         ]
       )
 
-      warnings = checker.check_manifests([modules_manifest])
+      warnings = check_manifest_messages([modules_manifest])
 
       expect(warnings).to include("Newer version of onevcat/Kingfisher: 7.10.2\nSource: #{modules_manifest}")
     end
@@ -483,7 +505,7 @@ RSpec.describe SpmChecker do
         checker.report_above_maximum = true
         apply_repository_rule("url" => "https://github.com/a/b", "ignore-until" => "2.0.0")
 
-        warnings = checker.check_manifests([manifest])
+        warnings = check_manifest_messages([manifest])
 
         expect(warnings).to eq(
           ["Newest version of a/b: 2.0.0 (but this package is configured up to the next major version)\nSource: #{manifest}"]
@@ -498,7 +520,7 @@ RSpec.describe SpmChecker do
         checker.report_above_maximum = true
         apply_repository_rule("url" => "https://github.com/a/b", "allowed-updates" => "minor")
 
-        warnings = checker.check_manifests([manifest])
+        warnings = check_manifest_messages([manifest])
 
         expect(warnings).to eq(["Newer version of a/b: 1.1.0\nSource: #{manifest}"])
       end
@@ -511,7 +533,7 @@ RSpec.describe SpmChecker do
         checker.report_above_maximum = true
         apply_repository_rule("url" => "https://github.com/a/b", "ignore-until" => "2.0.0", "allowed-updates" => "minor")
 
-        warnings = checker.check_manifests([manifest])
+        warnings = check_manifest_messages([manifest])
 
         expect(warnings).to eq([])
       end
@@ -524,7 +546,7 @@ RSpec.describe SpmChecker do
         ]
       )
 
-      warnings = checker.check_manifests([modules_manifest])
+      warnings = check_manifest_messages([modules_manifest])
 
       expect(warnings).to include(
         "Newer commit available for hbmartin/analytics-swift (main): 1111111111111111111111111111111111111111\nSource: #{modules_manifest}"
@@ -534,25 +556,26 @@ RSpec.describe SpmChecker do
     it "uses explicit resolved paths when provided" do
       resolved = File.join(manifests_dir, "Modules", "Package.resolved")
 
-      warnings = checker.check_manifests([modules_manifest], [resolved])
+      warnings = check_manifest_messages([modules_manifest], [resolved])
 
       expect(warnings).to include(a_string_matching(%r{Newer version of onevcat/Kingfisher: 7.10.2}))
     end
 
     it "exposes structured warning details for grouped PR comments", :aggregate_failures do
-      warnings = checker.check_manifests([modules_manifest])
+      result = checker.check_manifests([modules_manifest])
+      warnings = update_messages(result)
 
-      detail = checker.warning_details.find { |warning| warning[:package] == "onevcat/Kingfisher" }
+      detail = result.updates.find { |warning| warning["package"] == "onevcat/Kingfisher" }
 
       expect(warnings).to include("Newer version of onevcat/Kingfisher: 7.10.2\nSource: #{modules_manifest}")
       expect(detail).to include(
-        type: "version",
-        package: "onevcat/Kingfisher",
-        normalized_url: "github.com/onevcat/Kingfisher",
-        repository_url: "https://github.com/onevcat/Kingfisher",
-        current_version: "7.0.0",
-        available_version: "7.10.2",
-        source: modules_manifest
+        "type" => "version",
+        "package" => "onevcat/Kingfisher",
+        "normalized_url" => "github.com/onevcat/Kingfisher",
+        "repository_url" => "https://github.com/onevcat/Kingfisher",
+        "current_version" => "7.0.0",
+        "available_version" => "7.10.2",
+        "source" => modules_manifest
       )
     end
 
@@ -561,7 +584,7 @@ RSpec.describe SpmChecker do
         manifest = File.join(dir, "Package.swift")
         File.write(manifest, '.package(url: "https://github.com/a/b", from: "1.0.0")')
 
-        expect { checker.check_manifests([manifest]) }
+        expect { check_manifest_messages([manifest]) }
           .to raise_error(ManifestParser::CouldNotFindResolvedFile)
       end
     end
@@ -573,7 +596,7 @@ RSpec.describe SpmChecker do
 
         # The first manifest has a resolved file; the second does not.
         expect {
-          checker.check_manifests([modules_manifest, without_resolved])
+          check_manifest_messages([modules_manifest, without_resolved])
         }.to raise_error(ManifestParser::CouldNotFindResolvedFile, /#{Regexp.escape(without_resolved.sub(/Package\.swift\z/, 'Package.resolved'))}/)
       end
     end
@@ -584,7 +607,7 @@ RSpec.describe SpmChecker do
         # 2.5.0 shares the minor component but a different major; it must not match.
         allow(GitOperations).to receive(:version_tags).and_return(versions("2.5.0", "1.5.3", "1.5.0"))
 
-        warnings = checker.check_manifests([manifest])
+        warnings = check_manifest_messages([manifest])
 
         expect(warnings).to eq(["Newer version of a/b: 1.5.3\nSource: #{manifest}"])
       end
@@ -596,7 +619,7 @@ RSpec.describe SpmChecker do
         # 3.0.0-beta.1 is the absolute newest but a pre-release; report 2.0.0.
         allow(GitOperations).to receive(:version_tags).and_return(versions("3.0.0-beta.1", "2.0.0", "1.0.0"))
 
-        warnings = checker.check_manifests([manifest])
+        warnings = check_manifest_messages([manifest])
 
         expect(warnings).to eq(["Newer version of a/b: 2.0.0\nSource: #{manifest}"])
       end
@@ -608,7 +631,7 @@ RSpec.describe SpmChecker do
         # Only a newer *major* exists, which an upToNextMajor (`from:`) constraint excludes.
         allow(GitOperations).to receive(:version_tags).and_return(versions("2.0.0"))
 
-        warnings = checker.check_manifests([manifest])
+        warnings = check_manifest_messages([manifest])
 
         expect(warnings).to eq([])
       end
@@ -622,7 +645,7 @@ RSpec.describe SpmChecker do
       checker.send(:check_packages, remote_packages, "github.com/a/b" => "1.0.0")
 
       expect(GitOperations).not_to have_received(:version_tags)
-      expect(checker.instance_variable_get(:@warnings)).to eq([])
+      expect(recorded_update_messages).to eq([])
     end
 
     it "uses fresh persistent version tag cache entries before fetching", :aggregate_failures do
@@ -634,7 +657,7 @@ RSpec.describe SpmChecker do
         checker.send(:check_packages, cache_remote_packages, cache_resolved_versions)
 
         expect(GitOperations).not_to have_received(:version_tags)
-        expect(checker.instance_variable_get(:@warnings)).to eq(["Newer version of acme/shared: 1.1.0"])
+        expect(recorded_update_messages).to eq(["Newer version of acme/shared: 1.1.0"])
       end
     end
 
@@ -652,7 +675,7 @@ RSpec.describe SpmChecker do
           .map { |entry| File.read(File.join(dir, entry)) }
           .join("\n")
         expect(GitOperations).to have_received(:version_tags).with(repository_url)
-        expect(checker.instance_variable_get(:@warnings)).to eq(["Newer version of acme/shared: 1.2.0"])
+        expect(recorded_update_messages).to eq(["Newer version of acme/shared: 1.2.0"])
         expect(cache_contents).to include("1.2.0")
         expect(cache_contents).not_to include("user:token")
       end
@@ -668,7 +691,7 @@ RSpec.describe SpmChecker do
         checker.send(:check_packages, cache_remote_packages, cache_resolved_versions)
 
         expect(GitOperations).to have_received(:version_tags).with("https://github.com/acme/shared")
-        expect(checker.instance_variable_get(:@warnings)).to eq(["Newer version of acme/shared: 1.2.0"])
+        expect(recorded_update_messages).to eq(["Newer version of acme/shared: 1.2.0"])
       end
     end
 
@@ -680,7 +703,7 @@ RSpec.describe SpmChecker do
       expect {
         checker.send(:check_packages, cache_remote_packages, cache_resolved_versions)
       }.to raise_error(GitOperations::LsRemoteError)
-      expect(checker.instance_variable_get(:@warnings)).to eq([])
+      expect(recorded_update_messages).to eq([])
     end
 
     it "raises prefetched lookup failures when no handler is configured" do
@@ -724,7 +747,7 @@ RSpec.describe SpmChecker do
         checker.send(:check_packages, remote_packages, resolved_versions)
       }.not_to raise_error
       expect(failures).to eq([["acme/shared", "git ls-remote failed for https://github.com/acme/shared"]])
-      expect(checker.instance_variable_get(:@warnings)).to eq(["Newer version of acme/other: 1.2.0"])
+      expect(recorded_update_messages).to eq(["Newer version of acme/other: 1.2.0"])
     end
 
     it "routes branch lookup failures to the handler", :aggregate_failures do
@@ -736,7 +759,7 @@ RSpec.describe SpmChecker do
       Dir.mktmpdir do |dir|
         manifest = ManifestPackageFixture.write_branch(dir)
 
-        expect { checker.check_manifests([manifest]) }
+        expect { check_manifest_messages([manifest]) }
           .not_to raise_error
       end
 
@@ -759,7 +782,7 @@ RSpec.describe SpmChecker do
             ManifestPackageFixture.write_version(second_dir),
           ]
 
-          expect { checker.check_manifests(manifests) }
+          expect { check_manifest_messages(manifests) }
             .not_to raise_error
         end
       end
@@ -778,7 +801,7 @@ RSpec.describe SpmChecker do
         bad_resolved = File.join(dir, "Bad.resolved")
         File.write(bad_resolved, "{not json")
 
-        warnings = checker.check_manifests([manifest], [File.join(dir, "Package.resolved"), bad_resolved])
+        warnings = check_manifest_messages([manifest], [File.join(dir, "Package.resolved"), bad_resolved])
 
         expect(warnings).to eq(["Newer version of a/b: 1.1.0\nSource: #{manifest}"])
         expect(malformed.size).to eq(1)
@@ -794,7 +817,7 @@ RSpec.describe SpmChecker do
         File.write(bad_resolved, "{not json")
 
         expect {
-          checker.check_manifests([manifest], [bad_resolved])
+          check_manifest_messages([manifest], [bad_resolved])
         }.to raise_error(PackageResolved::MalformedFileError)
       end
     end
@@ -864,7 +887,7 @@ RSpec.describe SpmChecker do
         manifest = ManifestPackageFixture.write_version(dir)
         File.delete(File.join(dir, "Package.resolved"))
 
-        expect { checker.check_manifests([manifest]) }
+        expect { check_manifest_messages([manifest]) }
           .to raise_error(ManifestParser::CouldNotFindResolvedFile)
       end
     end
@@ -881,7 +904,7 @@ RSpec.describe SpmChecker do
           File.delete(missing_resolved)
           allow(GitOperations).to receive(:version_tags).with("https://github.com/a/b").and_return(versions("1.1.0", "1.0.0"))
 
-          warnings = checker.check_manifests([pinned_manifest, missing_manifest])
+          warnings = check_manifest_messages([pinned_manifest, missing_manifest])
 
           expect(warnings).to eq(["Newer version of a/b: 1.1.0\nSource: #{pinned_manifest}"])
           expect(missing_paths).to eq([missing_resolved])
@@ -899,18 +922,19 @@ RSpec.describe SpmChecker do
         ManifestPackageFixture.write_version(dir)
         resolved = File.join(dir, "Package.resolved")
 
-        warnings = checker.check_resolved([resolved])
+        result = checker.check_resolved([resolved])
+        warnings = update_messages(result)
 
         expect(warnings).to eq(["Newer version of a/b: 2.0.0\nSource: #{resolved}"])
-        expect(checker.warning_details.first).to include(
-          type: "version",
-          package: "a/b",
-          requirement_kind: "resolvedPin",
-          note: "resolved pin",
-          source: resolved,
-          suggested_command: "swift package update b",
-          suggested_requirement: nil
+        expect(result.updates.first).to include(
+          "type" => "version",
+          "package" => "a/b",
+          "requirement_kind" => "resolvedPin",
+          "note" => "resolved pin",
+          "source" => resolved,
+          "suggested_command" => "swift package update b"
         )
+        expect(result.updates.first).not_to include("suggested_requirement")
       end
     end
 
@@ -920,7 +944,7 @@ RSpec.describe SpmChecker do
       Dir.mktmpdir do |dir|
         resolved = write_resolved_pin(dir, "https://github.com/a/b", "3.0.0-beta.1")
 
-        expect(checker.check_resolved([resolved])).to eq([])
+        expect(check_resolved_messages([resolved])).to eq([])
       end
     end
 
@@ -936,7 +960,7 @@ RSpec.describe SpmChecker do
           first = write_resolved_pin(first_dir, "https://github.com/a/b", "1.0.0")
           second = write_resolved_pin(second_dir, "https://github.com/a/b", "1.0.0")
 
-          checker.check_resolved([first, second])
+          check_resolved_messages([first, second])
 
           expect(lookup_count).to eq(1)
         end
@@ -950,14 +974,14 @@ RSpec.describe SpmChecker do
       Dir.mktmpdir do |dir|
         resolved = write_resolved_revision(dir, "https://github.com/a/b", "abc123")
 
-        expect(checker.check_resolved([resolved])).to eq(
+        expect(check_resolved_messages([resolved])).to eq(
           ["a/b is pinned to a revision (abc123); latest tagged version is 1.0.0\nSource: #{resolved}"]
         )
       end
     end
 
     it "rejects blank input" do
-      expect { checker.check_resolved([""]) }
+      expect { check_resolved_messages([""]) }
         .to raise_error(SpmVersionUpdates::ConfigurationError, /package-resolved-paths/)
     end
 
@@ -972,7 +996,7 @@ RSpec.describe SpmChecker do
         bad_path = File.join(dir, "Bad.resolved")
         File.write(bad_path, "{not json")
 
-        expect(checker.check_resolved([missing_path, bad_path])).to eq([])
+        expect(check_resolved_messages([missing_path, bad_path])).to eq([])
         expect(missing).to eq([missing_path])
         expect(malformed).to eq([bad_path])
       end

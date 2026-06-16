@@ -15,7 +15,6 @@ detectors:
     exclude:
     - ManifestParser#self.version_range_requirement
     - UpgradeSuggestion#self.requirement_change
-    - Danger::DangerSpmVersionUpdates#warn_for_branch
   DataClump:
     enabled: true
     exclude:
@@ -55,8 +54,6 @@ detectors:
     - Action#report
     - SpmChecker#warning_detail
     - VersionTagFetcher#self.call
-    - Danger::DangerSpmVersionUpdates#warn_for_branch
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions
     - package
     max_params: 3
     overrides:
@@ -84,8 +81,6 @@ detectors:
     - ManifestParser#self.package_calls
     - SpmChecker#warn_for_new_versions
     - Danger::DangerSpmVersionUpdates#check_for_updates
-    - Danger::DangerSpmVersionUpdates#check_package
-    - Xcode#self.get_packages
     - XcodeParser#self.get_packages
     - with_env
   RepeatedConditional:
@@ -148,12 +143,8 @@ detectors:
     - SpmChecker#prefetch_version_tags
     - SpmChecker#warn_for_new_versions
     - Danger::DangerSpmVersionUpdates#check_for_updates
-    - Danger::DangerSpmVersionUpdates#check_package
     - Danger::DangerSpmVersionUpdates#copy_accessors
     - Danger::DangerSpmVersionUpdates#render_warning
-    - Danger::DangerSpmVersionUpdates#warn_for_new_versions
-    - Xcode#self.find_packages_resolved_file
-    - Xcode#self.get_resolved_versions
     - XcodeParser#self.find_packages_resolved_file
     - XcodeParser#self.get_resolved_versions
     - with_env
@@ -199,13 +190,10 @@ detectors:
     - Action#env_value
     - ActionReporter#summary_links
     - ActionReporter#upgrade_hint_lines
-    - GithubIntegration#build_legacy_warnings_message
     - GithubIntegration#detail_value
     - GithubIntegration#display_version
-    - GithubIntegration#how_to_update_details
     - GithubIntegration#inline_code
     - GithubIntegration#table_cell
-    - GithubIntegration::ParseWarningsSection#bullet
     - GithubIntegration::TrackingIssue#matching_tracking_issue
     - GithubIntegration::UpgradeHintsSection#command_block
     - GithubIntegration::UpgradeHintsSection#directory_label

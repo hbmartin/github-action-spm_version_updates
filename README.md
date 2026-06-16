@@ -234,8 +234,7 @@ Exactly one source mode is required (see [Source modes](#source-modes)); every o
 | `allow-missing-resolved` | When true, missing Package.resolved files are reported as warnings instead of failing the run. | `false` |
 | `apply-updates` | Rewrite supported Package.swift version requirements in the workspace. Manifest mode only; pair with a pull-request creation step. | `false` |
 | `enrich-release-notes` | Fetch GitHub release notes for updated packages and include them in PR comments or tracking issues. | `true` |
-| `fail-on-updates` | Deprecated: use fail-on instead. Set true to fail on any update, or major/minor/patch for semantic updates. | `false` |
-| `fail-on` | Fail when an update at or above this severity is found: major, minor, patch, or empty to never fail. Overrides fail-on-updates when set. |  |
+| `fail-on` | Fail when updates are found: true/any for any update, major/minor/patch for semantic updates at or above that severity, or empty/false/none to never fail. |  |
 | `comment` | Post or update the pull request comment. Set false to disable all PR commenting; outputs, the step summary, and annotations are still produced, and a comment left by a prior run is kept as-is rather than deleted. Tracking issues (open-tracking-issue) are unaffected. | `true` |
 | `comment-on-success` | Post an up-to-date pull request comment on clean runs. By default, clean runs delete the prior generated comment instead. | `false` |
 | `open-tracking-issue` | On runs without a pull request context (schedule, workflow_dispatch, push), open or update a single tracking issue with the update report, and close it when everything is up to date. Requires issues: write permission. | `false` |
@@ -336,7 +335,7 @@ Each update also carries upgrade guidance: `package_identity` is the SwiftPM pac
 
 When `allow-missing-resolved: true`, `missing-resolved` counts missing resolved files that were reported instead of failing the run. When `apply-updates: true`, `applied-updates` and `applied-updates-json` describe the `Package.swift` requirement rewrites made in the workspace.
 
-Use `fail-on: major` when only major semantic-version updates should fail the job after the outputs, step summary, annotations, and PR comment have been written. Use `minor` to fail on major or minor updates, and `patch` to fail on any semantic-version update. `fail-on-updates: true` remains supported when any reported update, including branch or revision updates, should fail the job.
+Use `fail-on: major` when only major semantic-version updates should fail the job after the outputs, step summary, annotations, and PR comment have been written. Use `minor` to fail on major or minor updates, `patch` to fail on any semantic-version update, and `true` or `any` to fail on every reported update, including branch or revision reports.
 
 ```yaml
 - id: spm-updates
@@ -432,7 +431,7 @@ Apply mode is manifest-only in this version. Xcode project files are not rewritt
     allow-missing-resolved: false
     enrich-release-notes: true
     version-tags-cache-ttl: 21600
-    fail-on-updates: false
+    fail-on: ''
 ```
 
 ## Danger plugin

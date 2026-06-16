@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../../action/lib/report_payload"
 require_relative "../../action/lib/reporter_sink"
 
 RSpec.describe(ReporterSink) {
@@ -10,7 +11,7 @@ RSpec.describe(ReporterSink) {
   end
 
   it("requires concrete sinks to publish update reports") do
-    expect { sink.publish_updates(["warning"]) }
+    expect { sink.publish_updates(ReportPayload.new(updates: [])) }
       .to(raise_error(NotImplementedError, "ReporterSink must implement #publish_updates"))
   end
 

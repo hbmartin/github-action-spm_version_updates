@@ -142,51 +142,8 @@ class ActionReporter
     end
   end
 
-  # Normalizes one legacy warning string plus optional structured detail.
-  class WarningRecord
-    def self.build(warnings, details)
-      Array(warnings).map.with_index { |warning, index| new(warning, details[index]).to_h }
-    end
-
-    def self.parse(warning)
-      message, source = warning.to_s.split("\nSource: ", 2)
-      record = { "message" => message }
-      record["source"] = source unless source.to_s.empty?
-      record
-    end
-
-    def initialize(warning, detail)
-      @warning = warning
-      @detail = detail
-      @record = {}
-    end
-
-    def to_h
-      @record = parsed_warning.merge(string_keyed_detail)
-      normalize_message
-    end
-
-    private
-
-    def normalize_message
-      parsed_message = self.class.parse(@record["message"])
-      @record.merge(
-        "message" => parsed_message["message"],
-        "source" => @record["source"] || parsed_message["source"]
-      ).compact
-    end
-
-    def parsed_warning
-      self.class.parse(@warning)
-    end
-
-    def string_keyed_detail
-      @detail.to_h.transform_keys(&:to_s).compact
-    end
-  end
-
-  def initialize(payload_or_warnings, warning_details = nil, parse_warnings = nil, **)
-    @payload = ReportPayload.coerce(payload_or_warnings, warning_details, parse_warnings, **)
+  def initialize(payload)
+    @payload = payload
   end
 
   def write
@@ -220,7 +177,7 @@ class ActionReporter
   attr_reader :payload
 
   def warning_records
-    WarningRecord.build(payload.warnings, payload.warning_details)
+    payload.updates
   end
 
   def write_action_outputs

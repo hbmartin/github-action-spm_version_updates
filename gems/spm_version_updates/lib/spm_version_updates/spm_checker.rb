@@ -157,15 +157,23 @@ class SpmChecker
   end
   private_constant :PackageSemver
 
-  # Structured facts about each warning, used by the GitHub Action comment
-  # renderer. `check_for_updates` and `check_manifests` still return the legacy
-  # string warnings for compatibility with existing plugin-style callers.
-  attr_reader :warning_details
+  # Structured result from one checker run. Parse warnings stay separate from
+  # update records so counts and fail-on thresholds only consider real updates.
+  class Result
+    attr_reader :updates, :parse_warnings
 
-  # ParseWarning records for `.package(...)` declarations the manifest parser
-  # had to skip. Kept separate from update warnings so reported update counts
-  # and fail-on thresholds are unaffected.
-  attr_reader :parse_warnings
+    def initialize(updates:, parse_warnings:)
+      @updates = normalize_records(updates)
+      @parse_warnings = normalize_records(parse_warnings)
+    end
+
+    private
+
+    def normalize_records(records)
+      Array(records).map { |record| record.to_h.transform_keys(&:to_s).compact.freeze }
+        .freeze
+    end
+  end
 
   attr_reader :version_lookup_workers
 
@@ -209,8 +217,7 @@ class SpmChecker
     @repository_update_rules = RepositoryUpdateRules.empty
     @allow_hosts = []
     @version_lookup_workers = DEFAULT_VERSION_LOOKUP_WORKERS
-    @warnings = []
-    @warning_details = []
+    @updates = []
     @parse_warnings = []
     @version_tags_cache = {}
     @version_tag_lookup_errors = {}
@@ -229,7 +236,7 @@ class SpmChecker
   # Check for SPM updates using an Xcode project as the source of dependencies.
   #
   # @param   [String] xcodeproj_path The path to your Xcode project
-  # @return  [Array<String>] Array of warning messages
+  # @return  [Result] Structured update records and parse warnings
   def check_for_updates(xcodeproj_path)
     prepare_run
 
@@ -239,7 +246,7 @@ class SpmChecker
     warn_for_empty_xcode_project(remote_packages, resolved_versions, xcodeproj_path)
 
     check_packages(remote_packages, resolved_versions)
-    @warnings
+    result
   end
 
   # Check for SPM updates using one or more `Package.swift` manifests as the
@@ -255,7 +262,7 @@ class SpmChecker
   #          `Package.resolved` paths. When omitted, a `Package.resolved` next to
   #          each manifest is used.
   # @raise [ManifestParser::CouldNotFindResolvedFile] if no resolved file exists
-  # @return  [Array<String>] Array of warning messages
+  # @return  [Result] Structured update records and parse warnings
   def check_manifests(manifest_paths, resolved_paths = nil)
     prepare_run
 
@@ -265,7 +272,7 @@ class SpmChecker
     manifest_paths.each { |manifest_path|
       check_packages(manifest_packages(manifest_path), resolved_versions, manifest_path)
     }
-    @warnings
+    result
   end
 
   # Check for SPM updates using one or more `Package.resolved` files as the
@@ -274,20 +281,20 @@ class SpmChecker
   #
   # @param [Array<String>] resolved_paths Paths to one or more Package.resolved files
   # @raise [SpmVersionUpdates::ConfigurationError] if no paths are supplied
-  # @return [Array<String>] Array of warning messages
+  # @return [Result] Structured update records and parse warnings
   def check_resolved(resolved_paths)
     prepare_run
     paths = normalized_resolved_paths(resolved_paths)
     raise(SpmVersionUpdates::ConfigurationError, "package-resolved-paths must be set") if paths.empty?
 
     check_existing_resolved_paths(paths)
-    @warnings
+    result
   end
 
   private
 
   def prepare_run
-    clear_warnings
+    clear_updates
     reset_version_tags_cache
     normalize_ignore_repos
     normalize_allow_hosts
@@ -317,9 +324,12 @@ class SpmChecker
     raw_allow_hosts.any? && @allow_hosts.empty?
   end
 
-  def clear_warnings
-    @warnings.clear
-    @warning_details.clear
+  def result
+    Result.new(updates: @updates, parse_warnings: @parse_warnings)
+  end
+
+  def clear_updates
+    @updates.clear
     @parse_warnings.clear
   end
 
@@ -587,8 +597,7 @@ class SpmChecker
   end
 
   def record_warning(message, package, record)
-    @warnings << [message, package.source_line].compact.join("\n")
-    @warning_details << record
+    @updates << record
     puts("WARNING: #{message}#{package.source_suffix}")
   end
 

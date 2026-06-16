@@ -8,32 +8,27 @@ RSpec.describe FailOnThreshold do
     instance_double(ActionReporter, records:, severity_counts:)
   end
 
-  describe ".from_inputs" do
-    it "prefers the explicit fail-on input over the legacy fail-on-updates input" do
-      expect(described_class.from_inputs("minor", "true")).to eq("minor")
+  describe ".from_input" do
+    it "maps configured fail-on values", :aggregate_failures do
+      expect(described_class.from_input("true")).to eq(described_class::ANY)
+      expect(described_class.from_input("any")).to eq(described_class::ANY)
+      expect(described_class.from_input("false")).to be_nil
+      expect(described_class.from_input("major")).to eq("major")
     end
 
-    it "maps legacy fail-on-updates values", :aggregate_failures do
-      expect(described_class.from_inputs(nil, "true")).to eq(described_class::ANY)
-      expect(described_class.from_inputs(nil, "false")).to be_nil
-      expect(described_class.from_inputs(nil, "major")).to eq("major")
-    end
-
-    it "defaults to no threshold when neither input is set" do
-      expect(described_class.from_inputs(nil, nil)).to be_nil
+    it "defaults to no threshold when the input is unset" do
+      expect(described_class.from_input(nil)).to be_nil
     end
 
     it "normalizes case and treats none as false", :aggregate_failures do
-      expect(described_class.from_inputs("MAJOR", nil)).to eq("major")
-      expect(described_class.from_inputs("none", nil)).to be_nil
-      expect(described_class.from_inputs(nil, "TRUE")).to eq(described_class::ANY)
+      expect(described_class.from_input("MAJOR")).to eq("major")
+      expect(described_class.from_input("none")).to be_nil
+      expect(described_class.from_input("TRUE")).to eq(described_class::ANY)
     end
 
-    it "raises an error naming the offending input", :aggregate_failures do
-      expect { described_class.from_inputs("bogus", nil) }
-        .to raise_error(ArgumentError, /fail-on must be false, true, major, minor, or patch/)
-      expect { described_class.from_inputs(nil, "bogus") }
-        .to raise_error(ArgumentError, /fail-on-updates must be false, true, major, minor, or patch/)
+    it "raises an error naming the offending input" do
+      expect { described_class.from_input("bogus") }
+        .to raise_error(ArgumentError, /fail-on must be false, true, any, major, minor, or patch/)
     end
   end
 
