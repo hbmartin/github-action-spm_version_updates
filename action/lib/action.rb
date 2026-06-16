@@ -385,7 +385,7 @@ class Action
 
   def env_true_by_default?(key)
     value = env_value(key)
-    value ? value == "true" : true
+    value.nil? || value == "true"
   end
 
   def positive_integer_input(key, default)

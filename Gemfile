@@ -27,7 +27,7 @@ group(:development, :test) {
   gem "rake", "~> 13.2"
   gem "reek"
   gem "rspec", "~> 3.0"
-  gem "rubocop", "~> 1.63"
+  gem "rubocop", "~> 1.72"
   gem "rubocop-performance"
   gem "rubocop-rake"
   gem "rubocop-rspec"
