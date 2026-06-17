@@ -75,8 +75,8 @@ module Danger
 
     def run_checker
       checker = build_checker
-      yield(checker)
-      emit_checker_warnings(checker)
+      result = yield(checker)
+      emit_checker_warnings(result)
     end
 
     def build_checker
@@ -97,9 +97,9 @@ module Danger
       checker.ignore_repos = Array(ignore_repos)
     end
 
-    def emit_checker_warnings(checker)
-      checker.warning_details.each { |detail| warn(render_warning(detail)) }
-      checker.parse_warnings.each { |record| warn(render_parse_warning(record)) }
+    def emit_checker_warnings(result)
+      result.updates.each { |detail| warn(render_warning(detail)) }
+      result.parse_warnings.each { |record| warn(render_parse_warning(record)) }
     end
 
     # Builds the Danger warning markdown for a `.package(...)` declaration the
@@ -113,22 +113,22 @@ module Danger
     # originating manifest. Uses <br> rather than newlines because Danger
     # renders warnings inside a markdown table.
     def render_warning(detail)
-      message = detail[:message]
+      message = detail["message"]
       links = warning_links(detail)
       message = "#{message} (#{links})" if links
 
-      source = detail[:source]
+      source = detail["source"]
       message = "#{message}<br>Source: `#{source}`" if source
 
-      command = detail[:suggested_command]
+      command = detail["suggested_command"]
       command ? "#{message}<br>Update: `#{command}`" : message
     end
 
     def warning_links(detail)
-      link = RepositoryLink.from(detail[:repository_url])
+      link = RepositoryLink.from(detail["repository_url"])
       return unless link
 
-      current, available = detail.values_at(:current_version, :available_version)
+      current, available = detail.values_at("current_version", "available_version")
       return unless current && available
 
       link.markdown_links([{ current:, available: }], separator: " · ")

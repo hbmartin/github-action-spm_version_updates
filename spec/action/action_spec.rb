@@ -44,7 +44,6 @@ RSpec.describe Action do
       INPUT_IGNORE_REPOS
       INPUT_REPO_RULES_PATH
       INPUT_ALLOW_HOSTS
-      INPUT_FAIL_ON_UPDATES
       INPUT_FAIL_ON
       INPUT_COMMENT
       INPUT_COMMENT_ON_SUCCESS
@@ -71,6 +70,31 @@ RSpec.describe Action do
     }.merge(overrides)
   end
 
+  def checker_result(warnings = [], details = [], parse_warnings: [])
+    SpmChecker::Result.new(updates: update_records(warnings, details), parse_warnings:)
+  end
+
+  def report_payload(warnings = [], details = [], **attributes)
+    ReportPayload.new(
+      updates: update_records(warnings, details),
+      parse_warnings: attributes.fetch(:parse_warnings, []),
+      missing_resolved: attributes.fetch(:missing_resolved, []),
+      applied_updates: attributes.fetch(:applied_updates, nil),
+      timings: attributes.fetch(:timings, nil)
+    )
+  end
+
+  def update_records(warnings, details)
+    Array(warnings).map.with_index { |warning, index| update_record(warning, Array(details)[index]) }
+  end
+
+  def update_record(warning, detail = nil)
+    message, source = warning.to_s.split("\nSource: ", 2)
+    { "message" => message, "source" => source }
+      .merge(detail.to_h.transform_keys(&:to_s))
+      .compact
+  end
+
   describe "#run_checks" do
     it "raises when both source modes are provided" do
       both = inputs(xcode_project_path: "App.xcodeproj", manifest_paths: ["Modules/Package.swift"])
@@ -92,7 +116,7 @@ RSpec.describe Action do
     end
 
     it "uses Xcode mode when only xcode-project-path is set" do
-      allow(checker).to receive(:check_for_updates).and_return([])
+      allow(checker).to receive(:check_for_updates).and_return(checker_result)
 
       action.send(:run_checks, checker, inputs(xcode_project_path: "App.xcodeproj"))
 
@@ -100,7 +124,7 @@ RSpec.describe Action do
     end
 
     it "uses manifest mode when package-manifest-paths is set" do
-      allow(checker).to receive(:check_manifests).and_return([])
+      allow(checker).to receive(:check_manifests).and_return(checker_result)
       configured = inputs(manifest_paths: ["Modules/Package.swift"], resolved_paths: ["Modules/Package.resolved"])
 
       action.send(:run_checks, checker, configured)
@@ -109,7 +133,7 @@ RSpec.describe Action do
     end
 
     it "uses resolved-only mode when only package-resolved-paths is set" do
-      allow(checker).to receive(:check_resolved).and_return([])
+      allow(checker).to receive(:check_resolved).and_return(checker_result)
 
       action.send(:run_checks, checker, inputs(resolved_paths: ["Package.resolved"]))
 
@@ -136,7 +160,6 @@ RSpec.describe Action do
           "INPUT_ALLOW_MISSING_RESOLVED" => "true",
           "INPUT_APPLY_UPDATES" => "true",
           "INPUT_ENRICH_RELEASE_NOTES" => "false",
-          "INPUT_FAIL_ON_UPDATES" => "true",
           "INPUT_FAIL_ON" => "minor",
           "INPUT_OPEN_TRACKING_ISSUE" => "true",
           "INPUT_COMMENT_ON_SUCCESS" => "true"
@@ -185,8 +208,8 @@ RSpec.describe Action do
       end
     end
 
-    it "uses the legacy fail-on-updates boolean as fail-on any" do
-      with_env(input_env("INPUT_FAIL_ON_UPDATES" => "true")) do
+    it "uses fail-on true as fail-on any" do
+      with_env(input_env("INPUT_FAIL_ON" => "true")) do
         expect(action.send(:read_inputs)[:fail_on]).to eq("any")
       end
     end
@@ -255,29 +278,9 @@ RSpec.describe Action do
       }
     }
 
-    let(:partial_warning_details) {
-      [
-        {
-          type: "version",
-          package: "onevcat/Kingfisher",
-          current_version: "7.0.0",
-          available_version: "8.0.0",
-          message: "Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift",
-          source: "Modules/Package.swift"
-        },
-        nil,
-        {
-          type: "version",
-          package: "orphaned/detail",
-          current_version: "1.0.0",
-          available_version: "2.0.0"
-        },
-      ]
-    }
-
     it "writes outputs, a step summary, annotations, and a PR comment for updates", :aggregate_failures do
       warnings = ["Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift"]
-      warning_details = [
+      details = [
         {
           type: "version",
           package: "onevcat/Kingfisher",
@@ -286,6 +289,7 @@ RSpec.describe Action do
           available_version: "8.0.0"
         },
       ]
+      payload = report_payload(warnings, details)
 
       Dir.mktmpdir do |dir|
         output_path = File.join(dir, "github_output")
@@ -293,7 +297,7 @@ RSpec.describe Action do
 
         stdout = capture_stdout do
           with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
-            action.send(:report, warnings, warning_details)
+            action.send(:report, payload)
           end
         end
 
@@ -307,8 +311,7 @@ RSpec.describe Action do
           "Newer version of onevcat/Kingfisher: 8.0.0"
         )
         expect(reporter_sink).to have_received(:publish_updates) { |payload|
-          expect(payload.warnings).to eq(warnings)
-          expect(payload.warning_details).to eq(warning_details)
+          expect(payload.updates).to eq(report_payload(warnings, details).updates)
           expect(payload.parse_warnings).to eq([])
           expect(payload.missing_resolved).to eq([])
         }
@@ -324,7 +327,7 @@ RSpec.describe Action do
 
         capture_stdout do
           with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => nil) do
-            action.send(:report, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil)
+            action.send(:report, report_payload(["Newer version of onevcat/Kingfisher: 8.0.0"]))
           end
         end
 
@@ -343,7 +346,7 @@ RSpec.describe Action do
 
         stdout = capture_stdout do
           with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => nil) do
-            action.send(:report, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil)
+            action.send(:report, report_payload(["Newer version of onevcat/Kingfisher: 8.0.0"]))
           end
         end
 
@@ -358,7 +361,7 @@ RSpec.describe Action do
 
         capture_stdout do
           with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => nil) do
-            action.send(:report, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil)
+            action.send(:report, report_payload(["Newer version of onevcat/Kingfisher: 8.0.0"]))
           end
         end
 
@@ -366,42 +369,9 @@ RSpec.describe Action do
       end
     end
 
-    it "keeps every warning when structured details are partial or mismatched", :aggregate_failures do
-      warnings = [
-        "Newer version of onevcat/Kingfisher: 8.0.0\nSource: Modules/Package.swift",
-        "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0\nSource: BuildTools/Package.swift",
-      ]
-      warning_details = partial_warning_details
-
-      Dir.mktmpdir do |dir|
-        output_path = File.join(dir, "github_output")
-        summary_path = File.join(dir, "step_summary")
-
-        with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
-          action.send(:report, warnings, warning_details)
-        end
-
-        output = File.read(output_path)
-        expect(output).to include("updates-found=2", "major-updates-found=1", "minor-updates-found=0", "patch-updates-found=0")
-        expect(output_json_from(output_path)).to contain_exactly(
-          a_hash_including(
-            "type" => "version",
-            "package" => "onevcat/Kingfisher",
-            "severity" => "major",
-            "source" => "Modules/Package.swift"
-          ),
-          {
-            "message" => "Newer version of SwiftGen/SwiftGenPlugin: 6.7.0",
-            "source" => "BuildTools/Package.swift"
-          }
-        )
-        expect(File.read(summary_path)).to include("Found **2** potential dependency updates.")
-      end
-    end
-
     it "does not count revision records as semantic-version severity updates", :aggregate_failures do
       warnings = ["getsentry/sentry-cocoa is pinned to a revision (8.12.0); latest tagged version is 9.0.0"]
-      warning_details = [
+      details = [
         {
           type: "revision",
           package: "getsentry/sentry-cocoa",
@@ -415,7 +385,7 @@ RSpec.describe Action do
         summary_path = File.join(dir, "step_summary")
 
         with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
-          action.send(:report, warnings, warning_details)
+          action.send(:report, report_payload(warnings, details))
         end
 
         output = File.read(output_path)
@@ -431,7 +401,7 @@ RSpec.describe Action do
         summary_path = File.join(dir, "step_summary")
 
         with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
-          action.send(:report, [])
+          action.send(:report, report_payload)
         end
 
         output = File.read(output_path)
@@ -452,7 +422,7 @@ RSpec.describe Action do
         summary_path = File.join(dir, "step_summary")
 
         with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
-          action.send(:report, [], nil, comment_on_success: true)
+          action.send(:report, report_payload, comment_on_success: true)
         end
 
         expect(reporter_sink).to have_received(:publish_success)
@@ -468,7 +438,7 @@ RSpec.describe Action do
         summary_path = File.join(dir, "step_summary")
 
         with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
-          action.send(:report, warnings, nil, comment: false)
+          action.send(:report, report_payload(warnings), comment: false)
         end
 
         expect(File.read(output_path)).to include("updates-found=1")
@@ -483,7 +453,7 @@ RSpec.describe Action do
         summary_path = File.join(dir, "step_summary")
 
         with_env("GITHUB_OUTPUT" => output_path, "GITHUB_STEP_SUMMARY" => summary_path) do
-          action.send(:report, [], nil, comment: false, comment_on_success: true)
+          action.send(:report, report_payload, comment: false, comment_on_success: true)
         end
 
         expect(File.read(summary_path)).to include("All SPM dependencies are up to date.")
@@ -498,7 +468,7 @@ RSpec.describe Action do
 
       Dir.mktmpdir do |dir|
         with_env("GITHUB_OUTPUT" => File.join(dir, "github_output"), "GITHUB_STEP_SUMMARY" => nil) do
-          action.send(:report, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil, comment: false)
+          action.send(:report, report_payload(["Newer version of onevcat/Kingfisher: 8.0.0"]), comment: false)
         end
       end
 
@@ -510,7 +480,7 @@ RSpec.describe Action do
 
       Dir.mktmpdir do |dir|
         with_env("GITHUB_OUTPUT" => File.join(dir, "github_output"), "GITHUB_STEP_SUMMARY" => nil) do
-          action.send(:report, [], nil, comment: false)
+          action.send(:report, report_payload, comment: false)
         end
       end
 
@@ -523,7 +493,7 @@ RSpec.describe Action do
     let(:configured_checker) { SpmChecker.new }
 
     it "dispatches manifest mode from environment inputs", :aggregate_failures do
-      allow(configured_checker).to receive(:check_manifests).and_return([])
+      allow(configured_checker).to receive(:check_manifests).and_return(checker_result)
       allow(configured_checker).to receive(:check_for_updates)
 
       with_env(
@@ -551,7 +521,7 @@ RSpec.describe Action do
     end
 
     it "dispatches Xcode mode from environment inputs", :aggregate_failures do
-      allow(configured_checker).to receive(:check_for_updates).and_return([])
+      allow(configured_checker).to receive(:check_for_updates).and_return(checker_result)
       allow(configured_checker).to receive(:check_manifests)
 
       with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj")) do
@@ -565,7 +535,7 @@ RSpec.describe Action do
     end
 
     it "dispatches resolved-only mode from environment inputs", :aggregate_failures do
-      allow(configured_checker).to receive(:check_resolved).and_return([])
+      allow(configured_checker).to receive(:check_resolved).and_return(checker_result)
       allow(configured_checker).to receive(:check_for_updates)
       allow(configured_checker).to receive(:check_manifests)
 
@@ -579,7 +549,7 @@ RSpec.describe Action do
     end
 
     it "configures worker count and missing-resolved handler", :aggregate_failures do
-      allow(configured_checker).to receive(:check_manifests).and_return([])
+      allow(configured_checker).to receive(:check_manifests).and_return(checker_result)
 
       with_env(
         input_env(
@@ -596,7 +566,7 @@ RSpec.describe Action do
     end
 
     it "rejects apply-updates outside manifest mode", :aggregate_failures do
-      allow(configured_checker).to receive(:check_for_updates).and_return([])
+      allow(configured_checker).to receive(:check_for_updates).and_return(checker_result)
 
       expect {
         with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_APPLY_UPDATES" => "true")) do
@@ -606,7 +576,7 @@ RSpec.describe Action do
     end
 
     it "loads repo rules from the configured path", :aggregate_failures do
-      allow(configured_checker).to receive(:check_for_updates).and_return([])
+      allow(configured_checker).to receive(:check_for_updates).and_return(checker_result)
       allow(configured_checker).to receive(:check_manifests)
 
       Dir.mktmpdir do |dir|
@@ -635,7 +605,7 @@ RSpec.describe Action do
     end
 
     it "posts a clean-run comment when comment-on-success is enabled", :aggregate_failures do
-      allow(configured_checker).to receive(:check_for_updates).and_return([])
+      allow(configured_checker).to receive(:check_for_updates).and_return(checker_result)
       allow(configured_checker).to receive(:check_manifests)
 
       with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_COMMENT_ON_SUCCESS" => "true")) do
@@ -647,7 +617,7 @@ RSpec.describe Action do
     end
 
     it "never touches the PR comment when comment is disabled", :aggregate_failures do
-      allow(configured_checker).to receive(:check_for_updates).and_return([])
+      allow(configured_checker).to receive(:check_for_updates).and_return(checker_result)
       allow(configured_checker).to receive(:check_manifests)
 
       with_env(
@@ -704,19 +674,18 @@ RSpec.describe Action do
       end
     end
 
-    it "fails after reporting when fail-on-updates is enabled and updates are found", :aggregate_failures do
+    it "fails after reporting when fail-on true is enabled and updates are found", :aggregate_failures do
       warnings = ["Newer version of onevcat/Kingfisher: 8.0.0"]
-      allow(configured_checker).to receive(:check_for_updates).and_return(warnings)
+      allow(configured_checker).to receive(:check_for_updates).and_return(checker_result(warnings))
 
       expect {
-        with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_FAIL_ON_UPDATES" => "true")) do
+        with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_FAIL_ON" => "true")) do
           action.run
         end
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
       expect(reporter_sink).to have_received(:publish_updates) { |payload|
-        expect(payload.warnings).to eq(warnings)
-        expect(payload.warning_details).to eq([])
+        expect(payload.updates).to eq(report_payload(warnings).updates)
         expect(payload.parse_warnings).to eq([])
         expect(payload.missing_resolved).to eq([])
       }
@@ -724,7 +693,7 @@ RSpec.describe Action do
 
     it "fails when a semantic update meets the fail-on threshold", :aggregate_failures do
       warnings = ["Newer version of onevcat/Kingfisher: 8.0.0"]
-      warning_details = [
+      details = [
         {
           type: "version",
           package: "onevcat/Kingfisher",
@@ -732,10 +701,7 @@ RSpec.describe Action do
           available_version: "8.0.0"
         },
       ]
-      allow(configured_checker).to receive_messages(
-        check_for_updates: warnings,
-        warning_details:
-      )
+      allow(configured_checker).to receive(:check_for_updates).and_return(checker_result(warnings, details))
 
       expect {
         with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_FAIL_ON" => "major")) do
@@ -744,8 +710,7 @@ RSpec.describe Action do
       }
         .to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
       expect(reporter_sink).to have_received(:publish_updates) { |payload|
-        expect(payload.warnings).to eq(warnings)
-        expect(payload.warning_details).to eq(warning_details)
+        expect(payload.updates).to eq(report_payload(warnings, details).updates)
         expect(payload.parse_warnings).to eq([])
         expect(payload.missing_resolved).to eq([])
       }
@@ -753,7 +718,7 @@ RSpec.describe Action do
 
     it "does not fail when semantic updates are below the fail-on threshold", :aggregate_failures do
       warnings = ["Newer version of onevcat/Kingfisher: 7.1.0"]
-      warning_details = [
+      details = [
         {
           type: "version",
           package: "onevcat/Kingfisher",
@@ -761,18 +726,14 @@ RSpec.describe Action do
           available_version: "7.1.0"
         },
       ]
-      allow(configured_checker).to receive_messages(
-        check_for_updates: warnings,
-        warning_details:
-      )
+      allow(configured_checker).to receive(:check_for_updates).and_return(checker_result(warnings, details))
 
       with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "INPUT_FAIL_ON" => "major")) do
         action.run
       end
 
       expect(reporter_sink).to have_received(:publish_updates) { |payload|
-        expect(payload.warnings).to eq(warnings)
-        expect(payload.warning_details).to eq(warning_details)
+        expect(payload.updates).to eq(report_payload(warnings, details).updates)
         expect(payload.parse_warnings).to eq([])
         expect(payload.missing_resolved).to eq([])
       }

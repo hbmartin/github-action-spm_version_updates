@@ -99,43 +99,6 @@ class GithubIntegration < ReporterSink
     end
   end
 
-  # Renders the legacy numbered warning list used when structured details are absent.
-  class LegacyWarningsMessage
-    def initialize(warnings, update_details)
-      @warnings = warnings
-      @update_details = update_details
-    end
-
-    def markdown
-      <<~MARKDOWN
-        #{header}#{warning_list}
-
-        #{@update_details}
-      MARKDOWN
-    end
-
-    private
-
-    attr_reader :warnings
-
-    def header
-      update_label = warning_count == 1 ? "update" : "updates"
-      "⚠️ **Found #{warning_count} potential dependency #{update_label}:**\n\n"
-    end
-
-    def warning_count
-      @warning_count ||= warnings.size
-    end
-
-    def warning_list
-      # Continuation lines (e.g. "Source: ...") are indented so they stay part
-      # of the numbered list item when rendered as Markdown.
-      warnings.map.with_index(1) { |warning, index|
-        "#{index}. #{warning.gsub("\n", "\n   ")}"
-      }.join("\n")
-    end
-  end
-
   # Renders the collapsed "How to update dependencies" section. With structured
   # details it emits concrete `swift package update` commands (grouped by
   # manifest directory) and the manifest requirement changes needed for
@@ -309,10 +272,10 @@ class GithubIntegration < ReporterSink
     !!(@open_tracking_issue && !@pr_number && @client && @github_repository)
   end
 
-  def publish_updates(payload_or_warnings, *legacy_values)
+  def publish_updates(payload)
     return unless tracking_issue_run? || comment_target?
 
-    message = build_comment_message(build_warnings_message(payload_or_warnings, *legacy_values))
+    message = build_comment_message(build_warnings_message(payload))
     if tracking_issue_run?
       @tracking_issue_result = tracking_issue.upsert(message)
     else
@@ -337,10 +300,6 @@ class GithubIntegration < ReporterSink
 
   def post_comment(message)
     with_comment_target { post_comment_body(build_comment_message(message)) }
-  end
-
-  def post_comment_with_warnings(warnings, warning_details = nil)
-    publish_updates(warnings, warning_details)
   end
 
   def delete_existing_comment
@@ -398,19 +357,15 @@ class GithubIntegration < ReporterSink
     MARKDOWN
   end
 
-  def build_warnings_message(payload_or_warnings, *legacy_values)
-    payload = ReportPayload.coerce(payload_or_warnings, *legacy_values)
+  def build_warnings_message(payload)
     ReportSections.new(payload, updates_message(payload)).to_a.compact.join("\n\n")
   end
 
   def updates_message(payload)
-    warnings = payload.warnings
-    return "✅ **All SPM dependencies are up to date!**" if warnings.empty?
+    updates = payload.updates
+    return "✅ **All SPM dependencies are up to date!**" if updates.empty?
 
-    details = structured_warning_details(payload.warning_details)
-    return build_legacy_warnings_message(warnings) if details.size < warnings.size
-
-    grouped_updates = grouped_warning_details(details)
+    grouped_updates = grouped_update_records(updates)
     package_count = grouped_updates.size
     package_label = package_count == 1 ? "package" : "packages"
     header = "⚠️ **Found #{package_count} #{package_label} with potential dependency updates:**\n\n"
@@ -420,26 +375,14 @@ class GithubIntegration < ReporterSink
 
     [
       "#{header}| Package | Current → Available | Source | Links |\n| --- | --- | --- | --- |\n#{table}",
-      UpgradeHintsSection.new(details).markdown,
-      release_notes_markdown(details),
+      UpgradeHintsSection.new(updates).markdown,
+      release_notes_markdown(updates),
     ]
       .compact
       .join("\n\n")
   end
 
-  def build_legacy_warnings_message(warnings)
-    LegacyWarningsMessage.new(warnings, UpgradeHintsSection.new.markdown).markdown
-  end
-
-  def structured_warning_details(warning_details)
-    Array(warning_details).select { |detail|
-      detail_value(detail, :package) &&
-        detail_value(detail, :current_version) &&
-        detail_value(detail, :available_version)
-    }
-  end
-
-  def grouped_warning_details(details)
+  def grouped_update_records(details)
     details
       .group_by { |detail| detail_value(detail, :normalized_url) || detail_value(detail, :package) }
       .map { |_key, entries| warning_group(entries) }

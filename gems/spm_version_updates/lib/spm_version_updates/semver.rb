@@ -5,7 +5,7 @@ require "semverify"
 # Namespace for the core gem's published constants (gem version and the
 # {SpmVersionUpdates::Semver} value object).
 module SpmVersionUpdates
-  # SemVer value object used by both the GitHub Action and legacy Danger plugin.
+  # SemVer value object used by both the GitHub Action and Danger plugin.
   class Semver
     include Comparable
 

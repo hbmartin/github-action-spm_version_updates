@@ -4,66 +4,52 @@
 class ReportPayload
   # Normalizes caller-provided attributes into payload fields.
   class Attributes
-    def initialize(raw)
-      @raw = raw
+    def initialize(updates:, parse_warnings:, missing_resolved:, applied_updates:, timings:)
+      @updates = updates
+      @parse_warnings = parse_warnings
+      @missing_resolved = missing_resolved
+      @applied_updates = applied_updates
+      @timings = timings
     end
 
     def to_h
       {
-        warnings: warnings,
-        warning_details: warning_details,
+        updates: records(@updates),
         parse_warnings: parse_warnings,
         missing_resolved: missing_resolved,
-        applied_updates: @raw[:applied_updates],
-        timings: @raw[:timings]
+        applied_updates: @applied_updates,
+        timings: @timings
       }
     end
 
     private
 
-    def warnings
-      Array(@raw[:warnings])
-    end
-
-    def warning_details
-      Array(@raw[:warning_details])
-    end
-
     def parse_warnings
-      Array(@raw[:parse_warnings])
+      records(@parse_warnings)
     end
 
     def missing_resolved
-      Array(@raw[:missing_resolved])
+      records(@missing_resolved)
+    end
+
+    def records(values)
+      Array(values).map { |record| record.to_h.transform_keys(&:to_s).compact }
     end
   end
   private_constant :Attributes
 
-  def self.coerce(value, *legacy_values, **attributes)
-    # Existing payloads are already normalized; keyword overrides are ignored.
-    return value if value.kind_of?(self)
-
-    warning_details, parse_warnings, missing_resolved = legacy_values
-    new(
-      warnings: value,
-      warning_details:,
+  def initialize(updates:, parse_warnings: [], missing_resolved: [], applied_updates: nil, timings: nil)
+    @attributes = Attributes.new(
+      updates:,
       parse_warnings:,
-      missing_resolved: attributes.fetch(:missing_resolved, missing_resolved),
-      applied_updates: attributes[:applied_updates],
-      timings: attributes[:timings]
-    )
+      missing_resolved:,
+      applied_updates:,
+      timings:
+    ).to_h
   end
 
-  def initialize(attributes)
-    @attributes = Attributes.new(attributes).to_h
-  end
-
-  def warnings
-    @attributes.fetch(:warnings)
-  end
-
-  def warning_details
-    @attributes.fetch(:warning_details)
+  def updates
+    @attributes.fetch(:updates)
   end
 
   def parse_warnings

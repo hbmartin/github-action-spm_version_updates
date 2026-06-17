@@ -80,7 +80,6 @@ DOCS_LAYERS = {
     guides: [
       "docs/architecture.md",
       "docs/repo-rules.md",
-      "docs/migration-v0.2.0-to-v1.0.0.md",
     ]
   },
   "danger" => {
@@ -91,7 +90,6 @@ DOCS_LAYERS = {
       "docs/architecture.md",
       "docs/swiftpm-manifest-mode.md",
       "docs/repo-rules.md",
-      "docs/migration-v0.2.0-to-v1.0.0.md",
     ]
   },
   "action" => {

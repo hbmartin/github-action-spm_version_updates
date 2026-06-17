@@ -56,9 +56,8 @@ with a runtime dependency on the core gem.
 the Dangerfile API (`check_for_updates`, `check_manifests`, and the
 `check_when_exact`-style accessors) and delegates the actual checking to the
 core gem. Reporting goes through Danger's `warn`/`fail` messaging. The gem
-contains no checking logic of its own — the `Git`/`Xcode` helper modules from
-`v0.2.0` were removed in favor of the core gem's `GitOperations`,
-`XcodeParser`, and `XcodeProjectPackageReader`.
+contains no checking logic of its own; it renders warnings from the structured
+`SpmChecker::Result` returned by the core gem.
 
 ## GitHub Action layer: `action/`
 
@@ -97,8 +96,8 @@ action.rb                          SpmChecker (core gem)
     │                                   │   └─ classify each update
     │                                   │ ignore-repos / RepositoryUpdateRules
     │                                   │   └─ filter suppressed reports
-    │ ◀── warnings, warning_details, ───┘
-    │     parse_warnings
+    │ ◀── result.updates, ─────────────┘
+    │     result.parse_warnings
     │  ActionReporter
     │    └─ step outputs, step summary, ::warning annotations
     │  ReporterSink
@@ -116,7 +115,7 @@ action.rb                          SpmChecker (core gem)
 | Method | When it is called |
 | --- | --- |
 | `configure(inputs)` | Once, before checking, with the parsed inputs hash. Optional override. |
-| `publish_updates(warnings, warning_details, parse_warnings)` | Updates or parse warnings exist. Parse warnings force a publish even with zero updates, so a skipped declaration never reads as "all up to date". |
+| `publish_updates(payload)` | Updates, parse warnings, or missing resolved files exist. Parse warnings force a publish even with zero updates, so a skipped declaration never reads as "all up to date". |
 | `publish_success` | Clean run with `comment-on-success: true`. |
 | `clear` | Clean run otherwise — retract a previously published report, if any. |
 | `tracking_issue_run?` | Return `true` when the sink reports outside a PR, so publishing happens even with `comment: false`. Optional override (default `false`). |
@@ -135,8 +134,9 @@ class SlackSink < ReporterSink
     @webhook_url = URI(ENV.fetch("SLACK_WEBHOOK_URL"))
   end
 
-  def publish_updates(warnings, _warning_details = nil, _parse_warnings = nil)
-    post("📦 SPM updates available:\n#{warnings.join("\n")}")
+  def publish_updates(payload)
+    messages = payload.updates.map { |update| update.fetch("message") }
+    post("📦 SPM updates available:\n#{messages.join("\n")}")
   end
 
   def publish_success
@@ -161,10 +161,10 @@ Wire it in by constructing the entry point with the sink:
 Action.new(reporter_sink: SlackSink.new).run
 ```
 
-The richer `warning_details` records (repository URL, current/available
-version, severity, suggested update command, …) and the `parse_warnings`
-records are available when the sink wants to render more than the plain
-warning strings — `GithubIntegration` is the in-tree example that uses both.
+The structured update records (repository URL, current/available version,
+severity, suggested update command, …) and the `parse_warnings` records are
+available on the payload when the sink wants to render more than plain messages
+— `GithubIntegration` is the in-tree example that uses both.
 
 ## Release flow
 

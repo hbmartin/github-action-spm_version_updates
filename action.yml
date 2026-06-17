@@ -66,12 +66,8 @@ inputs:
     description: 'Fetch GitHub release notes for updated packages and include them in PR comments or tracking issues.'
     required: false
     default: 'true'
-  fail-on-updates:
-    description: 'Deprecated: use fail-on instead. Set true to fail on any update, or major/minor/patch for semantic updates.'
-    required: false
-    default: 'false'
   fail-on:
-    description: 'Fail when an update at or above this severity is found: major, minor, patch, or empty to never fail. Overrides fail-on-updates when set.'
+    description: 'Fail when updates are found: true/any for any update, major/minor/patch for semantic updates at or above that severity, or empty/false/none to never fail.'
     required: false
     default: ''
   comment:
@@ -210,7 +206,6 @@ runs:
         INPUT_ALLOW_MISSING_RESOLVED: ${{ inputs.allow-missing-resolved }}
         INPUT_APPLY_UPDATES: ${{ inputs.apply-updates }}
         INPUT_ENRICH_RELEASE_NOTES: ${{ inputs.enrich-release-notes }}
-        INPUT_FAIL_ON_UPDATES: ${{ inputs.fail-on-updates }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
         INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_COMMENT_ON_SUCCESS: ${{ inputs.comment-on-success }}

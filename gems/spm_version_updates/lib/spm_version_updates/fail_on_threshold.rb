@@ -7,13 +7,8 @@ require_relative "update_severity"
 module FailOnThreshold
   ANY = "any"
 
-  def self.from_inputs(explicit_fail_on, legacy_fail_on)
-    input_name, value = [
-      ["fail-on", explicit_fail_on],
-      ["fail-on-updates", legacy_fail_on],
-      ["fail-on-updates", "false"],
-    ].find { |_name, candidate| candidate }
-    normalize(value, input_name)
+  def self.from_input(value)
+    normalize(value || "false")
   end
 
   def self.failure_message(threshold, reporter)
@@ -29,13 +24,13 @@ module FailOnThreshold
     UpdateSeverity.count_at_or_above(reporter.severity_counts, threshold)
   end
 
-  def self.normalize(value, input_name)
-    normalized = value.downcase
+  def self.normalize(value)
+    normalized = value.to_s.downcase
     return nil if ["false", "none"].include?(normalized)
-    return ANY if normalized == "true"
+    return ANY if ["true", ANY].include?(normalized)
     return normalized if UpdateSeverity.threshold?(normalized)
 
-    raise(SpmVersionUpdates::ConfigurationError, "#{input_name} must be false, true, major, minor, or patch")
+    raise(SpmVersionUpdates::ConfigurationError, "fail-on must be false, true, any, major, minor, or patch")
   end
 
   def self.build_message(threshold, count)

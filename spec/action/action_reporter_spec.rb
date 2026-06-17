@@ -29,6 +29,23 @@ RSpec.describe ActionReporter do
     capture_stdout { with_env(env) { reporter.write } }
   end
 
+  def report_payload(warnings = [], details = [], **attributes)
+    ReportPayload.new(
+      updates: Array(warnings).map.with_index { |warning, index| update_record(warning, Array(details)[index]) },
+      parse_warnings: attributes.fetch(:parse_warnings, []),
+      missing_resolved: attributes.fetch(:missing_resolved, []),
+      applied_updates: attributes.fetch(:applied_updates, nil),
+      timings: attributes.fetch(:timings, nil)
+    )
+  end
+
+  def update_record(warning, detail = nil)
+    message, source = warning.to_s.split("\nSource: ", 2)
+    { "message" => message, "source" => source }
+      .merge(detail.to_h.transform_keys(&:to_s))
+      .compact
+  end
+
   def output_json(output_file)
     content = File.read(output_file)
     json = content[/updates-json<<(\S+)\n(.*?)\n\1\n/m, 2]
@@ -47,10 +64,10 @@ RSpec.describe ActionReporter do
     it "writes counts, flags, and redacted updates-json to GITHUB_OUTPUT", :aggregate_failures do
       Dir.mktmpdir do |dir|
         output_file = File.join(dir, "output.txt")
-        reporter = described_class.new(
-          ["Newer version of foo/bar: 2.0.0"],
-          [{ type: "version", repository_url: "https://user:token@github.com/foo/bar", current_version: "1.0.0", available_version: "2.0.0" }]
-        )
+        reporter = described_class.new(report_payload(
+                                         ["Newer version of foo/bar: 2.0.0"],
+                                         [{ type: "version", repository_url: "https://user:token@github.com/foo/bar", current_version: "1.0.0", available_version: "2.0.0" }]
+                                       ))
 
         quiet_write(reporter, "GITHUB_OUTPUT" => output_file, "GITHUB_STEP_SUMMARY" => nil)
 
@@ -69,7 +86,7 @@ RSpec.describe ActionReporter do
     it "suffixes the heredoc delimiter when a record collides with it" do
       Dir.mktmpdir do |dir|
         output_file = File.join(dir, "output.txt")
-        reporter = described_class.new(["contains SPM_VERSION_UPDATES_JSON marker"])
+        reporter = described_class.new(report_payload(["contains SPM_VERSION_UPDATES_JSON marker"]))
 
         quiet_write(reporter, "GITHUB_OUTPUT" => output_file, "GITHUB_STEP_SUMMARY" => nil)
 
@@ -79,7 +96,7 @@ RSpec.describe ActionReporter do
 
     it "writes nothing when GITHUB_OUTPUT is not set" do
       with_env("GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => nil) {
-        expect { capture_stdout { described_class.new([]).write } }
+        expect { capture_stdout { described_class.new(report_payload).write } }
           .not_to raise_error
       }
     end
@@ -91,13 +108,10 @@ RSpec.describe ActionReporter do
         end
       }
       applied = [{ "source" => "Package.swift", "package" => "foo/bar", "current_version" => "1.0.0", "available_version" => "1.1.0" }]
-      reporter = described_class.new(
-        [],
-        nil,
-        nil,
-        missing_resolved: [{ "source" => "Missing/Package.resolved", "message" => "missing" }],
-        applied_updates: result_class.new(applied:, skipped: [], failed: [])
-      )
+      reporter = described_class.new(report_payload(
+                                       missing_resolved: [{ "source" => "Missing/Package.resolved", "message" => "missing" }],
+                                       applied_updates: result_class.new(applied:, skipped: [], failed: [])
+                                     ))
 
       Dir.mktmpdir do |dir|
         output_file = File.join(dir, "output.txt")
@@ -117,7 +131,7 @@ RSpec.describe ActionReporter do
         summary_file = File.join(dir, "summary.md")
         File.write(summary_file, "existing content\n")
 
-        quiet_write(described_class.new([]), "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
+        quiet_write(described_class.new(report_payload), "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
 
         content = File.read(summary_file)
         expect(content).to start_with("existing content\n")
@@ -133,7 +147,7 @@ RSpec.describe ActionReporter do
           "Newer version of baz/qux: 1.1.0",
         ]
 
-        quiet_write(described_class.new(warnings), "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
+        quiet_write(described_class.new(report_payload(warnings)), "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
 
         content = File.read(summary_file)
         expect(content).to include("Found **2** potential dependency updates.")
@@ -145,10 +159,10 @@ RSpec.describe ActionReporter do
     it "renders compare and release links from structured details", :aggregate_failures do
       Dir.mktmpdir do |dir|
         summary_file = File.join(dir, "summary.md")
-        reporter = described_class.new(
-          ["Newer version of foo/bar: 2.0.0"],
-          [{ type: "version", repository_url: "https://github.com/foo/bar.git", current_version: "1.0.0", available_version: "2.0.0" }]
-        )
+        reporter = described_class.new(report_payload(
+                                         ["Newer version of foo/bar: 2.0.0"],
+                                         [{ type: "version", repository_url: "https://github.com/foo/bar.git", current_version: "1.0.0", available_version: "2.0.0" }]
+                                       ))
 
         quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
 
@@ -162,16 +176,16 @@ RSpec.describe ActionReporter do
     it "renders upgrade hint lines from structured details", :aggregate_failures do
       Dir.mktmpdir do |dir|
         summary_file = File.join(dir, "summary.md")
-        reporter = described_class.new(
-          ["Newest version of foo/bar: 2.0.0"],
-          [{
-            type: "above_maximum",
-            current_version: "1.0.0",
-            available_version: "2.0.0",
-            suggested_command: "swift package update bar",
-            suggested_requirement: 'from: "2.0.0"'
-          }]
-        )
+        reporter = described_class.new(report_payload(
+                                         ["Newest version of foo/bar: 2.0.0"],
+                                         [{
+                                           type: "above_maximum",
+                                           current_version: "1.0.0",
+                                           available_version: "2.0.0",
+                                           suggested_command: "swift package update bar",
+                                           suggested_requirement: 'from: "2.0.0"'
+                                         }]
+                                       ))
 
         quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
 
@@ -184,13 +198,13 @@ RSpec.describe ActionReporter do
     it "omits the links line for records without a usable repository URL" do
       Dir.mktmpdir do |dir|
         summary_file = File.join(dir, "summary.md")
-        reporter = described_class.new(
-          ["Newer version of foo/bar: 2.0.0", "Newer version of baz/qux: 1.1.0"],
-          [
-            { type: "version", repository_url: "https://example.com/foo/bar", current_version: "1.0.0", available_version: "2.0.0" },
-            { type: "version", current_version: "1.0.0", available_version: "1.1.0" },
-          ]
-        )
+        reporter = described_class.new(report_payload(
+                                         ["Newer version of foo/bar: 2.0.0", "Newer version of baz/qux: 1.1.0"],
+                                         [
+                                           { type: "version", repository_url: "https://example.com/foo/bar", current_version: "1.0.0", available_version: "2.0.0" },
+                                           { type: "version", current_version: "1.0.0", available_version: "1.1.0" },
+                                         ]
+                                       ))
 
         quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
 
@@ -205,18 +219,15 @@ RSpec.describe ActionReporter do
         end
       }
       timings = instance_double(Timings, summary_lines: ["", "### Timings", "", "| Phase | Duration |", "| Checks | 0.1s |"])
-      reporter = described_class.new(
-        [],
-        nil,
-        nil,
-        missing_resolved: [{ "source" => "Missing/Package.resolved", "message" => "missing" }],
-        applied_updates: result_class.new(
-          applied: [{ "source" => "Package.swift", "package" => "foo/bar", "current_version" => "1.0.0", "available_version" => "1.1.0" }],
-          skipped: [],
-          failed: []
-        ),
-        timings:
-      )
+      reporter = described_class.new(report_payload(
+                                       missing_resolved: [{ "source" => "Missing/Package.resolved", "message" => "missing" }],
+                                       applied_updates: result_class.new(
+                                         applied: [{ "source" => "Package.swift", "package" => "foo/bar", "current_version" => "1.0.0", "available_version" => "1.1.0" }],
+                                         skipped: [],
+                                         failed: []
+                                       ),
+                                       timings:
+                                     ))
 
       Dir.mktmpdir do |dir|
         summary_file = File.join(dir, "summary.md")
@@ -233,7 +244,7 @@ RSpec.describe ActionReporter do
 
   describe "#write annotations" do
     it "emits escaped ::warning annotations with source files" do
-      reporter = described_class.new(["50% newer version\nsee notes\nSource: a,b:c/Package.swift"])
+      reporter = described_class.new(report_payload(["50% newer version\nsee notes\nSource: a,b:c/Package.swift"]))
 
       output = quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => nil)
 
@@ -254,7 +265,7 @@ RSpec.describe ActionReporter do
     it "counts parse warnings in GITHUB_OUTPUT without inflating update counts", :aggregate_failures do
       Dir.mktmpdir do |dir|
         output_file = File.join(dir, "output.txt")
-        reporter = described_class.new([], nil, [parse_warning])
+        reporter = described_class.new(report_payload(parse_warnings: [parse_warning]))
 
         quiet_write(reporter, "GITHUB_OUTPUT" => output_file, "GITHUB_STEP_SUMMARY" => nil)
 
@@ -268,7 +279,7 @@ RSpec.describe ActionReporter do
       Dir.mktmpdir do |dir|
         output_file = File.join(dir, "output.txt")
 
-        quiet_write(described_class.new([]), "GITHUB_OUTPUT" => output_file, "GITHUB_STEP_SUMMARY" => nil)
+        quiet_write(described_class.new(report_payload), "GITHUB_OUTPUT" => output_file, "GITHUB_STEP_SUMMARY" => nil)
 
         expect(File.read(output_file)).to include("parse-warnings=0")
       end
@@ -277,7 +288,7 @@ RSpec.describe ActionReporter do
     it "renders a parse warnings section in the step summary", :aggregate_failures do
       Dir.mktmpdir do |dir|
         summary_file = File.join(dir, "summary.md")
-        reporter = described_class.new([], nil, [parse_warning])
+        reporter = described_class.new(report_payload(parse_warnings: [parse_warning]))
 
         quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => summary_file)
 
@@ -290,7 +301,7 @@ RSpec.describe ActionReporter do
     end
 
     it "emits a ::warning annotation per parse warning" do
-      reporter = described_class.new([], nil, [parse_warning])
+      reporter = described_class.new(report_payload(parse_warnings: [parse_warning]))
 
       output = quiet_write(reporter, "GITHUB_OUTPUT" => nil, "GITHUB_STEP_SUMMARY" => nil)
 
@@ -300,10 +311,10 @@ RSpec.describe ActionReporter do
 
   describe "#records" do
     it "merges structured detail over the parsed warning, with detail source winning", :aggregate_failures do
-      reporter = described_class.new(
-        ["Newer version of foo/bar: 2.0.0\nSource: parsed/Package.swift"],
-        [{ source: "detail/Package.swift", package: "foo/bar" }]
-      )
+      reporter = described_class.new(report_payload(
+                                       ["Newer version of foo/bar: 2.0.0\nSource: parsed/Package.swift"],
+                                       [{ source: "detail/Package.swift", package: "foo/bar" }]
+                                     ))
 
       record = reporter.records.first
       expect(record["message"]).to eq("Newer version of foo/bar: 2.0.0")
@@ -312,13 +323,13 @@ RSpec.describe ActionReporter do
     end
 
     it "computes severity counts from detail versions" do
-      reporter = described_class.new(
-        ["update one", "update two"],
-        [
-          { type: "version", current_version: "1.0.0", available_version: "2.0.0" },
-          { type: "version", current_version: "1.0.0", available_version: "1.1.0" },
-        ]
-      )
+      reporter = described_class.new(report_payload(
+                                       ["update one", "update two"],
+                                       [
+                                         { type: "version", current_version: "1.0.0", available_version: "2.0.0" },
+                                         { type: "version", current_version: "1.0.0", available_version: "1.1.0" },
+                                       ]
+                                     ))
 
       expect(reporter.severity_counts).to eq("major" => 1, "minor" => 1, "patch" => 0)
     end

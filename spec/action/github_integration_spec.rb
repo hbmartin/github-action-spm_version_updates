@@ -32,6 +32,37 @@ RSpec.describe(GithubIntegration) {
     path
   end
 
+  def report_payload(updates = [], details = nil, parse_warnings: [], missing_resolved: [])
+    ReportPayload.new(
+      updates: update_records(updates, details),
+      parse_warnings:,
+      missing_resolved:
+    )
+  end
+
+  def update_records(updates, details)
+    Array(updates).map.with_index { |update, index| update_record(update, Array(details)[index]) }
+  end
+
+  def update_record(update, detail)
+    return update.to_h.transform_keys(&:to_s).compact if update.kind_of?(Hash)
+
+    message, source = update.to_s.split("\nSource: ", 2)
+    { "message" => message, "source" => source }
+      .merge(detail.to_h.transform_keys(&:to_s))
+      .compact
+  end
+
+  def kingfisher_update
+    {
+      "message" => "Newer version of onevcat/Kingfisher: 8.0.0",
+      "type" => "version",
+      "package" => "onevcat/Kingfisher",
+      "current_version" => "7.0.0",
+      "available_version" => "8.0.0"
+    }
+  end
+
   describe("#build_warnings_message") {
     it("groups duplicate package updates and includes version and GitHub links", :aggregate_failures) do
       warnings = [
@@ -61,7 +92,7 @@ RSpec.describe(GithubIntegration) {
         },
       ]
 
-      message = integration.send(:build_warnings_message, warnings, details)
+      message = integration.send(:build_warnings_message, report_payload(warnings, details))
 
       expect(message).to(include("Found 1 package with potential dependency updates"))
       expect(message).to(include("| Package | Current → Available | Source | Links |"))
@@ -73,13 +104,6 @@ RSpec.describe(GithubIntegration) {
       expect(message).not_to(include("1. Newer version"))
     end
 
-    it("falls back to the legacy warning list without structured details", :aggregate_failures) do
-      message = integration.send(:build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"])
-
-      expect(message).to(include("Found 1 potential dependency update"))
-      expect(message).to(include("1. Newer version of onevcat/Kingfisher: 8.0.0"))
-    end
-
     it("appends a parse warnings section with an open-an-issue link", :aggregate_failures) do
       parse_warnings = [
         ParseWarning.record(
@@ -89,11 +113,9 @@ RSpec.describe(GithubIntegration) {
         ),
       ]
 
-      message = integration.send(
-        :build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil, parse_warnings
-      )
+      message = integration.send(:build_warnings_message, report_payload([base_update], parse_warnings:))
 
-      expect(message).to(include("Found 1 potential dependency update"))
+      expect(message).to(include("Found 1 package with potential dependency updates"))
       expect(message).to(include("1 declaration could not be parsed"))
       expect(message).to(include("`Modules/Package.swift`: its version requirement was not recognized"))
       expect(message).to(include('`url: "https://github.com/a/odd", futureRequirement: "1.0.0"`'))
@@ -105,7 +127,7 @@ RSpec.describe(GithubIntegration) {
         ParseWarning.record(reason: "unbalanced_parentheses", source: "Package.swift", snippet: ".package("),
       ]
 
-      message = integration.send(:build_warnings_message, [], nil, parse_warnings)
+      message = integration.send(:build_warnings_message, report_payload(parse_warnings:))
 
       expect(message).to(include("All SPM dependencies are up to date!"))
       expect(message).to(include("1 declaration could not be parsed"))
@@ -113,7 +135,7 @@ RSpec.describe(GithubIntegration) {
     end
 
     it("does not append a parse warnings section when none exist") do
-      message = integration.send(:build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], nil, [])
+      message = integration.send(:build_warnings_message, report_payload([base_update]))
 
       expect(message).not_to(include("could not be parsed"))
     end
@@ -128,7 +150,7 @@ RSpec.describe(GithubIntegration) {
         },
       ]
 
-      message = integration.send(:build_warnings_message, ["Newer version of Group/Subgroup/Project: 2.0.0"], details)
+      message = integration.send(:build_warnings_message, report_payload(["Newer version of Group/Subgroup/Project: 2.0.0"], details))
 
       expect(message).to(
         include("[Compare](https://gitlab.com/group/subgroup/project/-/compare/1.0.0...2.0.0)")
@@ -160,7 +182,7 @@ RSpec.describe(GithubIntegration) {
         },
       ]
 
-      message = integration.send(:build_warnings_message, warnings, details)
+      message = integration.send(:build_warnings_message, report_payload(warnings, details))
 
       expect(message).to(include("[Compare 1](https://github.com/owner/repo/compare/1.0.0...1.1.0)"))
       expect(message).to(include("[Compare 2](https://github.com/owner/repo/compare/1.1.0...2.0.0)"))
@@ -179,7 +201,7 @@ RSpec.describe(GithubIntegration) {
         },
       ]
 
-      message = integration.send(:build_warnings_message, ["Newer version of workspace/repo: 2.0.0"], details)
+      message = integration.send(:build_warnings_message, report_payload(["Newer version of workspace/repo: 2.0.0"], details))
 
       expect(message).to(
         include("[Compare](https://bitbucket.org/workspace/repo/branches/compare/2.0.0..1.0.0)")
@@ -198,7 +220,7 @@ RSpec.describe(GithubIntegration) {
         },
       ]
 
-      message = integration.send(:build_warnings_message, ["Newer version of example/repo: 2.0.0"], details)
+      message = integration.send(:build_warnings_message, report_payload(["Newer version of example/repo: 2.0.0"], details))
 
       expect(message).to(include("| `example/repo` | `1.0.0` → `2.0.0` | Xcode project | N/A |"))
     end
@@ -220,7 +242,7 @@ RSpec.describe(GithubIntegration) {
       ]
       warnings = details.map { |detail| "Newer version of #{detail[:package]}: 8.0.0" }
 
-      message = integration.send(:build_warnings_message, warnings, details)
+      message = integration.send(:build_warnings_message, report_payload(warnings, details))
 
       expect(message).to(include("Run in `Modules`:"))
       expect(message).to(include("swift package update kingfisher nuke"))
@@ -238,7 +260,7 @@ RSpec.describe(GithubIntegration) {
         ),
       ]
 
-      message = integration.send(:build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], details)
+      message = integration.send(:build_warnings_message, report_payload(["Newer version of onevcat/Kingfisher: 8.0.0"], details))
 
       expect(message).to(include("Run in the repository root:"))
       expect(message).not_to(include("Run in `.`:"))
@@ -252,7 +274,7 @@ RSpec.describe(GithubIntegration) {
       ]
       warnings = details.map { |detail| "Newer version of #{detail[:package]}: 8.0.0" }
 
-      message = integration.send(:build_warnings_message, warnings, details)
+      message = integration.send(:build_warnings_message, report_payload(warnings, details))
 
       command_lines = message.lines.select { |line| line.start_with?("swift package update") }
       expect(command_lines).to(eq(["swift package update kingfisher\n"]))
@@ -268,7 +290,7 @@ RSpec.describe(GithubIntegration) {
         ),
       ]
 
-      message = integration.send(:build_warnings_message, ["Newest version of onevcat/Kingfisher: 8.0.0"], details)
+      message = integration.send(:build_warnings_message, report_payload(["Newest version of onevcat/Kingfisher: 8.0.0"], details))
 
       expect(message).to(include("Manifest changes needed before updating:"))
       expect(message).to(include('| `onevcat/Kingfisher` | `from: "8.0.0"` | `Modules/Package.swift` |'))
@@ -281,7 +303,7 @@ RSpec.describe(GithubIntegration) {
       integration.instance_variable_set(:@enrich_release_notes, true)
       integration.instance_variable_set(:@release_notes_fetcher, fetcher)
 
-      message = integration.send(:build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], [base_detail])
+      message = integration.send(:build_warnings_message, report_payload(["Newer version of onevcat/Kingfisher: 8.0.0"], [base_detail]))
 
       expect(message).to(include("How to update dependencies"))
       expect(message).to(include("Release notes: onevcat/Kingfisher 8.0.0", "Release body"))
@@ -291,7 +313,7 @@ RSpec.describe(GithubIntegration) {
       integration.instance_variable_set(:@client, instance_double(Octokit::Client))
       integration.instance_variable_set(:@enrich_release_notes, false)
 
-      message = integration.send(:build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], [base_detail])
+      message = integration.send(:build_warnings_message, report_payload(["Newer version of onevcat/Kingfisher: 8.0.0"], [base_detail]))
 
       expect(message).not_to(include("Release notes:"))
     end
@@ -299,7 +321,7 @@ RSpec.describe(GithubIntegration) {
     it("falls back to static guidance for Xcode-mode details without commands", :aggregate_failures) do
       details = [base_detail.merge(source: nil).compact]
 
-      message = integration.send(:build_warnings_message, ["Newer version of onevcat/Kingfisher: 8.0.0"], details)
+      message = integration.send(:build_warnings_message, report_payload(["Newer version of onevcat/Kingfisher: 8.0.0"], details))
 
       expect(message).to(include("To update your SPM dependencies:"))
       expect(message).not_to(include("Run in `"))
@@ -315,6 +337,10 @@ RSpec.describe(GithubIntegration) {
         available_version: "8.0.0",
         source: "Modules/Package.swift"
       }
+    end
+
+    def base_update
+      base_detail.merge(message: "Newer version of onevcat/Kingfisher: 8.0.0")
     end
   }
 
@@ -422,14 +448,14 @@ RSpec.describe(GithubIntegration) {
 
       Dir.mktmpdir do |dir|
         with_env(github_env(write_event_file(dir))) do
-          described_class.new.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+          described_class.new.publish_updates(report_payload([kingfisher_update]))
         end
       end
 
       expect(client).to(have_received(:add_comment)) do |_repo, _pr_number, body|
         expect(body).to(include(described_class::COMMENT_IDENTIFIER))
-        expect(body).to(include("Found 1 potential dependency update"))
-        expect(body).to(include("Newer version of onevcat/Kingfisher: 8.0.0"))
+        expect(body).to(include("Found 1 package with potential dependency updates"))
+        expect(body).to(include("| `onevcat/Kingfisher` | `7.0.0` → `8.0.0` |"))
       end
     end
 
@@ -448,7 +474,7 @@ RSpec.describe(GithubIntegration) {
 
       Dir.mktmpdir do |dir|
         with_env(github_env(write_event_file(dir))) do
-          described_class.new.publish_updates([], nil, parse_warnings)
+          described_class.new.publish_updates(report_payload(parse_warnings:))
         end
       end
 
@@ -503,14 +529,14 @@ RSpec.describe(GithubIntegration) {
       Dir.mktmpdir do |dir|
         with_env(github_env(write_schedule_event_file(dir))) do
           integration = tracking_integration
-          integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+          integration.publish_updates(report_payload([kingfisher_update]))
         end
       end
 
       expect(client).to(have_received(:create_issue)) do |repo, title, body, options|
         expect(repo).to(eq("owner/repo"))
         expect(title).to(eq(issue_title))
-        expect(body).to(include(issue_marker, "Newer version of onevcat/Kingfisher: 8.0.0"))
+        expect(body).to(include(issue_marker, "| `onevcat/Kingfisher` | `7.0.0` → `8.0.0` |"))
         expect(options).to(eq(labels: issue_label))
       end
       expect(integration.tracking_issue_result).to(eq(number: 7, url: TRACKING_ISSUE_URL))
@@ -534,13 +560,13 @@ RSpec.describe(GithubIntegration) {
       Dir.mktmpdir do |dir|
         with_env(github_env(write_schedule_event_file(dir))) do
           integration = tracking_integration
-          integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+          integration.publish_updates(report_payload([kingfisher_update]))
         end
       end
 
       expect(client).to(
         have_received(:update_issue)
-          .with("owner/repo", 7, issue_title, include(issue_marker, "Newer version of onevcat/Kingfisher: 8.0.0"))
+          .with("owner/repo", 7, issue_title, include(issue_marker, "| `onevcat/Kingfisher` | `7.0.0` → `8.0.0` |"))
       )
       expect(client).not_to(have_received(:create_issue))
       expect(integration.tracking_issue_result).to(eq(number: 7, url: TRACKING_ISSUE_URL))
@@ -562,7 +588,7 @@ RSpec.describe(GithubIntegration) {
       Dir.mktmpdir do |dir|
         with_env(github_env(write_schedule_event_file(dir))) do
           integration = tracking_integration
-          integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+          integration.publish_updates(report_payload([kingfisher_update]))
         end
       end
 
@@ -583,7 +609,7 @@ RSpec.describe(GithubIntegration) {
         stdout = capture_stdout do
           with_env(github_env(write_schedule_event_file(dir))) do
             integration = tracking_integration
-            integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+            integration.publish_updates(report_payload([kingfisher_update]))
           end
         end
 
@@ -610,7 +636,7 @@ RSpec.describe(GithubIntegration) {
         stdout = capture_stdout do
           with_env(github_env(write_schedule_event_file(dir))) do
             integration = tracking_integration
-            integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+            integration.publish_updates(report_payload([kingfisher_update]))
           end
         end
 
@@ -705,7 +731,7 @@ RSpec.describe(GithubIntegration) {
       Dir.mktmpdir do |dir|
         with_env(github_env(write_schedule_event_file(dir))) do
           integration = tracking_integration(open_tracking_issue: false)
-          integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+          integration.publish_updates(report_payload([kingfisher_update]))
         end
       end
 
@@ -726,7 +752,7 @@ RSpec.describe(GithubIntegration) {
 
       Dir.mktmpdir do |dir|
         with_env(github_env(write_event_file(dir))) do
-          tracking_integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+          tracking_integration.publish_updates(report_payload([kingfisher_update]))
         end
       end
 
@@ -747,7 +773,7 @@ RSpec.describe(GithubIntegration) {
       Dir.mktmpdir do |dir|
         with_env(github_env(write_schedule_event_file(dir))) do
           integration = tracking_integration
-          integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+          integration.publish_updates(report_payload([kingfisher_update]))
         end
       end
 
@@ -764,7 +790,7 @@ RSpec.describe(GithubIntegration) {
         stdout = capture_stdout do
           with_env(github_env(write_schedule_event_file(dir))) do
             integration = tracking_integration
-            integration.publish_updates(["Newer version of onevcat/Kingfisher: 8.0.0"])
+            integration.publish_updates(report_payload([kingfisher_update]))
           end
         end
 
