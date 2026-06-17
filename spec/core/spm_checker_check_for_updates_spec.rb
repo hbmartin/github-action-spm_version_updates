@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spm_version_updates/spm_checker"
+require_relative "../support/update_messages"
 
 # Xcode-project mode coverage for SpmChecker#check_for_updates, exercising the
 # XcodeParser path against the committed .xcodeproj fixtures (including the v1
@@ -17,16 +18,7 @@ RSpec.describe SpmChecker, "#check_for_updates" do
   end
 
   def check_for_update_messages(path)
-    update_messages(checker.check_for_updates(path))
-  end
-
-  def update_messages(result)
-    result.updates.map { |record| [record.fetch("message"), source_line(record)].compact.join("\n") }
-  end
-
-  def source_line(record)
-    source = record["source"]
-    "Source: #{source}" if source
+    SpecUpdateMessages.new(checker.check_for_updates(path)).to_a
   end
 
   subject(:checker) { described_class.new }

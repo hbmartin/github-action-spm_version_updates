@@ -386,7 +386,7 @@ class GithubIntegration < ReporterSink
     details
       .group_by { |detail| detail_value(detail, :normalized_url) || detail_value(detail, :package) }
       .map { |_key, entries| warning_group(entries) }
-      .sort_by { |group| group[:package].downcase }
+      .sort_by { |group| group[:package].to_s.downcase }
   end
 
   def warning_group(entries)

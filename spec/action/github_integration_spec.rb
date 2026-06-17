@@ -32,25 +32,28 @@ RSpec.describe(GithubIntegration) {
     path
   end
 
-  def report_payload(updates = [], details = nil, parse_warnings: [], missing_resolved: [])
+  def report_payload(updates = [], details = nil, **attributes)
+    defaults = { parse_warnings: [], missing_resolved: [] }
+
     ReportPayload.new(
       updates: update_records(updates, details),
-      parse_warnings:,
-      missing_resolved:
+      **defaults.merge(attributes)
     )
   end
 
   def update_records(updates, details)
-    Array(updates).map.with_index { |update, index| update_record(update, Array(details)[index]) }
-  end
-
-  def update_record(update, detail)
-    return update.to_h.transform_keys(&:to_s).compact if update.kind_of?(Hash)
-
-    message, source = update.to_s.split("\nSource: ", 2)
-    { "message" => message, "source" => source }
-      .merge(detail.to_h.transform_keys(&:to_s))
-      .compact
+    detail_records = Array(details)
+    Array(updates).map.with_index do |update, index|
+      case update
+      when Hash
+        update.transform_keys(&:to_s).compact
+      else
+        message, source = update.to_s.split("\nSource: ", 2)
+        { "message" => message, "source" => source }
+          .merge(detail_records[index].to_h.transform_keys(&:to_s))
+          .compact
+      end
+    end
   end
 
   def kingfisher_update
@@ -102,6 +105,13 @@ RSpec.describe(GithubIntegration) {
       expect(message).to(include("[Compare](https://github.com/onevcat/Kingfisher/compare/7.0.0...8.0.0)"))
       expect(message).to(include("[Releases](https://github.com/onevcat/Kingfisher/releases)"))
       expect(message).not_to(include("1. Newer version"))
+    end
+
+    it("renders update records without package or version fields instead of raising", :aggregate_failures) do
+      message = integration.send(:build_warnings_message, report_payload(["Newer version of onevcat/Kingfisher: 8.0.0"]))
+
+      expect(message).to(include("Found 1 package with potential dependency updates"))
+      expect(message).to(include("| Package | Current → Available | Source | Links |"))
     end
 
     it("appends a parse warnings section with an open-an-issue link", :aggregate_failures) do

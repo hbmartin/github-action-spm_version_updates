@@ -16,8 +16,10 @@ RSpec.describe FailOnThreshold do
       expect(described_class.from_input("major")).to eq("major")
     end
 
-    it "defaults to no threshold when the input is unset" do
+    it "defaults to no threshold when the input is unset or blank", :aggregate_failures do
       expect(described_class.from_input(nil)).to be_nil
+      expect(described_class.from_input("")).to be_nil
+      expect(described_class.from_input("   ")).to be_nil
     end
 
     it "normalizes case and treats none as false", :aggregate_failures do

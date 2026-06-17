@@ -5,31 +5,33 @@ class ReportPayload
   # Normalizes caller-provided attributes into payload fields.
   class Attributes
     def initialize(updates:, parse_warnings:, missing_resolved:, applied_updates:, timings:)
-      @updates = updates
-      @parse_warnings = parse_warnings
-      @missing_resolved = missing_resolved
-      @applied_updates = applied_updates
-      @timings = timings
+      @raw = {
+        updates:,
+        parse_warnings:,
+        missing_resolved:,
+        applied_updates:,
+        timings:
+      }
     end
 
     def to_h
       {
-        updates: records(@updates),
+        updates: records(@raw.fetch(:updates)),
         parse_warnings: parse_warnings,
         missing_resolved: missing_resolved,
-        applied_updates: @applied_updates,
-        timings: @timings
+        applied_updates: @raw.fetch(:applied_updates),
+        timings: @raw.fetch(:timings)
       }
     end
 
     private
 
     def parse_warnings
-      records(@parse_warnings)
+      records(@raw.fetch(:parse_warnings))
     end
 
     def missing_resolved
-      records(@missing_resolved)
+      records(@raw.fetch(:missing_resolved))
     end
 
     def records(values)

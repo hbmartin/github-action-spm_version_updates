@@ -8,7 +8,7 @@ module FailOnThreshold
   ANY = "any"
 
   def self.from_input(value)
-    normalize(value || "false")
+    normalize(value)
   end
 
   def self.failure_message(threshold, reporter)
@@ -25,8 +25,8 @@ module FailOnThreshold
   end
 
   def self.normalize(value)
-    normalized = value.to_s.downcase
-    return nil if ["false", "none"].include?(normalized)
+    normalized = value.to_s.strip.downcase
+    return nil if ["", "false", "none"].include?(normalized)
     return ANY if ["true", ANY].include?(normalized)
     return normalized if UpdateSeverity.threshold?(normalized)
 
