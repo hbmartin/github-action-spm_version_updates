@@ -75,24 +75,22 @@ RSpec.describe Action do
   end
 
   def report_payload(warnings = [], details = [], **attributes)
+    defaults = { parse_warnings: [], missing_resolved: [], applied_updates: nil, timings: nil }
+
     ReportPayload.new(
       updates: update_records(warnings, details),
-      parse_warnings: attributes.fetch(:parse_warnings, []),
-      missing_resolved: attributes.fetch(:missing_resolved, []),
-      applied_updates: attributes.fetch(:applied_updates, nil),
-      timings: attributes.fetch(:timings, nil)
+      **defaults.merge(attributes)
     )
   end
 
   def update_records(warnings, details)
-    Array(warnings).map.with_index { |warning, index| update_record(warning, Array(details)[index]) }
-  end
-
-  def update_record(warning, detail = nil)
-    message, source = warning.to_s.split("\nSource: ", 2)
-    { "message" => message, "source" => source }
-      .merge(detail.to_h.transform_keys(&:to_s))
-      .compact
+    detail_records = Array(details)
+    Array(warnings).map.with_index do |warning, index|
+      message, source = warning.to_s.split("\nSource: ", 2)
+      { "message" => message, "source" => source }
+        .merge(detail_records[index].to_h.transform_keys(&:to_s))
+        .compact
+    end
   end
 
   describe "#run_checks" do

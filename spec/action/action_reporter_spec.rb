@@ -30,20 +30,22 @@ RSpec.describe ActionReporter do
   end
 
   def report_payload(warnings = [], details = [], **attributes)
-    ReportPayload.new(
-      updates: Array(warnings).map.with_index { |warning, index| update_record(warning, Array(details)[index]) },
-      parse_warnings: attributes.fetch(:parse_warnings, []),
-      missing_resolved: attributes.fetch(:missing_resolved, []),
-      applied_updates: attributes.fetch(:applied_updates, nil),
-      timings: attributes.fetch(:timings, nil)
-    )
-  end
+    detail_records = Array(details)
+    updates = Array(warnings).map.with_index do |warning, index|
+      message, source = warning.to_s.split("\nSource: ", 2)
+      { "message" => message, "source" => source }
+        .merge(detail_records[index].to_h.transform_keys(&:to_s))
+        .compact
+    end
 
-  def update_record(warning, detail = nil)
-    message, source = warning.to_s.split("\nSource: ", 2)
-    { "message" => message, "source" => source }
-      .merge(detail.to_h.transform_keys(&:to_s))
-      .compact
+    ReportPayload.new(
+      updates:,
+      parse_warnings: [],
+      missing_resolved: [],
+      applied_updates: nil,
+      timings: nil,
+      **attributes
+    )
   end
 
   def output_json(output_file)

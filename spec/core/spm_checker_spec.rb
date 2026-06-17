@@ -4,6 +4,7 @@ require "json"
 require "spm_version_updates/spm_checker"
 require "timeout"
 require "tmpdir"
+require_relative "../support/update_messages"
 
 # Writes temporary Swift package manifests and resolved files for specs.
 class ManifestPackageFixture
@@ -64,24 +65,15 @@ RSpec.describe SpmChecker do
   end
 
   def check_manifest_messages(*args)
-    update_messages(checker.check_manifests(*args))
+    SpecUpdateMessages.new(checker.check_manifests(*args)).to_a
   end
 
   def check_resolved_messages(*args)
-    update_messages(checker.check_resolved(*args))
-  end
-
-  def update_messages(result)
-    result.updates.map { |record| [record.fetch("message"), source_line(record)].compact.join("\n") }
+    SpecUpdateMessages.new(checker.check_resolved(*args)).to_a
   end
 
   def recorded_update_messages
-    update_messages(checker.send(:result))
-  end
-
-  def source_line(record)
-    source = record["source"]
-    "Source: #{source}" if source
+    SpecUpdateMessages.new(checker.send(:result)).to_a
   end
 
   subject(:checker) { described_class.new }
@@ -156,7 +148,7 @@ RSpec.describe SpmChecker do
         SWIFT
 
         result = checker.check_manifests([manifest])
-        warnings = update_messages(result)
+        warnings = SpecUpdateMessages.new(result).to_a
 
         expect(warnings).to eq(["Newer version of a/b: 1.1.0\nSource: #{manifest}"])
         expect(result.updates.size).to eq(1)
@@ -563,7 +555,7 @@ RSpec.describe SpmChecker do
 
     it "exposes structured warning details for grouped PR comments", :aggregate_failures do
       result = checker.check_manifests([modules_manifest])
-      warnings = update_messages(result)
+      warnings = SpecUpdateMessages.new(result).to_a
 
       detail = result.updates.find { |warning| warning["package"] == "onevcat/Kingfisher" }
 
@@ -923,7 +915,7 @@ RSpec.describe SpmChecker do
         resolved = File.join(dir, "Package.resolved")
 
         result = checker.check_resolved([resolved])
-        warnings = update_messages(result)
+        warnings = SpecUpdateMessages.new(result).to_a
 
         expect(warnings).to eq(["Newer version of a/b: 2.0.0\nSource: #{resolved}"])
         expect(result.updates.first).to include(
