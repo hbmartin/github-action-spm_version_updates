@@ -120,24 +120,24 @@ Style/AndOr:
 
 # Configuration parameters: CountComments.
 Metrics/ClassLength:
-  Max: 320
+  Max: 200
   CountAsOne:
     - array
     - method_call
 
 Metrics/CyclomaticComplexity:
-  Max: 16
+  Max: 12
 
 # Configuration parameters: AllowURI, URISchemes.
 Layout/LineLength:
-  Max: 180
+  Max: 170
 
 # Configuration parameters: CountKeywordArgs.
 Metrics/ParameterLists:
   Max: 5
 
 Metrics/PerceivedComplexity:
-  Max: 17
+  Max: 12
 
 Style/GuardClause:
   Enabled: true
@@ -152,7 +152,7 @@ Layout/MultilineMethodCallIndentation:
   EnforcedStyle: indented
 
 Metrics/BlockLength:
-  Max: 80
+  Max: 60
   AllowedMethods:
     - describe
     - context
@@ -177,7 +177,7 @@ Style/PercentLiteralDelimiters:
     "%x": ()
 
 Gemspec/DevelopmentDependencies:
-  Enabled: false
+  Enabled: true
 
 Performance:
   Enabled: true

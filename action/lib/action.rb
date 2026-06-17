@@ -317,6 +317,9 @@ class Action
 
   # Converts handled failures into GitHub Action log output and an exit status.
   class FailureHandler
+    DEBUG_ENABLED_VALUE = "true"
+    private_constant :DEBUG_ENABLED_VALUE
+
     def initialize(env = ENV, exit_status = 1)
       @env = env
       @exit_status = exit_status
@@ -342,13 +345,19 @@ class Action
     end
 
     def fail_with_unexpected_error(error)
-      puts(error.backtrace) if @env.fetch("DEBUG", nil)
+      puts(error.backtrace) if debug_enabled?
       fail_with_error(error)
     end
 
     def fail_with(message)
       puts("Error: #{message}")
       exit(@exit_status)
+    end
+
+    private
+
+    def debug_enabled?
+      @env.fetch("DEBUG", "").strip == DEBUG_ENABLED_VALUE
     end
   end
   private_constant :FailureHandler

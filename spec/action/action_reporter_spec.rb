@@ -68,7 +68,14 @@ RSpec.describe ActionReporter do
         output_file = File.join(dir, "output.txt")
         reporter = described_class.new(report_payload(
                                          ["Newer version of foo/bar: 2.0.0"],
-                                         [{ type: "version", repository_url: "https://user:token@github.com/foo/bar", current_version: "1.0.0", available_version: "2.0.0" }]
+                                         [
+                                           {
+                                             type: "version",
+                                             repository_url: "https://user:token@github.com/foo/bar",
+                                             current_version: "1.0.0",
+                                             available_version: "2.0.0"
+                                           },
+                                         ]
                                        ))
 
         quiet_write(reporter, "GITHUB_OUTPUT" => output_file, "GITHUB_STEP_SUMMARY" => nil)
