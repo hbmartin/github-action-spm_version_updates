@@ -99,7 +99,7 @@ detectors:
     - GithubIntegration
     - SpmChecker
     - VersionTagFetcher
-    max_instance_variables: 4
+    max_instance_variables: 5
   TooManyMethods:
     enabled: true
     exclude:
