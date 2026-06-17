@@ -315,8 +315,46 @@ class Action
   end
   private_constant :PublishStep
 
-  def initialize(reporter_sink: nil, checker_factory: SpmChecker)
-    @reporter_sink = reporter_sink || GithubIntegration.new
+  # Converts handled failures into GitHub Action log output and an exit status.
+  class FailureHandler
+    def initialize(env = ENV, exit_status = 1)
+      @env = env
+      @exit_status = exit_status
+    end
+
+    def fail_apply_errors(applied_updates)
+      reporter = ApplyErrorReporter.new(applied_updates)
+      reporter.annotations.each { |annotation| puts(annotation) }
+      fail_with(reporter.message)
+    end
+
+    def fail_with_error(error)
+      fail_with(error.message)
+    end
+
+    def fail_with_parse_error(error)
+      fail_with("#{error.message}. Fix or regenerate this Package.resolved file.")
+    end
+
+    def fail_with_policy_error(error)
+      ActionReporter::BlockedReport.write(error.to_s)
+      fail_with_error(error)
+    end
+
+    def fail_with_unexpected_error(error)
+      puts(error.backtrace) if @env.fetch("DEBUG", nil)
+      fail_with_error(error)
+    end
+
+    def fail_with(message)
+      puts("Error: #{message}")
+      exit(@exit_status)
+    end
+  end
+  private_constant :FailureHandler
+
+  def initialize(reporter_sink: GithubIntegration.new, checker_factory: SpmChecker)
+    @reporter_sink = reporter_sink
     @checker_factory = checker_factory
     @missing_resolved = []
     @timings = nil
@@ -341,19 +379,19 @@ class Action
       comment: inputs[:comment],
       comment_on_success: inputs[:comment_on_success]
     )
-    fail_for_apply_errors(applied_updates) if applied_updates&.failed?
+    FailureHandler.new.fail_apply_errors(applied_updates) if applied_updates&.failed?
     failure_message = FailOnThreshold.failure_message(inputs[:fail_on], reporter)
-    fail_with(failure_message) if failure_message
+    FailureHandler.new.fail_with(failure_message) if failure_message
 
     puts("SPM version check completed successfully!")
   rescue SpmVersionUpdates::ConfigurationError, SpmVersionUpdates::FileNotFoundError => error
-    fail_with_error(error)
+    FailureHandler.new.fail_with_error(error)
   rescue SpmVersionUpdates::ParseError => error
-    fail_with_parse_error(error)
+    FailureHandler.new.fail_with_parse_error(error)
   rescue SpmVersionUpdates::PolicyError => error
-    fail_with_policy_error(error)
+    FailureHandler.new.fail_with_policy_error(error)
   rescue StandardError => error
-    fail_with_unexpected_error(error)
+    FailureHandler.new.fail_with_unexpected_error(error)
   end
 
   private
@@ -471,41 +509,12 @@ class Action
     @timings.measure("Apply updates") { UpdateApplier.new(updates).apply }
   end
 
-  def fail_for_apply_errors(applied_updates)
-    reporter = ApplyErrorReporter.new(applied_updates)
-    reporter.annotations.each { |annotation| puts(annotation) }
-    fail_with(reporter.message)
-  end
-
   def move_to_workspace
     workspace = ENV.fetch("GITHUB_WORKSPACE", nil)
     return unless workspace && Dir.exist?(workspace)
 
     Dir.chdir(workspace)
     puts("Changed to workspace directory: #{workspace}")
-  end
-
-  def fail_with(message)
-    puts("Error: #{message}")
-    exit(1)
-  end
-
-  def fail_with_error(error)
-    fail_with(error.message)
-  end
-
-  def fail_with_parse_error(error)
-    fail_with("#{error.message}. Fix or regenerate this Package.resolved file.")
-  end
-
-  def fail_with_policy_error(error)
-    ActionReporter::BlockedReport.write(error.to_s)
-    fail_with_error(error)
-  end
-
-  def fail_with_unexpected_error(error)
-    puts(error.backtrace) if ENV.fetch("DEBUG", nil)
-    fail_with_error(error)
   end
 end
 
