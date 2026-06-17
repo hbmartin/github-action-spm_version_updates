@@ -138,7 +138,12 @@ RSpec.describe ManifestParser do
         )
       SWIFT
 
-      expect(parse(content)).to eq("github.com/a/multiline" => declared("https://github.com/a/multiline", { "kind" => "upToNextMajorVersion", "minimumVersion" => "3.2.1" }))
+      expect(parse(content)).to eq(
+        "github.com/a/multiline" => declared(
+          "https://github.com/a/multiline",
+          { "kind" => "upToNextMajorVersion", "minimumVersion" => "3.2.1" }
+        )
+      )
     end
 
     it "reports a skip for declarations with an unrecognized requirement", :aggregate_failures do

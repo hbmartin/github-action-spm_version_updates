@@ -24,7 +24,10 @@ RSpec.describe UpdateApplier do
 
     applied = described_class.new([record.call, record.call(package: "baz/qux")], updater:).apply
 
-    expect(updater).to have_received(:update_file).with("Package.swift", array_including(a_hash_including("package" => "foo/bar"), a_hash_including("package" => "baz/qux")))
+    expect(updater).to have_received(:update_file).with(
+      "Package.swift",
+      array_including(a_hash_including("package" => "foo/bar"), a_hash_including("package" => "baz/qux"))
+    )
     expect(applied.applied_count).to eq(2)
   end
 

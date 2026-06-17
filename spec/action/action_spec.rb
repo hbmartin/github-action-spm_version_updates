@@ -56,6 +56,7 @@ RSpec.describe Action do
       INPUT_VERSION_TAGS_CACHE_TTL
       SPM_VERSION_UPDATES_TAG_CACHE_DIR
       GITHUB_WORKSPACE
+      DEBUG
     ).to_h { |key| [key, nil] }
       .merge(overrides)
   end
@@ -670,6 +671,40 @@ RSpec.describe Action do
         expect(reporter_sink).not_to have_received(:publish_updates)
         expect(reporter_sink).not_to have_received(:publish_success)
       end
+    end
+
+    it "does not print an unexpected error backtrace when DEBUG is false", :aggregate_failures do
+      error = RuntimeError.new("boom")
+      error.set_backtrace(["debug_trace.rb:1:in `call`"])
+      allow(configured_checker).to receive(:check_for_updates).and_raise(error)
+
+      stdout = capture_stdout do
+        expect {
+          with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "DEBUG" => "false")) do
+            action.run
+          end
+        }.to raise_error(SystemExit) { |system_exit| expect(system_exit.status).to eq(1) }
+      end
+
+      expect(stdout).to include("Error: boom")
+      expect(stdout).not_to include("debug_trace.rb")
+    end
+
+    it "prints an unexpected error backtrace when DEBUG is true", :aggregate_failures do
+      error = RuntimeError.new("boom")
+      error.set_backtrace(["debug_trace.rb:1:in `call`"])
+      allow(configured_checker).to receive(:check_for_updates).and_raise(error)
+
+      stdout = capture_stdout do
+        expect {
+          with_env(input_env("INPUT_XCODE_PROJECT_PATH" => "App.xcodeproj", "DEBUG" => "true")) do
+            action.run
+          end
+        }.to raise_error(SystemExit) { |system_exit| expect(system_exit.status).to eq(1) }
+      end
+
+      expect(stdout).to include("debug_trace.rb:1:in `call`")
+      expect(stdout).to include("Error: boom")
     end
 
     it "fails after reporting when fail-on true is enabled and updates are found", :aggregate_failures do

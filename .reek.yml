@@ -43,8 +43,6 @@ detectors:
     - parse
   InstanceVariableAssumption:
     enabled: true
-    exclude:
-    - Danger::DangerSpmVersionUpdates
   IrresponsibleModule:
     enabled: true
   LongParameterList:
