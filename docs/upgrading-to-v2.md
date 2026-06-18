@@ -200,12 +200,13 @@ steps:
       commit-message: Update Swift package requirements
 ```
 
-Apply mode only runs in manifest mode. It skips Xcode project mode and
-Package.resolved-only mode because there is no supported `Package.swift`
-requirement rewrite to make. It also skips branch, revision, above-maximum, and
-unsupported records. If a rewrite fails after other files were changed, the
-action reports the partial result and exits non-zero so the workspace diff is
-visible.
+Apply mode requires manifest mode. Combining `apply-updates: true` with
+`xcode-project-path` or Package.resolved-only mode fails the run with a
+configuration error, because there is no supported `Package.swift` requirement
+rewrite to make in those modes. Within manifest mode it skips branch, revision,
+above-maximum, and unsupported records. If a rewrite fails after other files
+were changed, the action reports the partial result and exits non-zero so the
+workspace diff is visible.
 
 ### Release-note enrichment
 
