@@ -5,4 +5,5 @@ gems/spm_version_updates/lib/**/*.rb
 action/lib/**/*.rb
 -
 docs/architecture.md
+docs/upgrading-to-v2.md
 docs/swiftpm-manifest-mode.md
