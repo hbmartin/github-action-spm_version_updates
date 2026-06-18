@@ -79,6 +79,7 @@ DOCS_LAYERS = {
     main: "gems/spm_version_updates/README.md",
     guides: [
       "docs/architecture.md",
+      "docs/upgrading-to-v2.md",
       "docs/repo-rules.md",
     ]
   },
@@ -88,6 +89,7 @@ DOCS_LAYERS = {
     main: "gems/danger-spm_version_updates/README.md",
     guides: [
       "docs/architecture.md",
+      "docs/upgrading-to-v2.md",
       "docs/swiftpm-manifest-mode.md",
       "docs/repo-rules.md",
     ]
@@ -98,6 +100,7 @@ DOCS_LAYERS = {
     main: "README.md",
     guides: [
       "docs/architecture.md",
+      "docs/upgrading-to-v2.md",
       "docs/swiftpm-manifest-mode.md",
       "docs/cookbook.md",
       "docs/security.md",
